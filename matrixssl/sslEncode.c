@@ -1466,6 +1466,13 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
 			messageSize += secureWriteAdditions(ssl, 1);
 		}
 #endif
+
+#ifdef USE_SCT
+		if (ssl->extFlags.signed_certificate_timestamp) {
+			extSize = 2;
+			messageSize += 2 + 2 + 2 + ssl->keys->SCTResponseBufLen; /* 2 type, 2 length, data */
+		}
+#endif
 		
 #ifdef USE_STATELESS_SESSION_TICKETS
 		if (ssl->sid &&
@@ -3211,6 +3218,15 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
 	}
 #endif
 
+#ifdef USE_SCT
+	if (ssl->extFlags.signed_certificate_timestamp) {
+		if (extLen == 0) {
+			extLen = 2;
+		}
+		extLen += 2 + 2 + 2 + ssl->keys->SCTResponseBufLen; /* 2 type, 2 len, data */
+	}
+#endif
+
 #ifdef USE_ALPN
 	if (ssl->alpnLen) {
 		if (extLen == 0) {
@@ -3376,6 +3392,19 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
 			*c = EXT_STATUS_REQUEST & 0xFF; c++;
 			*c = 0; c++;
 			*c = 0; c++;
+		}
+#endif
+
+#ifdef USE_SCT
+		if (ssl->extFlags.signed_certificate_timestamp) {
+			*c = (EXT_SIGNED_CERTIFICATE_TIMESTAMP & 0xFF00) >> 8; c++;
+			*c = EXT_SIGNED_CERTIFICATE_TIMESTAMP & 0xFF; c++;
+			*c = ((ssl->keys->SCTResponseBufLen + 2) & 0xFF00) >> 8; c++;
+			*c = (ssl->keys->SCTResponseBufLen + 2) & 0xFF; c++;
+			*c = (ssl->keys->SCTResponseBufLen & 0xFF00) >> 8; c++;
+			*c = ssl->keys->SCTResponseBufLen & 0xFF; c++;
+			memcpy(c, ssl->keys->SCTResponseBuf, ssl->keys->SCTResponseBufLen);
+			c += ssl->keys->SCTResponseBufLen;
 		}
 #endif
 

@@ -2175,10 +2175,44 @@ int32_t haveKeyMaterial(const ssl_t *ssl, int32 cipherType, short reallyTest)
 #endif /* VALIDATE_KEY_MATERIAL */
 
 
+#ifdef USE_SERVER_SIDE_SSL
+
+#ifdef USE_SERVER_PREFERRED_CIPHERS
+
+/*	quick sort support for sorting descendingly the client's supported
+	supported cipher list
+*/
+void quick_sort_desc(uint32 *v, int l, int r) {
+	int i = l, j = r;
+	int tmp;
+	int p = v[(l + r) / 2];
+
+	while (i <= j) {
+		while (v[i] > p)
+			i++;
+		while (v[j] < p)
+			j--;
+
+		if (i <= j) {
+			tmp = v[i];
+			v[i] = v[j];
+			v[j] = tmp;
+			i++;
+			j--;
+		}
+	};
+
+	if (l < j)
+		quick_sort_desc(v, l, j);
+	if (i < r)
+		quick_sort_desc(v, i, r);
+}
+
+#endif /* USE_SERVER_PREFERRED_CIPHERS */
+
 /*	0 return is a key was found
 	<0 is no luck
 */
-#ifdef USE_SERVER_SIDE_SSL
 int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 {
 	const sslCipherSpec_t	*spec;
@@ -2188,6 +2222,39 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 	uint32					cipher;
 	sslPubkeyId_t			wantKey;
 	sslKeys_t				*givenKey = NULL;
+
+#ifdef USE_SERVER_PREFERRED_CIPHERS
+
+#define MAX_CIPHERS 256
+
+	unsigned char			*cc = listStart;
+	unsigned char			*ec = listStart + listLen;
+	uint32					ciphers[MAX_CIPHERS];
+	int						ciphersLen = 0, cn = 0, i = 0;
+
+	while ((cc < ec) && (cn < MAX_CIPHERS)) {
+		if (ssl->rec.majVer > SSL2_MAJ_VER) {
+			ciphers[cn] = *cc << 8; cc++;
+			ciphers[cn] += *cc; cc++;
+		} else {
+			/* Deal with an SSLv2 hello message.  Ciphers are 3 bytes long */
+			ciphers[cn] = *cc << 16; cc++;
+			ciphers[cn] += *cc << 8; cc++;
+			ciphers[cn] += *cc; cc++;
+		}
+
+		psTraceIntInfo("Cipher index %d ", cn);
+		psTraceIntInfo("is %d\n", ciphers[cn]);
+
+		cn++;
+	}
+
+	if (cn > 1) quick_sort_desc(ciphers, 0, cn - 1);
+
+	while (i < cn) {
+		cipher = ciphers[i++];
+
+#else
 
 	end = c + listLen;
 	while (c < end) {
@@ -2202,14 +2269,22 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 			cipher += *c; c++;
 		}
 
+#endif /*USE_SERVER_PREFERRED_CIPHERS*/
+
+		psTraceIntInfo("Testing cipher %d\n", cipher);
 		/* Checks if this cipher suite compiled into the library.
 			ALSO, in the cases of static server keys (ssl->keys not NULL)
 			the haveKeyMaterial	function will be run */
 		if ((spec = sslGetCipherSpec(ssl, cipher)) == NULL) {
+			psTraceIntInfo("Cipher %d not compiled in the library\n", cipher);
 			continue;
 		}
+
+		psTraceIntInfo("Cipher %d found in the library. Testing keys...\n", cipher);
 		
 		if (ssl->keys == NULL) {
+			psTraceInfo("NULL keys\n");
+
 			/* Populate the sslPubkeyId_t struct to pass to user callback */
 			wantKey.keyType = getKeyTypeFromCipherType(spec->type,
 				&wantKey.dhParamsRequired, &ecKeyExchange);

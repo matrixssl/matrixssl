@@ -73,6 +73,7 @@ int32 parseClientHelloExtensions(ssl_t *ssl, unsigned char **cp, unsigned short 
 	ssl->extFlags.session_ticket = 0;
 	ssl->extFlags.extended_master_secret = 0;
 	ssl->extFlags.status_request = 0;
+	ssl->extFlags.signed_certificate_timestamp = 0;
 	
 	/*	There could be extension data to parse here:
 		Two byte length and extension info.
@@ -311,6 +312,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 		}
 		memcpy(ssl->expectedName, c, i);
 		ssl->expectedName[i] = '\0';
+
 		break;
 
 #ifdef USE_ALPN
@@ -587,6 +589,23 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 		break;
 #endif
 
+	/**************************************************************************/
+#ifdef USE_SCT
+	case EXT_SIGNED_CERTIFICATE_TIMESTAMP:
+		/* TODO: add client extension parsing */
+
+		/* Currently, the SCTResponse must be loaded into the key material
+			so we check if that exists to determine if we will reply with
+			the extension */
+		if (ssl->keys->SCTResponseBufLen > 0 &&
+				ssl->keys->SCTResponseBuf != NULL) {
+			ssl->extFlags.signed_certificate_timestamp = 1;
+		} else {
+			psTraceInfo("Client requesting SCT but we have no response\n");
+		}
+
+		break;
+#endif
 
 	/**************************************************************************/
 
@@ -692,7 +711,7 @@ static int dealWithAlpnExt(ssl_t *ssl, const unsigned char *c, unsigned short ex
 		that here for checking later (in choosing cipher suite, etc).
 		@see https://tools.ietf.org/html/rfc7540#section-9.2
 	*/
-	if ((ssl->alpnLen == 2) && memcmp(ssl->alpn, "h2", 2) = 0) {
+	if ((ssl->alpnLen == 2) && memcmp(ssl->alpn, "h2", 2) == 0) {
 		ssl->flags |= SSL_FLAGS_HTTP2;
 	}
 

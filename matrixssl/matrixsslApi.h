@@ -112,6 +112,12 @@ PSPUBLIC int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
 						const unsigned char *OCSPResponseBuf,
 						uint16_t OCSPResponseBufLen);
 #endif
+#if defined(USE_SCT) && defined(USE_SERVER_SIDE_SSL)
+PSPUBLIC int32_t matrixSslLoadSCTResponse(sslKeys_t *keys,
+						const unsigned char *SCTResponseBuf,
+						uint16_t SCTResponseBufLen);
+#endif
+
 
 /******************************************************************************/
 /*

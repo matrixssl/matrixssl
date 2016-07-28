@@ -849,6 +849,35 @@ int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
 }
 #endif /* USE_OCSP && USE_SERVER_SIDE_SSL */
 
+
+#if defined(USE_SCT) && defined(USE_SERVER_SIDE_SSL)
+int32_t matrixSslLoadSCTResponse(sslKeys_t *keys,
+			const unsigned char *SCTResponseBuf, uint16_t SCTResponseBufLen)
+{
+	psPool_t	*pool;
+
+	if (keys == NULL || SCTResponseBuf == NULL || SCTResponseBufLen == 0) {
+		return PS_ARG_FAIL;
+	}
+	pool = keys->pool;
+
+	/* Overwrite/Update any response being set */
+	if (keys->SCTResponseBuf != NULL) {
+		psFree(keys->SCTResponseBuf, pool);
+		keys->SCTResponseBufLen = 0;
+	}
+
+	keys->SCTResponseBufLen = SCTResponseBufLen;
+	if ((keys->SCTResponseBuf = psMalloc(pool, SCTResponseBufLen)) == NULL) {
+		return PS_MEM_FAIL;
+	}
+
+	memcpy(keys->SCTResponseBuf, SCTResponseBuf, SCTResponseBufLen);
+	return PS_SUCCESS;
+}
+#endif /* USE_OCSP && USE_SERVER_SIDE_SSL */
+
+
 /******************************************************************************/
 /*
 	This will free the struct and any key material that was loaded via:

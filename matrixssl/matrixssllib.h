@@ -658,7 +658,7 @@ static __inline uint16_t HASH_SIG_MASK(uint8_t hash, uint8_t sig)
 #define EXT_ELLIPTIC_POINTS					11
 #define EXT_SIGNATURE_ALGORITHMS			13
 #define EXT_ALPN							16
-#define EXT_SIGNED_CERTIFICATE_TIMESTAMP	18
+#define EXT_SIGNED_CERTIFICATE_TIMESTAMP	18  /* SCT */
 #define EXT_EXTENDED_MASTER_SECRET			23
 #define EXT_SESSION_TICKET					35
 #define EXT_RENEGOTIATION_INFO				0xFF01
@@ -825,6 +825,10 @@ typedef struct {
 #if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
 	unsigned char	*OCSPResponseBuf;
 	uint16_t		OCSPResponseBufLen;
+#endif
+#if defined(USE_SCT) && defined(USE_SERVER_SIDE_SSL)
+	unsigned char	*SCTResponseBuf;
+	uint16_t		SCTResponseBufLen;
 #endif
 	void			*poolUserPtr; /* Data that will be given to psOpenPool
 									for any operations involving these keys */
@@ -1309,6 +1313,7 @@ struct ssl {
 		uint32		session_ticket: 1;
 		uint32		status_request: 1;	/* received EXT_STATUS_REQUEST */
 		uint32		status_request_v2: 1;	/* received EXT_STATUS_REQUEST_V2 */
+		uint32		signed_certificate_timestamp: 1; /* received EXT_SIGNED_CERTIFICATE_TIMESTAMP */
 		uint32		require_extended_master_secret: 1; /* peer may require */
 	} extFlags;	/**< Extension flags */
 

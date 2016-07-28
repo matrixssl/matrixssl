@@ -72,8 +72,9 @@
 	Support for memory allocation in order to avoid applications that redefine
 	malloc/free (see Perl)
 */
-__inline static void *psMallocNative(size_t size) { return malloc(size); }
-__inline static void psFreeNative(void *ptr) { free(ptr); }
+
+void *psMallocNative(size_t size);
+void psFreeNative(void *ptr);
 
 typedef int32_t psPool_t;
 

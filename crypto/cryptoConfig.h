@@ -169,6 +169,8 @@
 //#define USE_CRL /***< @pre USE_FULL_CERT_PARSE */
 //#define USE_OCSP /**< @pre USE_SHA1 */
 
+//#define USE_SCT
+
 /******************************************************************************/
 /**
 	Various PKCS standards support

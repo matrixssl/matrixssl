@@ -309,4 +309,16 @@ void psBurnStack(uint32 len)
 }
 
 /******************************************************************************/
+/*
+	Support for memory allocation in order to avoid applications that redefine
+	malloc/free (see Perl)
+*/
+void *psMallocNative(size_t size)
+{
+	return malloc(size);
+}
 
+void psFreeNative(void *ptr)
+{
+	free(ptr);
+}
