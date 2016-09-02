@@ -692,7 +692,7 @@ static int dealWithAlpnExt(ssl_t *ssl, const unsigned char *c, unsigned short ex
 		that here for checking later (in choosing cipher suite, etc).
 		@see https://tools.ietf.org/html/rfc7540#section-9.2
 	*/
-	if ((ssl->alpnLen == 2) && memcmp(ssl->alpn, "h2", 2) = 0) {
+	if ((ssl->alpnLen == 2) && memcmp(ssl->alpn, "h2", 2) == 0) {
 		ssl->flags |= SSL_FLAGS_HTTP2;
 	}
 
