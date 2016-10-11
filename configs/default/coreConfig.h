@@ -35,6 +35,7 @@
 #ifndef _h_PS_CORECONFIG
 #define _h_PS_CORECONFIG
 
+
 /******************************************************************************/
 /* Configurable features */
 /******************************************************************************/
@@ -61,8 +62,20 @@
 
 /**
 	Include the psCoreOsdepMutex family of APIs
+
+	@note If intending to compile crypto-cl, then this flag should
+	always be set.
 */
-//#define USE_MULTITHREADING
+#ifndef NO_MULTITHREADING
+#define USE_MULTITHREADING
+#endif /* NO_MULTITHREADING */
+
+/**
+	Include the psNetwork family of APIs
+
+	These APIs allow simple high-level socket api.
+ */
+#define USE_PS_NETWORKING
 
 #endif /* _h_PS_CORECONFIG */
 

@@ -10,6 +10,7 @@ include $(MATRIXSSL_ROOT)/common.mk
 SRC:=\
 	memset_s.c \
 	corelib.c \
+	psbuf.c \
 	$(OSDEP)/osdep.c
 
 ASM:=memset_s.s
@@ -33,10 +34,13 @@ $(ASM): memset_s.c
 $(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile *.h
 
 # Build the static library
-# Redirect stderr to null so we don't see the 'empty file' warnings
+
 $(STATIC): $(OBJS)
-	$(AR) -rcuv $@ $^ 2>/dev/null
+	$(AR) -rcu $@ $^
 
 clean:
 	rm -f $(STATIC) $(OBJS) $(ASM)
 
+# Allows to check configuration options.
+parse-config:
+	echo '#include "coreConfig.h"' | $(CC) $(CFLAGS) -dM -E -x c -

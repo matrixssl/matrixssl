@@ -44,8 +44,14 @@
 //#define USE_CRYPTO_TRACE
 
 #ifdef DEBUG
-// #define CRYPTO_ASSERT	/**< Extra sanity asserts */
+//#define CRYPTO_ASSERT	/**< Extra sanity asserts */
 #endif
+
+/******************************************************************************/
+/*
+	Use built-in cryptographic library delivered with MatrixSSL
+*/
+#define USE_NATIVE_RSA /* Default built-in software support */
 
 /******************************************************************************/
 /**
@@ -54,13 +60,13 @@
 	@security MIN_*_BITS is the minimum supported key sizes in bits, weaker
 	keys will be rejected.
 */
-#define MIN_ECC_BITS	192	/**< @security Affects ECC curves below */
+#define MIN_ECC_BITS 192/**< @security Affects ECC curves below */
 
 #define MIN_RSA_BITS	1024
 
-#define MIN_DH_BITS		1024
+#define MIN_DH_BITS	1024
 
-#define USE_BURN_STACK /**< @security Zero sensitive data from the stack. */
+#define USE_BURN_STACK/**< @security Zero sensitive data from the stack. */
 
 /******************************************************************************/
 /**
@@ -68,7 +74,16 @@
 */
 #define USE_RSA
 #define USE_ECC
-//#define USE_DH
+#define USE_DH
+/**< @note Enable verification of DSA signatures in certificate validation.
+   Works only when using the CL/SL library. */
+//#define USE_DSA_VERIFY
+
+/******************************************************************************/
+/**
+    Build the PKCS and ASN1 extra CL sublibraries.
+	These are needed by the CL_PKCS API.
+*/
 
 /******************************************************************************/
 
@@ -77,10 +92,10 @@
 	@see http://csrc.nist.gov/groups/ST/toolkit/documents/dss/NISTReCur.pdf
 */
 #ifdef USE_ECC
-  #define USE_SECP192R1	/**< @security FIPS allowed for sig ver only. */
+  #define USE_SECP192R1/**< @security FIPS allowed for sig ver only. */
  #define USE_SECP224R1
- #define USE_SECP256R1 /**< @security NIST_SHALL */
- #define USE_SECP384R1 /**< @security NIST_SHALL */
+ #define USE_SECP256R1/**< @security NIST_SHALL */
+ #define USE_SECP384R1/**< @security NIST_SHALL */
  #define USE_SECP521R1
 #endif
 
@@ -101,22 +116,22 @@
 	Symmetric and AEAD ciphers.
 	@security Deprecated ciphers must be enabled in cryptolib.h
 */
+//#define USE_AES /* Enable/Disable AES */
 #define USE_AES_CBC
 #define USE_AES_GCM
-//#define USE_AES_GCM_GIV
 
-#ifdef USE_LIBSODIUM_CRYPTO
- #define USE_CHACHA20_POLY1305
+#ifdef USE_LIBSODIUM
+//#define USE_CHACHA20_POLY1305
 #endif
 
 /** @security 3DES is still relatively secure, however is deprecated for TLS */
-//#define USE_3DES
+#define USE_3DES
 
 /******************************************************************************/
 /**
 	Digest algorithms.
 
-	@note SHA256 and above are used with TLS 1.2, and also used for 
+	@note SHA256 and above are used with TLS 1.2, and also used for
 	certificate signatures on some certificates regardless of TLS version.
 
 	@security MD5 is deprecated, but still required in combination with SHA-1
@@ -127,15 +142,15 @@
 
 	@security SHA1 will be deprecated in the future, but is still required in
 	combination with MD5 for versions prior to TLS 1.2. In addition, SHA1
-	certificates are still commonly used, so SHA1 support may be needed 
+	certificates are still commonly used, so SHA1 support may be needed
 	to validate older certificates. It is possible to completely disable
 	SHA1 using TLS 1.2 and SHA2 based ciphersuites, and interacting
 	only with newer certificates.
 */
 //#define USE_SHA224	/**< @note Used only for cert signature */
-#define USE_SHA256		/**< @note Required for TLS 1.2 and above */
+#define USE_SHA256/**< @note Required for TLS 1.2 and above */
 #define USE_HMAC_SHA256
-#define USE_SHA384		/**< @pre USE_SHA512 */
+#define USE_SHA384/**< @pre USE_SHA512 */
 #define USE_HMAC_SHA384
 #define USE_SHA512
 
@@ -151,8 +166,19 @@
 	@note ENABLE_MD5_SIGNED_CERTS can additionally be configured below.
 */
 #define USE_MD5
-#define USE_MD5SHA1		/* Required for < TLS 1.2 Handshake */
-#define USE_HMAC_MD5	/* TODO currently needed for prf */
+#define USE_MD5SHA1/* Required for < TLS 1.2 Handshake */
+#define USE_HMAC_MD5/* TODO currently needed for prf */
+
+/**
+    @security MD2 is considered insecure, but is sometimes used for
+	verification of legacy root certificate signatures.
+	@note MD2 signature verification also requires
+	ENABLE_MD5_SIGNED_CERTS and USE_MD5.
+*/
+//#define USE_MD2
+
+/* Please enable, unless using no HMAC algorithms. */
+#define USE_HMAC
 
 /******************************************************************************/
 /**
@@ -160,16 +186,19 @@
 */
 #define USE_BASE64_DECODE
 #define USE_X509
-#define USE_CERT_PARSE /**< Usually required. @pre USE_X509 */
-#define USE_FULL_CERT_PARSE /**< @pre USE_CERT_PARSE */
+#define USE_CERT_PARSE/**< Usually required. @pre USE_X509 */
+#define USE_FULL_CERT_PARSE/**< @pre USE_CERT_PARSE */
+ /**< Support extra distinguished name attributes that SHOULD be supported according to RFC 5280. */
+//#define USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD
+ /**< Support extra distinguished name attributes not mentioned in RFC 5280. */
+//#define USE_EXTRA_DN_ATTRIBUTES
 //#define ENABLE_CA_CERT_HASH /**< Used only for TLS trusted CA ind ext. */
 //#define ENABLE_MD5_SIGNED_CERTS /** @security Accept MD5 signed certs? */
-#define ENABLE_SHA1_SIGNED_CERTS /** @security Accept SHA1 signed certs? */
-
-//#define USE_CRL /***< @pre USE_FULL_CERT_PARSE */
-//#define USE_OCSP /**< @pre USE_SHA1 */
-
-//#define USE_SCT
+#define ENABLE_SHA1_SIGNED_CERTS/** @security Accept SHA1 signed certs? */
+ /**< @security Allow parsing of locally trusted v1 root certs? */
+//#define ALLOW_VERSION_1_ROOT_CERT_PARSE
+#define USE_CRL/***< @pre USE_FULL_CERT_PARSE */
+#define USE_OCSP/**< @pre USE_SHA1 */
 
 /******************************************************************************/
 /**
@@ -177,10 +206,10 @@
 */
 #define USE_PRIVATE_KEY_PARSING
 //#define USE_PKCS5		/**< v2.0 PBKDF encrypted priv keys. @pre USE_3DES */
-//#define USE_PKCS8		/* Alternative private key storage format */
-//#define USE_PKCS12	/**< @pre USE_PKCS8 */
-//#define USE_PKCS1_OAEP	/* OAEP padding algorithm */
-//#define USE_PKCS1_PSS		/* PSS padding algorithm */
+#define USE_PKCS8/* Alternative private key storage format */
+#define USE_PKCS12/**< @pre USE_PKCS8 */
+#define USE_PKCS1_OAEP/* OAEP padding algorithm */
+#define USE_PKCS1_PSS/* PSS padding algorithm */
 
 #endif /* _h_PS_CRYPTOCONFIG */
 

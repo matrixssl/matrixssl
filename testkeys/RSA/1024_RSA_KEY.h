@@ -1,5 +1,5 @@
 /**
- *	@file    testkeys/RSA/1024_RSA_KEY.h
+ *	@file    1024_RSA_KEY.h
  *	@version $Format:%h%d$
  *
  *	Auto generated from PEM file.

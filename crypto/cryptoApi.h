@@ -270,14 +270,16 @@ PSPUBLIC void psMd5Final(psMd5_t *md, unsigned char hash[MD5_HASHLEN]);
 
 #ifdef USE_SHA1
 /******************************************************************************/
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psSha1PreInit(psSha1_t *sha1)
+{
+	/* Nothing to pre-initialize for native crypto. */
+}
 PSPUBLIC int32_t psSha1Init(psSha1_t *sha1);
 PSPUBLIC void psSha1Update(psSha1_t *sha1,
 				const unsigned char *buf, uint32_t len);
 PSPUBLIC void psSha1Final(psSha1_t *sha1, unsigned char hash[SHA1_HASHLEN]);
-#ifdef USE_CL_DIGESTS
-PSPUBLIC void psSha1Sync(psSha1_t *ctx, int sync_all);
-PSPUBLIC void psSha1Cpy(psSha1_t *ctx, const psSha1_t *ctx_in);
-#else
 static __inline void psSha1Sync(psSha1_t *ctx, int sync_all)
 {
 }
@@ -285,11 +287,16 @@ static __inline void psSha1Cpy(psSha1_t *d, const psSha1_t *s)
 {
 	memcpy(d, s, sizeof(psSha1_t));
 }
-#endif /* USE_CL_DIGESTS */
 #endif /* USE_SHA1 */
 
 #ifdef USE_MD5SHA1
 /******************************************************************************/
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psMd5Sha1PreInit(psMd5Sha1_t *md)
+{
+	/* Nothing to pre-initialize for native crypto. */
+}
 PSPUBLIC int32_t psMd5Sha1Init(psMd5Sha1_t *md);
 PSPUBLIC void psMd5Sha1Update(psMd5Sha1_t *md,
 				const unsigned char *buf, uint32_t len);
@@ -306,16 +313,17 @@ static __inline void psMd5Sha1Cpy(psMd5Sha1_t *d, const psMd5Sha1_t *s)
 
 #ifdef USE_SHA256
 /******************************************************************************/
-
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psSha256PreInit(psSha256_t *sha256)
+{
+	/* Nothing to pre-initialize for native crypto. */
+}
 PSPUBLIC int32_t psSha256Init(psSha256_t *sha256);
 PSPUBLIC void psSha256Update(psSha256_t *sha256,
 				const unsigned char *buf, uint32_t len);
 PSPUBLIC void psSha256Final(psSha256_t *sha256,
 				unsigned char hash[SHA256_HASHLEN]);
-#ifdef USE_CL_DIGESTS
-PSPUBLIC void psSha256Sync(psSha256_t * md, int sync_all);
-PSPUBLIC void psSha256Cpy(psSha256_t * d, const psSha256_t * s);
-#else
 static __inline void psSha256Sync(psSha256_t * md, int sync_all)
 {
 }
@@ -323,20 +331,21 @@ static __inline void psSha256Cpy(psSha256_t * d, const psSha256_t * s)
 {
 	memcpy(d, s, sizeof(psSha256_t));
 }
-#endif /* USE_CL_DIGESTS */
 #endif /* USE_SHA256 */
 
 /******************************************************************************/
 #ifdef USE_SHA384
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psSha384PreInit(psSha384_t *sha384)
+{
+	/* Nothing to pre-initialize for native crypto. */
+}
 PSPUBLIC int32_t psSha384Init(psSha384_t *sha384);
 PSPUBLIC void psSha384Update(psSha384_t *sha384,
 				const unsigned char *buf, uint32_t len);
 PSPUBLIC void psSha384Final(psSha384_t *sha384,
 				unsigned char hash[SHA384_HASHLEN]);
-#ifdef USE_CL_DIGESTS
-PSPUBLIC void psSha384Sync(psSha384_t * md, int sync_all);
-PSPUBLIC void psSha384Cpy(psSha384_t * d, const psSha384_t * s);
-#else
 static __inline void psSha384Sync(psSha384_t * md, int sync_all)
 {
 }
@@ -344,20 +353,21 @@ static __inline void psSha384Cpy(psSha384_t * d, const psSha384_t * s)
 {
 	memcpy(d, s, sizeof(psSha384_t));
 }
-#endif /* USE_CL_DIGESTS */
 #endif /* USE_SHA384 */
 
 #ifdef USE_SHA512
 /******************************************************************************/
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psSha512PreInit(psSha512_t *sha512)
+{
+	/* Nothing to pre-initialize for native crypto. */
+}
 PSPUBLIC int32_t psSha512Init(psSha512_t *md);
 PSPUBLIC void psSha512Update(psSha512_t *md,
 				const unsigned char *buf, uint32_t len);
 PSPUBLIC void psSha512Final(psSha512_t *md,
 				unsigned char hash[SHA512_HASHLEN]);
-#ifdef USE_CL_DIGESTS
-PSPUBLIC void psSha512Sync(psSha512_t * md, int sync_all);
-PSPUBLIC void psSha512Cpy(psSha512_t * d, const psSha512_t * s);
-#else
 static __inline void psSha512Sync(psSha512_t * md, int sync_all)
 {
 }
@@ -365,7 +375,6 @@ static __inline void psSha512Cpy(psSha512_t * d, const psSha512_t * s)
 {
 	memcpy(d, s, sizeof(psSha512_t));
 }
-#endif /* USE_CL_DIGESTS */
 #endif /* USE_SHA512 */
 
 /******************************************************************************/
@@ -664,6 +673,9 @@ PSPUBLIC int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 s
 					psX509Cert_t **outcert, int32 flags);
 PSPUBLIC void psX509FreeCert(psX509Cert_t *cert);
 #ifdef USE_CERT_PARSE
+PSPUBLIC int32 psX509GetCertPublicKeyDer(psX509Cert_t *cert,
+					unsigned char *der_out,
+					uint16_t *der_out_len);
 PSPUBLIC int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
 					psX509Cert_t *issuerCert, psX509Cert_t **foundIssuer,
 					void *hwCtx, void *poolUserPtr);

@@ -69,7 +69,6 @@ typedef int SOCKET;
 /*
 	Timeout and debug settings
 */
-
 #define MIN_WAIT_SECS	1	/* SHOULD be 1.  Also the default */
 #define MAX_WAIT_SECS	32 /* SHOULD be 2^x as time is doubled on timeout */
 

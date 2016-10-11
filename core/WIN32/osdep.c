@@ -118,16 +118,14 @@ int32_t psCreateMutex(psMutex_t *mutex, uint32_t flags)
 	return PS_SUCCESS;
 }
 
-int32_t psLockMutex(psMutex_t *mutex)
+void psLockMutex(psMutex_t *mutex)
 {
 	EnterCriticalSection(mutex);
-	return PS_SUCCESS;
 }
 
-int32_t psUnlockMutex(psMutex_t *mutex)
+void psUnlockMutex(psMutex_t *mutex)
 {
 	LeaveCriticalSection(mutex);
-	return PS_SUCCESS;
 }
 
 void psDestroyMutex(psMutex_t *mutex)

@@ -1,9 +1,10 @@
 ##
 # Common Makefile definitions.
-# @version $Format:%h%d$
+#
 # Copyright (c) 2013-2016 INSIDE Secure Corporation. All Rights Reserved.
 #
 #-------------------------------------------------------------------------------
+
 
 #-------------------------------------------------------------------------------
 ## Makefile variables that must be defined in this file
@@ -29,7 +30,7 @@ BUILD:=release  ##< Release build strips binary and optimizes
 #-------------------------------------------------------------------------------
 ## Makefile variables that are created by this file
 # @param[out] $(OSDEP) Set to platform code directory (./core/$OSDEP/osdep.c), based on $(CC)
-# @param[out] $(CCARCH) Set to compiler's target architecture, based on $(CC)
+# @param[out] $(CCARCH) Set to compilers target architecture, based on $(CC)
 # @param[out] $(STRIP) Set to the executable to use to strip debug symbols from executables
 # @param[out] $(STROPS) Human readable description of relevant MatrixSSL compile options.
 # @param[out] $(O) Set to the target platform specific object file extension
@@ -41,6 +42,9 @@ BUILD:=release  ##< Release build strips binary and optimizes
 
 ## Auto-detect cross compiler for some platforms based on environment variables
 
+# Execute commands in environment with default locale.
+CLEAN_ENV=LC_ALL=POSIX
+
 ## Based on the value of CC, determine the target, eg.
 #  x86_64-redhat-linux
 #  i686-linux-gnu
@@ -51,7 +55,19 @@ BUILD:=release  ##< Release build strips binary and optimizes
 #  mips-linux-gnu
 #  mipsisa64-octeon-elf-gcc
 #  powerpc-linux-gnu
-CCARCH:=$(shell $(CC) -v 2>&1 | sed -n '/Target: / s/// p')
+#  i386-redhat-linux
+#  x86_64-redhat-linux
+ifeq '$(CCARCH)' ''
+CCARCH:=$(shell $(CLEAN_ENV) $(CC) -v 2>&1 | sed -n '/Target: / s/// p')
+ifeq '$(CCARCH)' ''
+# Could not obtain target triplet: Try still -dumpmachine (supported by
+# some versions of GCC)
+CCARCH:=$(shell $(CLEAN_ENV) $(CC) -dumpmachine)
+ifeq '$(CCARCH)' ''
+$(error Unable to determine compiler architecture. $(CC) -v or $(CC) -dumpmachine does not work. Please, provide CCARCH manually via an environment variable.)
+endif
+endif
+endif
 CCVER:=$(shell $(CC) --version 2>&1)
 STROPTS:="Built for $(CCARCH)"
 
@@ -78,6 +94,21 @@ ifneq (,$(findstring -apple,$(CCARCH)))
  endif
 endif
 
+# Select options affecting C language and API standards to enable.
+C_STD:=
+ifneq (,$(findstring (GCC),$(CCVER)))
+ ifneq (,$(findstring 3.4,$(CCVER)))
+  # Enable linux platform extensions for APIs and provide the length of
+  # types.
+  # Also remove spurious warnings on some opaque types
+  ifneq (,$(findstring x86_64,$(CCARCH)))
+   C_STD := -D_GNU_SOURCE -D__SIZEOF_LONG_LONG__=8 -DSIZEOF_LONG=8
+  else
+   C_STD := -D_GNU_SOURCE -D__SIZEOF_LONG_LONG__=8 -DSIZEOF_LONG=4
+  endif
+ endif
+endif
+
 #Manually enable debug here
 #MATRIX_DEBUG:=1
 
@@ -93,15 +124,7 @@ ifndef MATRIX_DEBUG
  endif
  STRIP:=strip
 endif
-CFLAGS+=$(OPT)
-
-# Detect multicore and do parallel build. Uncomment if desired:
-#> ifneq (,$(findstring -linux,$(CCARCH)))
-#>  JOBS:=-j$(shell grep -ic processor /proc/cpuinfo)
-#> endif
-#> ifneq (,$(findstring apple,$(CCARCH)))
-#>  JOBS:=-j$(shell sysctl -n machdep.cpu.thread_count)
-#> endif
+CFLAGS+=$(OPT) $(C_STD)
 
 default: $(BUILD)
 
@@ -110,6 +133,10 @@ debug:
 
 release:
 	@$(MAKE) $(JOBS) compile
+
+ifeq ($(SSH_PACKAGE),1)
+ CFLAGS+=-DSSH_PACKAGE
+endif
 
 # 64 Bit Intel Target
 ifneq (,$(findstring x86_64-,$(CCARCH)))
@@ -150,13 +177,16 @@ ifneq (,$(findstring i686-,$(CCARCH)))
  CFLAGS+=-m32
  STROPTS+=", 32-bit Intel RSA/ECC ASM"
 endif
+ifneq (,$(findstring i386-,$(CCARCH)))
+ STROPTS+=", 32-bit Intel RSA/ECC ASM"
+endif
 
 # MIPS Target
 ifneq (,$(findstring mips-,$(CCARCH)))
  STROPTS+=", 32-bit MIPS RSA/ECC ASM"
 endif
 
-# MIPS64 Target 
+# MIPS64 Target
 ifneq (,$(filter mips%64-,$(CCARCH)))
 endif
 
@@ -205,7 +235,7 @@ CFLAGS_OMIT_FRAMEPOINTER=-fomit-frame-pointer
 CFLAGS+=-ffunction-sections -fdata-sections $(CFLAGS_OMIT_FRAMEPOINTER)
 endif
 
-# If we're using clang (it may be invoked via 'cc' or 'gcc'),
+# If we are using clang (it may be invoked via 'cc' or 'gcc'),
 #  handle minor differences in compiler behavior vs. gcc
 ifneq (,$(findstring clang,$(CCVER)))
  CFLAGS+=-Wno-error=unused-variable -Wno-error=\#warnings -Wno-error=\#pragma-messages
@@ -213,13 +243,19 @@ endif
 
 # Handle differences between the OS X ld and GNU ld
 ifneq (,$(findstring -apple,$(CCARCH)))
- LDFLAGS+=-Wl,-dead_strip
+ LDFLAGS_GARBAGE_COLLECTION=-Wl,-dead_strip
 else
- LDFLAGS+=-Wl,--gc-sections
+ LDFLAGS_GARBAGE_COLLECTION+=-Wl,--gc-sections
+endif
+
+# Optionally turn on garbage collection.
+ifeq '$(NO_LINKER_GARBAGE_COLLECTION)' ''
+LDFLAGS += $(LDFLAGS_GARBAGE_COLLECTION)
 endif
 
 CFLAGS+=-I$(MATRIXSSL_ROOT)
 
+#ifdef USE_OPENSSL_CRYPTO
 #USE_OPENSSL_CRYPTO:=1
 ifdef USE_OPENSSL_CRYPTO
  OPENSSL_ROOT:=/opt/openssl-1.0.2d
@@ -229,8 +265,8 @@ ifdef USE_OPENSSL_CRYPTO
   LDFLAGS+=$(OPENSSL_ROOT)/libcrypto.a -ldl
  endif
  ifneq (,$(findstring -apple,$(CCARCH)))
-  # Dynamically link against the sytem default openssl tree
-  # Apple has deprecated the built in openssl, so supress warnings here
+  # Dynamically link against the system default openssl tree
+  # Apple has deprecated the built in openssl, so suppress warnings here
   CFLAGS+=-Wno-error=deprecated-declarations -Wno-deprecated-declarations
   LDFLAGS+=-lcrypto
   OPENSSL_ROOT=included_in_the_OS
@@ -246,7 +282,9 @@ ifdef USE_OPENSSL_CRYPTO
  CFLAGS+=-DUSE_OPENSSL_CRYPTO
  STROPTS+=", USE_OPENSSL_CRYPTO"
 endif
+#endif
 
+#ifdef USE_LIBSODIUM_CRYPTO
 #USE_LIBSODIUM_CRYPTO:=1
 ifdef USE_LIBSODIUM_CRYPTO
  LIBSODIUM_ROOT:=/opt/libsodium-1.0.8/src/libsodium
@@ -261,12 +299,15 @@ ifdef USE_LIBSODIUM_CRYPTO
  CFLAGS+=-DUSE_LIBSODIUM_CRYPTO
  STROPTS+=", USE_LIBSODIUM_CRYPTO"
 endif
+#endif
 
 # Linux Target
 ifneq (,$(findstring -linux,$(CCARCH)))
  OSDEP:=POSIX
  #For USE_HIGHRES_TIME
  LDFLAGS+=-lrt
+ #For multithreading
+ LDFLAGS+=-lpthread
 endif
 
 # OS X Target

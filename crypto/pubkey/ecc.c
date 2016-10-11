@@ -680,6 +680,7 @@ int32_t psEccParsePrivKey(psPool_t *pool,
 	uint32_t			oid;
 	int32_t				asnInt;
 	uint16_t			len;
+    size_t              privkey_len;
 
 	buf = keyBuf;
 	end = buf + keyBufLen;
@@ -701,6 +702,8 @@ int32_t psEccParsePrivKey(psPool_t *pool,
 		psTraceCrypto("Expecting private key octet string\n");
 		return PS_FAILURE;
 	}
+	privkey_len = len;
+
 	psEccInitKey(pool, key, curve);
 	if (pstm_init_for_read_unsigned_bin(pool, &key->k, len) != PS_SUCCESS) {
 		goto L_FAIL;
@@ -785,6 +788,21 @@ int32_t psEccParsePrivKey(psPool_t *pool,
 		}
 		buf += len;
 	}
+	/* Try to parse 'implicitly' encoded optional public key with no
+	   DER header, i.e. assume that all the remaining bytes are public
+	   key bytes. This is not valid ASN.1, but sometimes appears in
+	   practice and parsing it is a requirement for some users. */
+	if (buf < end &&
+		*buf == ANSI_UNCOMPRESSED && /* Uncompressed is the only format we support. */
+		((end-(buf+1)) == privkey_len*2)) /* Pubkey must be 2x privkey size. */
+	{
+		if (psEccX963ImportKey(pool, buf, (end-buf), key, key->curve) < 0) {
+			psTraceCrypto("Unable to parse ECC pubkey from cert\n");
+			goto L_FAIL;
+		}
+		buf += (end-buf);
+	}
+
 	/* Should be at the end */
 	if (end != buf) {
 		/* If this stream came from an encrypted file, there could be
@@ -1641,9 +1659,7 @@ static int32_t eccProjectiveAddPoint(psPool_t *pool, const psEccPoint_t *P,
 	if ((err = pstm_copy(&P->z, &z)) != PS_SUCCESS) { goto done; }
 
 /*
-	Pre-allocated digit.  Used for mul, sqr, AND reduce
-	TODO: haven't fully explored max paDlen
-*/
+	Pre-allocated digit.  Used for mul, sqr, AND reduce*/
 	paDlen = (modulus->used * 2 + 1) * sizeof(pstm_digit);
 	if ((paD = psMalloc(pool, paDlen)) == NULL) {
 		err = PS_MEM_FAIL;
@@ -1914,9 +1930,7 @@ static int32_t eccProjectiveDblPoint(psPool_t *pool, const psEccPoint_t *P,
 	}
 
 /*
-	Pre-allocated digit.  Used for mul, sqr, AND reduce
-	TODO: haven't fully explored max possible paDlen
-*/
+	Pre-allocated digit.  Used for mul, sqr, AND reduce*/
 	paDlen = (modulus->used*2+1) * sizeof(pstm_digit);
 	if ((paD = psMalloc(pool, paDlen)) == NULL) {
 		err = PS_MEM_FAIL;
@@ -2588,8 +2602,8 @@ int32_t psEccDsaSign(psPool_t *pool, const psEccKey_t *privKey,
 			sLen = pstm_unsigned_bin_size(&s);
 
 			/* Signatures can be smaller than the keysize but keep it sane */
-			if (((rLen + 2) >= privKey->curve->size) &&
-					((sLen + 2) >= privKey->curve->size)) {
+			if (((rLen + 6) >= privKey->curve->size) &&
+					((sLen + 6) >= privKey->curve->size)) {
 				if (pstm_iszero(&s) == PS_FALSE) {
 					break;
 				}

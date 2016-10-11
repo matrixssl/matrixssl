@@ -3,6 +3,9 @@
  *	@version $Format:%h%d$
  *
  *	Configuration settings for building the MatrixSSL library.
+ *	This configuration is intended to be used in FIPS Mode of operation.
+ *	The configuration aims to be compatible with NIST SP 800-52 Rev 1 and
+ *	to enable the most commonly used cipher suites.
  */
 /*
  *	Copyright (c) 2013-2016 INSIDE Secure Corporation
@@ -73,40 +76,40 @@ extern "C" {
 */
 
 /** Ephemeral ECC DH keys, ECC DSA certificates */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA /**< @security NIST_SHOULD */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA /**< @security NIST_MAY */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA/**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA/**< @security NIST_MAY */
 /* TLS 1.2 ciphers */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 /**< @security NIST_SHOULD */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384 /**< @security NIST_MAY */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 /**< @security NIST_SHOULD */
-#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 /**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256/**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384/**< @security NIST_MAY */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256/**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384/**< @security NIST_SHOULD */
 //#define USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
 
 /** Ephemeral ECC DH keys, RSA certificates */
-#define USE_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA /**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA/**< @security NIST_SHOULD */
 #define USE_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
 /* TLS 1.2 ciphers */
-#define USE_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 /**< @security NIST_SHOULD */
-#define USE_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 /**< @security NIST_MAY */
-#define USE_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 /**< @security NIST_SHOULD */
-#define USE_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 /**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256/**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384/**< @security NIST_MAY */
+#define USE_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256/**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384/**< @security NIST_SHOULD */
 //#define USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 
 /** Ephemeral Diffie-Hellman ciphersuites, with RSA certificates */
-//#define USE_TLS_DHE_RSA_WITH_AES_128_CBC_SHA
-//#define USE_TLS_DHE_RSA_WITH_AES_256_CBC_SHA
+#define USE_TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+#define USE_TLS_DHE_RSA_WITH_AES_256_CBC_SHA
 /* TLS 1.2 ciphers */
-//#define USE_TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
-//#define USE_TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+#define USE_TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+#define USE_TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
 
 /** Non-Ephemeral RSA keys/certificates */
-#define USE_TLS_RSA_WITH_AES_128_CBC_SHA /**< @security NIST_SHALL */
-#define USE_TLS_RSA_WITH_AES_256_CBC_SHA /**< @security NIST_SHOULD */
+#define USE_TLS_RSA_WITH_AES_128_CBC_SHA/**< @security NIST_SHALL */
+#define USE_TLS_RSA_WITH_AES_256_CBC_SHA/**< @security NIST_SHOULD */
 /* TLS 1.2 ciphers */
-#define USE_TLS_RSA_WITH_AES_128_CBC_SHA256 /**< @security NIST_MAY */
-#define USE_TLS_RSA_WITH_AES_256_CBC_SHA256 /**< @security NIST_MAY */
-#define USE_TLS_RSA_WITH_AES_128_GCM_SHA256 /**< @security NIST_SHALL */
-#define USE_TLS_RSA_WITH_AES_256_GCM_SHA384 /**< @security NIST_SHOULD */
+#define USE_TLS_RSA_WITH_AES_128_CBC_SHA256/**< @security NIST_MAY */
+#define USE_TLS_RSA_WITH_AES_256_CBC_SHA256/**< @security NIST_MAY */
+#define USE_TLS_RSA_WITH_AES_128_GCM_SHA256/**< @security NIST_SHALL */
+#define USE_TLS_RSA_WITH_AES_256_GCM_SHA384/**< @security NIST_SHOULD */
 
 /******************************************************************************/
 /**
@@ -114,44 +117,44 @@ extern "C" {
 */
 
 /** Ephemeral Diffie-Hellman ciphersuites, with RSA certificates */
-//#define USE_SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA
+#define USE_SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA
 
 /** Ephemeral Diffie-Hellman ciphersuites, with PSK authentication */
-//#define USE_TLS_DHE_PSK_WITH_AES_128_CBC_SHA /**< @security NIST_SHOULD_NOT */
-//#define USE_TLS_DHE_PSK_WITH_AES_256_CBC_SHA /**< @security NIST_SHOULD_NOT */
+#define USE_TLS_DHE_PSK_WITH_AES_128_CBC_SHA/**< @security NIST_SHOULD_NOT */
+#define USE_TLS_DHE_PSK_WITH_AES_256_CBC_SHA/**< @security NIST_SHOULD_NOT */
 
 /** Ephemeral ECC DH keys, RSA certificates */
-//#define USE_TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA /**< @security NIST_SHOULD */
+#define USE_TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA/**< @security NIST_SHOULD */
 
 /** Pre-Shared Key Ciphers.
 	NIST SP 800-52 Rev 1 recommends against using PSK unless neccessary
     See NIST SP 800-52 Rev 1 Appendix C */
-//#define USE_TLS_PSK_WITH_AES_128_CBC_SHA /**< @security NIST_SHOULD_NOT */
-//#define USE_TLS_PSK_WITH_AES_256_CBC_SHA /**< @security NIST_SHOULD_NOT */
+#define USE_TLS_PSK_WITH_AES_128_CBC_SHA/**< @security NIST_SHOULD_NOT */
+#define USE_TLS_PSK_WITH_AES_256_CBC_SHA/**< @security NIST_SHOULD_NOT */
 /* TLS 1.2 ciphers */
-//#define USE_TLS_PSK_WITH_AES_128_CBC_SHA256 /**< @security NIST_SHOULD_NOT */
-//#define USE_TLS_PSK_WITH_AES_256_CBC_SHA384  /**< @security NIST_SHOULD_NOT */
+#define USE_TLS_PSK_WITH_AES_128_CBC_SHA256/**< @security NIST_SHOULD_NOT */
+#define USE_TLS_PSK_WITH_AES_256_CBC_SHA384/**< @security NIST_SHOULD_NOT */
 
 /** Non-Ephemeral ECC DH keys, ECC DSA certificates */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA /**< @security NIST_MAY */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA /**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA/**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA/**< @security NIST_MAY */
 /* TLS 1.2 ciphers */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256 /**< @security NIST_MAY */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384 /**< @security NIST_MAY */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256 /**< @security NIST_MAY */
-//#define USE_TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384 /**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256/**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384/**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256/**< @security NIST_MAY */
+#define USE_TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384/**< @security NIST_MAY */
 
 /** Non-Ephemeral ECC DH keys, RSA certificates */
-//#define USE_TLS_ECDH_RSA_WITH_AES_128_CBC_SHA
-//#define USE_TLS_ECDH_RSA_WITH_AES_256_CBC_SHA
+#define USE_TLS_ECDH_RSA_WITH_AES_128_CBC_SHA
+#define USE_TLS_ECDH_RSA_WITH_AES_256_CBC_SHA
 /* TLS 1.2 ciphers */
-//#define USE_TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256
-//#define USE_TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384
-//#define USE_TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256
-//#define USE_TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384
+#define USE_TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256
+#define USE_TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384
+#define USE_TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256
+#define USE_TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384
 
 /** Non-Ephemeral RSA keys/certificates */
-//#define USE_SSL_RSA_WITH_3DES_EDE_CBC_SHA /**< @security NIST_SHALL */
+#define USE_SSL_RSA_WITH_3DES_EDE_CBC_SHA/**< @security NIST_SHALL */
 
 /** @note Some of (non-mandatory) cipher suites mentioned in NIST SP 800-52
     Rev 1 are not supported by the MatrixSSL / MatrixDTLS.
@@ -170,11 +173,9 @@ extern "C" {
 	@see ECC_EPHEMERAL_CACHE_SECONDS and ECC_EPHEMERAL_CACHE_USAGE
 
 	@security Do not cache Ephemeral ECC keys as it is against some standards,
-	including NIST SP 800-56A.
+	including NIST SP 800-56A, when in FIPS 140-2 mode of operation.
 */
-#ifdef USE_NIST_GUIDELINES
-#define NO_ECC_EPHEMERAL_CACHE /**< @security NIST_SHALL */
-#endif
+//#define NO_ECC_EPHEMERAL_CACHE /**< @security NIST_SHALL */
 
 /******************************************************************************/
 /**
@@ -185,7 +186,9 @@ extern "C" {
 		USE_TLS_1_0_AND_ABOVE
 	@note There is no option for enabling SSL3.0 at this level
 */
-#define USE_TLS_1_1_AND_ABOVE /**< @security default 1_1_AND_ABOVE */
+#define USE_TLS_1_1_AND_ABOVE/**< @security default 1_1_AND_ABOVE */
+//#define USE_TLS_1_2_AND_ABOVE /**< @security better than 1_1_AND_ABOVE if no backwards compatiblity concerns */
+//#define USE_TLS_1_0_AND_ABOVE /**< @security no longer recommended. */
 
 /******************************************************************************/
 /**
@@ -193,7 +196,7 @@ extern "C" {
 	Enables DTLS in addition to TLS.
 	@pre TLS_1_1
 */
-//#define USE_DTLS
+#define USE_DTLS
 
 /******************************************************************************/
 /**
@@ -204,7 +207,7 @@ extern "C" {
 
 /******************************************************************************/
 /**
-	Client certifiate authentication
+	Client certificate authentication
 */
 #define USE_CLIENT_AUTH
 
@@ -282,8 +285,8 @@ extern "C" {
 	however, this will also immediately expire SESSION_TICKETS below.
 */
 #ifdef USE_SERVER_SIDE_SSL
-#define SSL_SESSION_TABLE_SIZE	32
-#define SSL_SESSION_ENTRY_LIFE	(86400*1000) /* one day, in milliseconds */
+#define SSL_SESSION_TABLE_SIZE 32
+#define SSL_SESSION_ENTRY_LIFE (86400*1000)/* one day, in milliseconds */
 #endif
 
 /******************************************************************************/
@@ -293,13 +296,7 @@ extern "C" {
 	SSL_SESSION_TICKET_LIST_LEN is the max size of the server key list.
 */
 #define USE_STATELESS_SESSION_TICKETS
-
-/******************************************************************************/
-/**
-	Only available server side. Allows matrixSSL to chose the strongest cipher
-	from the client's supported list.
-*/
-//#define USE_SERVER_PREFERRED_CIPHERS
+#define SSL_SESSION_TICKET_LIST_LEN 32
 
 /******************************************************************************/
 /**
@@ -312,8 +309,8 @@ extern "C" {
 	SSL_DEFAULT_x_BUF_SIZE	value in bytes, maximum SSL_MAX_BUF_SIZE
  */
 #ifndef USE_DTLS
-#define	SSL_DEFAULT_IN_BUF_SIZE		1500		/* Base recv buf size, bytes */
-#define	SSL_DEFAULT_OUT_BUF_SIZE	1500		/* Base send buf size, bytes */
+#can_define	SSL_DEFAULT_IN_BUF_SIZE		1500		/* Base recv buf size, bytes */
+#can_define	SSL_DEFAULT_OUT_BUF_SIZE	1500		/* Base send buf size, bytes */
 #else
 /******************************************************************************/
 /**
@@ -323,9 +320,9 @@ extern "C" {
 	limitation in MatrixDTLS so connections will not succeed if a peer has a
 	PTMU set larger than this value.
 */
-#define DTLS_PMTU  1500  /* 1500 Default/Maximum datagram len */
-#define SSL_DEFAULT_IN_BUF_SIZE		DTLS_PMTU  /* See PMTU comments above */
-#define SSL_DEFAULT_OUT_BUF_SIZE	DTLS_PMTU  /* See PMTU comments above */
+#define DTLS_PMTU 1500/* 1500 Default/Maximum datagram len */
+#define SSL_DEFAULT_IN_BUF_SIZE DTLS_PMTU/* See PMTU comments above */
+#define SSL_DEFAULT_OUT_BUF_SIZE DTLS_PMTU/* See PMTU comments above */
 
 //#define DTLS_SEND_RECORDS_INDIVIDUALLY /* Max one record per datagram */
 #endif

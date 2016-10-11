@@ -315,10 +315,12 @@ int32_t psDhGenKeyInts(psPool_t *pool, uint16_t keysize,
 	if (key == NULL) {
 		return PS_ARG_FAIL;
 	}
+
 	/* Detect parameters with too small g. */
 	if (pstm_count_bits(g) < 2) {
 		return PS_ARG_FAIL;
 	}
+
 	privsize = keysize;
 #ifndef USE_LARGE_DH_PRIVATE_KEYS
 /*
@@ -433,6 +435,7 @@ int32_t psDhGenSharedSecret(psPool_t *pool,
 	if ((err = pstm_read_unsigned_bin(&p, pBin, pBinLen)) != PS_SUCCESS) {
 		goto error;
 	}
+
 	/* Check key->pub is within correct range 2 <= pub < p - 1. */
 	if (pstm_count_bits(&pubKey->pub) < 2) {
 		err = PS_FAILURE;
@@ -445,6 +448,7 @@ int32_t psDhGenSharedSecret(psPool_t *pool,
 		err = PS_FAILURE;
 		goto error;
 	}
+
 	if ((err = pstm_exptmod(pool, &pubKey->pub, &privKey->priv, &p,
 			&tmp)) != PS_SUCCESS) {
 		goto error;

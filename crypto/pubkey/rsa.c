@@ -345,6 +345,7 @@ int32_t psRsaParseAsnPubKey(psPool_t *pool,
 		Standard RSA form - SHA-1 hash of the value of the BIT STRING
 		subjectPublicKey [excluding the tag, length, and number of unused
 		bits] */
+	psSha1PreInit(&dc.sha1);
 	psSha1Init(&dc.sha1);
 	psSha1Update(&dc.sha1, p, keylen - 1);
 	psSha1Final(&dc.sha1, sha1KeyHash);

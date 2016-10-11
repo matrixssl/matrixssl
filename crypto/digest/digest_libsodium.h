@@ -1,5 +1,5 @@
 /**
- *	@file    digest_openssl.h
+ *	@file    digest_sodium.h
  *	@version $Format:%h%d$
  *
  *	Header for libsodium crypto Layer.

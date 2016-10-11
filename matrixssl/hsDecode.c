@@ -34,7 +34,12 @@
 
 #include "matrixsslApi.h"
 
+#ifdef USE_ECC
 #define USE_ECC_EPHEMERAL_KEY_CACHE
+#endif
+
+#define COMPRESSION_METHOD_NULL                0x0
+#define COMPRESSION_METHOD_DEFLATE     0x1
 
 /* Errors from these routines must either be MATRIXSSL_ERROR or PS_MEM_FAIL */
 
@@ -44,9 +49,10 @@
 int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
 {
 	unsigned char	*suiteStart, *suiteEnd;
-	unsigned char	compareMin, compareMaj, suiteLen, compLen, serverHighestMinor;
+	unsigned char	compareMin, compareMaj, compLen, serverHighestMinor;
+	uint32			suiteLen;
 	uint32			resumptionOnTrack, cipher = 0;
-	int32			rc;
+	int32			rc, i;
 	unsigned char	*c;
 #ifdef USE_ECC_CIPHER_SUITE
 	const psEccCurve_t	*curve;
@@ -71,7 +77,18 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
 
 	ssl->reqMajVer = *c; c++;
 	ssl->reqMinVer = *c; c++;
-	
+
+#ifndef USE_SSL_PROTOCOL_VERSIONS_OTHER_THAN_3
+	/* RFC 5246 Suggests to accept all RSA minor versions, but only
+	   major version 0x03 (SSLv3, TLS 1.0, TLS 1.1, TLS 1.2, TLS 1.3 etc) */
+	if (ssl->reqMajVer != 0x03 && ssl->reqMajVer != DTLS_MAJ_VER) {
+		/* Consider invalid major version protocol version error. */
+		ssl->err = SSL_ALERT_PROTOCOL_VERSION;
+		psTraceInfo("Won't support client's SSL major version\n");
+		return MATRIXSSL_ERROR;
+	}
+#endif /* USE_SSL_PROTOCOL_VERSIONS_OTHER_THAN_3 */
+
 	/*	Client should always be sending highest supported protocol.  Server
 		will reply with a match or a lower version if enabled (or forced). */
 	if (ssl->majVer != 0) {
@@ -347,6 +364,7 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
 				}
 			}
 		}
+		
 		/*	Compression parameters */
 		if (end - c < 1) {
 			ssl->err = SSL_ALERT_DECODE_ERROR;
@@ -358,6 +376,19 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
 			ssl->err = SSL_ALERT_DECODE_ERROR;
 			psTraceInfo("Invalid compression header length\n");
 			return MATRIXSSL_ERROR;
+		}
+		/* Per TLS RFCs proposing null compression is MUST. Check the other end
+		   has proposed null compression (amongst possible other choices). */
+		for (i = 0; i < compLen; i++) {
+				if (c[i] == COMPRESSION_METHOD_NULL) {
+						break;
+				}
+		}
+		if (i == compLen) {
+				/* Note, also catches compLen == 0 */
+				ssl->err = SSL_ALERT_DECODE_ERROR;
+				psTraceInfo("No compression.null proposed\n");
+				return MATRIXSSL_ERROR;
 		}
 #ifdef USE_ZLIB_COMPRESSION
 		while (compLen > 0) {
@@ -1127,7 +1158,7 @@ int32 parseCertificateVerify(ssl_t *ssl,
 
 	c = *cp;
 	rc = 0;
-
+	PS_VARIABLE_SET_BUT_UNUSED(rc); /* Note: Only used ifdef USE_ECC. */
 	psTraceHs(">>> Server parsing CERTIFICATE_VERIFY message\n");
 
 #ifdef USE_TLS_1_2
@@ -2899,6 +2930,18 @@ SKIP_CERT_CHAIN_INIT:
 				}
 				return MATRIXSSL_ERROR;
 			}
+#ifdef ALLOW_VERSION_1_ROOT_CERT_PARSE
+			/* When ALLOW_VERSION_1_ROOT_CERT_PARSE is defined,
+			   psX509ParseCert lets version 1 certificates through, in
+			   order to support loading of locally trusted v1 root
+			   certs. This means that we need to explicitly reject v1
+			   certificates sent to us by the peer. They cannot be
+			   trusted due to missing Basic Constraints, etc. */
+			if (cert->version != 2) {
+			    psX509FreeCert(cert);
+			    ssl->err = SSL_ALERT_BAD_CERTIFICATE;
+			}
+#endif /* ALLOW_VERSION_1_ROOT_CERT_PARSE */
 			c += parseLen;
 
 			if (i++ == 0) {

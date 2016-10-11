@@ -416,12 +416,7 @@ int main(int argc, char **argv)
 			passing the output as the basis for the input each time.
 */
 			in = out;
-/*
-			TODO: The reason the out pointer switches back and forth is because
-			if the same addr is used for in and out, there is no change to
-			the data (after the first time?) even though the encryption
-			seems to happen.  WHY IS THIS?
-*/
+/**/
 			if (iter % 2) {
 				out = saveout;
 			} else {
@@ -449,7 +444,6 @@ int main(int argc, char **argv)
 		}
 		memset(in, 0x0, keysize);
 
-		/* TODO: find a good way to time more than a single decrypt */
 		psGetTime(&start, NULL);
 		/* coverity[swapped_arguments] */
 		if (psRsaDecryptPub(pool, &privkey, out, keysize, in, sizeof(sigdata), pkaInfo) < 0) {
@@ -482,12 +476,7 @@ int main(int argc, char **argv)
 			passing the output as the basis for the input each time.
 */
 			in = out;
-/*
-			TODO: The reason the out pointer switches back and forth is because
-			if the same addr is used for in and out, there is no change to
-			the data (after the first time?) even though the encryption
-			seems to happen.  WHY IS THIS?
-*/
+/**/
 			if (iter % 2) {
 				out = saveout;
 			} else {
@@ -505,9 +494,7 @@ int main(int argc, char **argv)
 #endif /* ENCRYPT_OP */
 
 #ifdef DECRYPT_OP
-/*
-		TODO: find a good way to time more than a single decrypt
-*/
+/**/
 		if (in == out) {
 			out = saveout;
 		}

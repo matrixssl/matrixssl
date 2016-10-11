@@ -2257,7 +2257,6 @@ static int32 encryptFlight(ssl_t *ssl, unsigned char **end)
 		}
 
 		if (ssl->flags & SSL_FLAGS_NONCE_W) {
-			/* TODO: what about app data records? delayed seq needed? */
 			out.start = out.buf = out.end = msg->start - ssl->recordHeadLen -
 				TLS_EXPLICIT_NONCE_LEN;
 #ifdef USE_DTLS
@@ -4816,9 +4815,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
 	cookieLen = 0;
 #ifdef USE_DTLS
 	if (ssl->flags & SSL_FLAGS_DTLS) {
-/*
-		TODO: DTLS make sure a block cipher suite is being used
-*/
+		/* TODO DTLS make sure a block cipher suite is being used */
 		if (ssl->haveCookie) {
 			cookieLen = ssl->cookieLen + 1; /* account for length byte */
 		} else {
@@ -5968,12 +5965,24 @@ static int32 nowDoCvPka(ssl_t *ssl, psBuf_t *out)
 #ifdef USE_TLS_1_2
 		/* Tweak if needed */
 		if (ssl->flags & SSL_FLAGS_TLS_1_2) {
-			if (pka->inlen == SHA1_HASH_SIZE) {
+			switch(pka->inlen) {
+#ifdef USE_SHA1
+			case SHA1_HASH_SIZE:
 				sslSha1SnapshotHSHash(ssl, msgHash);
-			} else if (pka->inlen == SHA384_HASH_SIZE) {
+				break;
+#endif
+#ifdef USE_SHA384
+			case SHA384_HASH_SIZE:
 				sslSha384SnapshotHSHash(ssl, msgHash);
-			} else if (pka->inlen == SHA512_HASH_SIZE) {
+				break;
+#endif
+#ifdef USE_SHA512
+			case SHA512_HASH_SIZE:
 				sslSha512SnapshotHSHash(ssl, msgHash);
+				break;
+#endif
+			default:
+				break;
 			}
 #ifdef USE_DTLS
 			ssl->ecdsaSizeChange = 0;

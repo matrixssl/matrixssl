@@ -243,8 +243,27 @@ decodeMore:
 				*error = PS_PROTOCOL_FAIL;
 				return MATRIXSSL_ERROR;
 			}
-		}
+		} else /* Note: The else branch (not DTLS) is below,
+			  in code outside USE_DTLS */
 #endif /* USE_DTLS */
+#ifndef USE_SSL_PROTOCOL_VERSIONS_OTHER_THAN_3
+		{
+			/* RFC 5246 Suggests to accept all RSA minor versions,
+			   but only major version 0x03 (SSLv3, TLS 1.0,
+			   TLS 1.1, TLS 1.2, TLS 1.3 etc) */
+			if (ssl->rec.majVer != 0x03) {
+				/* Consider invalid major version protocol
+				   version error. */
+				ssl->err = SSL_ALERT_PROTOCOL_VERSION;
+				psTraceInfo(
+					"Won't support client's SSL major version\n");
+				return MATRIXSSL_ERROR;
+			}
+		}
+#else
+		{ } /* No check for rec.MajVer. */
+#endif /* USE_SSL_PROTOCOL_VERSIONS_OTHER_THAN_3 */
+
 		ssl->rec.len = *c << 8; c++;
 		ssl->rec.len += *c; c++;
 	} else {
@@ -796,7 +815,6 @@ ADVANCE_TO_APP_DATA:
 			/* Run this helper regardless of error status thus far */
 			rc = addCompressCount(ssl, padLen);
 			if (macError == 0) {
-#ifndef USE_CL_DIGESTS
 				psDigestContext_t	md;
 				unsigned char		tmp[128];
 				switch (ssl->deMacSize) {
@@ -834,11 +852,6 @@ ADVANCE_TO_APP_DATA:
 					psAssert(0);
 					break;
 				}
-#else
-				/* With FIPS implementation,
-				   psHmacSha*Tls functions shall be used to
-				   mitigate Lucky13. */
-#endif /* USE_CL_DIGESTS */
 			}
 		}
 #endif /* LUCKY13 */
@@ -2131,6 +2144,11 @@ SKIP_HSHEADER_PARSE:
 #ifdef USE_SERVER_SIDE_SSL
 	case SSL_HS_CLIENT_HELLO:
 		psAssert(rc == 0); /* checking to see if this is the correct default */
+		if (c + hsLen != end) {
+			ssl->err = SSL_ALERT_DECODE_ERROR;
+			psTraceInfo("Invalid length for Client Hello.\n");
+			return MATRIXSSL_ERROR;
+		}
 		rc = parseClientHello(ssl, &c, end);
 		/* SSL_PROCESS_DATA is a valid code to indicate the end of a flight */
 		if (rc < 0 && rc != SSL_PROCESS_DATA) {

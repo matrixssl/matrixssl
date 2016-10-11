@@ -159,6 +159,7 @@ enum PACKED {
 enum PACKED {
 	PS_NOKEY = 0,
 	PS_RSA,
+	PS_DSA,
 	PS_ECC,
 	PS_DH
 };
@@ -167,7 +168,8 @@ enum PACKED {
 enum PACKED {
 	RSA_TYPE_SIG = 5,
 	ECDSA_TYPE_SIG,
-	RSAPSS_TYPE_SIG
+	RSAPSS_TYPE_SIG,
+	DSA_TYPE_SIG
 };
 
 /**

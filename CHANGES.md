@@ -1,6 +1,101 @@
 MatrixSSL Release Notes
 ========
 
+#Changes in 3.8.6
+--------
+> **Version 3.8.6**
+> October 2016
+> *&copy; INSIDE Secure - 2016 - All Rights Reserved*
+
+1. BUG FIXES
+ - Critical parsing bug for X.509 certificates
+ - Critical TLS handshake parsing bugs
+ - 4096 bit RSA key generation regression
+ - General cleanup of build
+ - MatrixSSH compatibility issue
+2. FEATURES AND IMPROVEMENTS
+ - New configuration system for build options
+ - `core/` changes
+ - X.509 parsing and generation
+ - `crypto/` changes
+ - Removed OpenSSL API Emulation
+
+#1 BUG FIXES
+
+##Critical parsing bug for X.509 certificates
+Security Researcher [Craig Young](http://www.tripwire.com/state-of-security/contributors/craig-young/) reported two issues related to X.509 certificate parsing. An error in parsing a maliciously formatted Subject Alt Name field in a certificate could cause a crash due to a write beyond buffer and subsequent free of an unallocated block of memory. An error in parsing a maliciously formatted ASN.1 Bit Field primitive could cause a crash due to a memory read beyond allocated memory.
+
+##Critical TLS handshake parsing bugs
+Security Researcher [Andreas Walz](http://ivesk.hs-offenburg.de/) reported three issues related to processing the ClientHello message.
+
+ - The length of the TLS record was not being strictly checked against the length of the extensions field, so that additional unparsed data could be added between the end of extensions and the end of the record. This presents some level of uncertainty in how extensions may be interpreted and could present a security issue.
+ - ClientHello parsing was not verifying that a NULL compression suite was sent by the client, as required by the RFC. This did not present a security issue (NULL compression was always forced), but improves strict adherence to the specification.
+ - For TLS connections (not DTLS), the major version proposed in the ClientHello suggested by RFC 5246 to only allow the byte value `0x03`. Now the connection is terminated if a value other than this is suggested. Previously the suggested major version field was simply echoed back in the ServerHello message, and treated as `0x03`.
+
+##4096 bit RSA key generation regression
+In some cases RSA key generation of 4096 bit keys would fail and return with an error code. This regression issue has been fixed and key generation will once again succeed.
+
+##General cleanup of build
+Warnings across multiple platforms and compilers were fixed. Various compile time configuration combination build issues were fixed.
+
+##MatrixSSH compatibility issue
+Newer versions of MatrixSSH server were incompatible with the PuTTY client. A fix has been included and enabled by default `USE_PUTTY_WORKAROUND`. 
+*Note this does not affect the standard MatrixSSL codebase*.
+
+#2 FEATURES AND IMPROVEMENTS
+
+##New configuration system for build options
+A new top level directory `configs/` now holds several sets of configuration files for MatrixSSL to simplify configuration sets. This method also allows custom sets to be developed specific to a given use case (for example a RSA only build). The following three configuration files now are copied at build time from the `configs` directory:
+
+```
+core/coreConfig.h
+crypto/cryptoConfig.h
+matrixssl/matrixsslConfig.h
+```
+
+> **The default configuration settings for MatrixSSL may have changed from your current settings. Please confirm all settings in these three files after updating.**
+
+From a fresh package, the build process is the same as before: simply type `make`. It will build the software using the default configuration options.
+
+To use a different configuration, for example `configs/noecc`:
+
+```
+$ make clean && make all-noecc
+```
+
+Once a configuration is set, `make` and `make clean` will continue to use the same configuration unless a new one is selected as above.
+
+##`core/` changes
+ - Added warning helper macros
+ - Additional `PS_` return codes
+ - Buffer helper APIs in `psbuf.h`
+ - Foundation for `PS_NETWORKING` support for sockets level API
+ - `psMutex_t` API return code change, now returns `void` and will call `abort()` on POSIX platforms.
+ - `test/` new self-test directory
+ - Change in default Linux compile options in `common.mk`
+
+##X.509 parsing and generation
+Added additional field parsing support for X.509, including multiple OU support. Commercial release adds additional certificate creation support, as well as an API set and test suite for programmatically creating certificates. See _MatrixKeyAndCertGeneration.pdf_ for full description.
+
+##`crypto/` changes
+ - Added `*PreInit()` APIs for hash functions for compatibility with FIPS library and hardware token requirements
+ - Added `psX509GetCertPublicKeyDer()` API
+ - Support `dsa_sig` OID for certificates`
+ - Support for `ASN_VISIBLE_STRING`
+ - Moved CRL functionality into `keyformat/crl.c`
+ - Support for parsing an implicitly encoded ECC key without a DER header, as sometimes encountered in the wild.
+ - Added PKCS#8 import
+ - `ALLOW_VERSION_1_ROOT_CERT_PARSE` configuration option for loading legacy v1 certificates as trusted roots only (default not enabled). Loading as intermediate or leaf certificates is insecure and still not allowed.
+
+##Removed OpenSSL API Emulation
+ - `opensslApi.c` and `opensslSocket.c` files removed temporarily in anticipation of moving to a more fully supported OpenSSL layer.
+
+#Changes in 3.8.5
+--------
+> **Version 3.8.5**
+> September 2016
+> *Note: 3.8.5 was a limited customer release only.*
+
 #Changes in 3.8.4
 --------
 > **Version 3.8.4**
@@ -255,19 +350,18 @@ TLS cipher suites with CBC mode in TLS 1.1 and 1.2 could have an access violatio
 ##File Locations
 MatrixSSL 3.8.2 introduces directory changes to the distribution since 3.7.2
 
-Functionality|3.7.2|3.8.2
----|---|---
-TLS/DTLS example apps|./apps|./apps/ssl ./apps/dtls
-Test keys and certificates|./sampleCerts|./testkeys
-XCode and Visual Studio projects|*(various)*|./xcode ./visualstudio
+TLS/DTLS example apps moved from ./apps to ./apps/ssl and ./apps/dtls.
+Test keys and certificates moved from ./sampleCerts to ./testkeys.
+XCode and Visual Studio projects moved to ./xcode and ./visualstudio.
 
- Several file changes and renames are present as well:
+Several file changes and renames are present as well:
  
-Functionality|3.7.2|3.8.2
----|---|---
-TLS Decoding|./matrixssl/sslDecode.c|./matrixssl/sslDecode.c ./matrixssl/hsDecode.c ./matrixssl/extDecode.c
-Private key import / export|./crypto/pubkey/pkcs.c.|./crypto/keyformat/pkcs.c
- Configuration consistency and sanity checks|./matrixssl/matrixssllib.h|./matrixssl/matrixsslCheck.h
+TLS Decoding moved ./matrixssl/sslDecode.c from ./matrixssl/sslDecode.c,
+./matrixssl/hsDecode.c and ./matrixssl/extDecode.c.
+Private key import/export from ./crypto/pubkey/pkcs.c. to
+./crypto/keyformat/pkcs.c.
+Configuration consistency and sanity checks from ./matrixssl/matrixssllib.h
+to ./matrixssl/matrixsslCheck.h.
 
 ##Crypto API
 The API layers into the raw cryptographic operations have been significantly changed. The crypto API changes do not affect the main MatrixSSL API for creating TLS sessions, etc. However, developers who interface with crypto directly, or who want to write a custom hardware layer will be interested in the new layer.
@@ -304,34 +398,28 @@ Pointers to values that are not modified are marked `const`.
 ###API Name changes
 API names have been standardized as follows:
 
-API|3.7.2|3.8.2
----|---|---
-Initialization of low level AES block cipher|psAesInitKey|psAesInitBlockKey
-AES CBC|psAesInit, psAesDecrypt, psAesEncrypt|psAesInitCBC, psAesDecryptCBC, psAesEncryptCBC
-SHA2 HMAC|psHmacSha2|psHmacSha256, psHmacSha384
-ECC signature creation|psEccSignHash|psEccDsaSign
-ECC signature validation|psEcDsaValidateSignature|psEccDsaVerify
+Initialization of low level AES block cipher from psAesInitKey to psAesInitBlockKey.
+AES CBC from psAesInit, psAesDecrypt and psAesEncrypt to psAesInitCBC, psAesDecryptCBC and psAesEncryptCBC.
+SHA2 HMAC from psHmacSha2 to psHmacSha256 and psHmacSha384.
+ECC signature creation from psEccSignHash to psEccDsaSign.
+ECC signature validation from psEcDsaValidateSignature to psEccDsaVerify.
 
 ###Standardized Context Names
 Cryptographic functions that used to accept generic “context” identifiers now require the specific key/algorithm structure, for example:
 
-API|3.7.2|3.8.2
----|---|---
-HMAC family|psHmacContext_t|psHmacSha1_t, psHmacSha256_t, ...
-Digest family|psDigestContext_t|psSha1_t, psSha256_t, etc...
-Symmetric family|psCipherContext_t|psAesCbc_t, psAesGcm_t, psDes3Key_t
-RSA private key parse (pkcs1)|psPubKey_t|psRsaKey_t
-ECC private key parse|psPubKey_t|psEccKey_t
+HMAC family from psHmacContext_t to psHmacSha1_t, psHmacSha256_t, ...
+Digest family from psDigestContext_t to psSha1_t, psSha256_t, etc...
+Symmetric family from psCipherContext_t to psAesCbc_t, psAesGcm_t, psDes3Key_t
+RSA private key parse (pkcs1) from psPubKey_t to psRsaKey_t.
+ECC private key parse from psPubKey_t to psEccKey_t.
 
 ###Standardized Return Types
 In general, Init apis return a standard `PS_*` status code. A status code that is not `PS_SUCCESS` typically indicates invalid input parameters or a resource allocation failure.  Update and Clear APIs no longer have a return. For example:
 
-API|3.7.2|3.8.2
----|---|---
-HMAC Init|void|int32_t
-HMAC Final|int32_t|void
-Digest Init|void|int32_t
-Digest Final|int32_t|void
+HMAC Init from void to int32_t.
+HMAC Final from int32_t to void.
+Digest Init from void to int32_t.
+Digest Final from int32_t to void.
 
 ###Memory Model
 In general, APIs now take an allocated cipher structure, and do not allocate the structure in the Init routine. In the past, the memory allocation model was inconsistent.

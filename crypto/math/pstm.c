@@ -34,6 +34,8 @@
 
 #include "../cryptoApi.h"
 
+#include <ctype.h> /* toupper() */
+
 #if defined(USE_MATRIX_RSA) || defined(USE_MATRIX_ECC) || defined(USE_MATRIX_DH) || defined(USE_CL_RSA) || defined(USE_CL_DH) || defined(USE_QUICK_ASSIST_RSA) || defined(USE_QUICK_ASSIST_ECC)
 
 static int32_t pstm_mul_2d(const pstm_int *a, int16_t b, pstm_int *c);
@@ -52,7 +54,7 @@ static int32_t pstm_mul_2d(const pstm_int *a, int16_t b, pstm_int *c);
 int32_t pstm_init_size(psPool_t *pool, pstm_int *a, uint16_t size)
 {
 	uint16_t	x;
-	
+
 	if (size > PSTM_MAX_SIZE) {
 		return PSTM_MEM;
 	}
@@ -485,9 +487,7 @@ int32_t pstm_read_asn(psPool_t *pool, const unsigned char **pp, uint16_t len,
 	return PS_SUCCESS;
 }
 
-#ifdef USE_ECC
-
-#include <ctype.h> /* toupper() */
+#if defined USE_ECC || defined USE_DH || defined USE_CERT_GEN
 
 /******************************************************************************/
 /**
@@ -512,6 +512,9 @@ int32_t pstm_add_d(psPool_t *pool, const pstm_int *a, pstm_digit b, pstm_int *c)
 	pstm_clear(&tmp);
 	return res;
 }
+
+#endif /* defined USE_ECC || defined USE_DH || defined USE_CERT_GEN */
+#ifdef USE_ECC
 
 /* chars used in radix (base) conversions */
 const static unsigned char pstm_s_rmap[64] =
@@ -555,14 +558,11 @@ int32_t pstm_read_radix(psPool_t *pool, pstm_int *a,
 	while (len > 0) {
 	/*
 		if the radix < 36 the conversion is case insensitive this allows
-		numbers like 1AB and 1ab to represent the same  value [e.g. in hex]
-		@note This casting avoids gcc -Wchar-subscripts compiler warnings
-			for toupper. The prototype for toupper() is strange because
-			the value must be in the range of unsigned char, and yet it
-			accepts and returns an int.
+		numbers like 1AB and 1ab to represent the same value [e.g. in hex].
 	 */
 		ch = ((radix < 36) ?
-			(unsigned char)toupper((int)*buf) : (unsigned char)*buf);
+			(unsigned char)toupper((unsigned char)*buf) :
+		      (unsigned char)*buf);
 		for (y = 0; y < 64; y++) {
 			if (ch == pstm_s_rmap[y]) {
 				break;
@@ -1651,6 +1651,7 @@ int32_t pstm_mod(psPool_t *pool, const pstm_int *a, const pstm_int *b, pstm_int 
 	return err;
 }
 
+#ifdef USE_MATRIX_RSA
 /******************************************************************************/
 /*
 	d = a * b (mod c)
@@ -1936,6 +1937,7 @@ LBL_M: pstm_clear(&M[1]);
 LBL_RES:pstm_clear(&res);
 	return err;
 }
+#endif /* USE_MATRIX_RSA */
 
 /******************************************************************************/
 /**
@@ -2351,7 +2353,7 @@ top:
 	}
 
 	/* if not zero goto step 4 */
-	if (sanity++ > 1000) {
+	if (sanity++ > 4096) {
 		res = PS_LIMIT_FAIL;
 		goto LBL_D;
 	}

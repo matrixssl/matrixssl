@@ -458,6 +458,12 @@ int32 psAesTestGCM(void)
 }
 #endif /* USE_AES_GCM */
 
+#ifdef USE_AES_CTR
+int32 psAesTestCTR(void)
+{
+	return PS_SUCCESS;
+}
+#endif /* USE_AES_CTR */
 #endif /* USE_AES */
 
 /******************************************************************************/
@@ -777,6 +783,9 @@ static test_t tests[] = {
 #endif
 #ifdef USE_AES_GCM
 {psAesTestGCM, "***** AES-GCM TESTS *****"},
+#endif
+#ifdef USE_AES_CTR
+{psAesTestCTR, "***** AES-CTR TESTS *****"},
 #endif
 #else
 {NULL, "AES"},

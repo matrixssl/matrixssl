@@ -1,5 +1,5 @@
 /**
- *	@file    testkeys/RSA/4096_RSA.h
+ *	@file    4096_RSA.h
  *	@version $Format:%h%d$
  *
  *	Auto generated from PEM file.

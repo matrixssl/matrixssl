@@ -273,22 +273,20 @@ int32_t psCreateMutex(psMutex_t *mutex, uint32_t flags)
 	return PS_SUCCESS;
 }
 
-int32_t psLockMutex(psMutex_t *mutex)
+void psLockMutex(psMutex_t *mutex)
 {
 	if (pthread_mutex_lock(mutex) != 0) {
 		psTraceCore("pthread_mutex_lock failed\n");
-		return PS_PLATFORM_FAIL;
+		abort(); /* Catastrophic error: mutex does not work correctly. */
 	}
-	return PS_SUCCESS;
 }
 
-int32_t psUnlockMutex(psMutex_t *mutex)
+void psUnlockMutex(psMutex_t *mutex)
 {
 	if (pthread_mutex_unlock(mutex) != 0) {
 		psTraceCore("pthread_mutex_unlock failed\n");
-		return PS_PLATFORM_FAIL;
+		abort(); /* Catastrophic error: mutex does not work correctly. */
 	}
-	return PS_SUCCESS;
 }
 
 void psDestroyMutex(psMutex_t *mutex)

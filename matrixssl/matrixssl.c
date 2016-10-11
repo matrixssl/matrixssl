@@ -133,6 +133,8 @@ int32_t matrixSslOpenWithConfig(const char *config)
 	shared = PS_SHARED;
 #else
 	shared = 0;
+	/* To prevent warning if multithreading support is disabled. */
+	PS_VARIABLE_SET_BUT_UNUSED(shared);
 #endif
 	memset(g_sessionTable, 0x0,
 		sizeof(sslSessionEntry_t) * SSL_SESSION_TABLE_SIZE);
@@ -168,9 +170,7 @@ void matrixSslClose(void)
 #ifdef USE_SERVER_SIDE_SSL
 	int		i;
 
-	if (psLockMutex(&g_sessionTableLock) < 0) {
-		psTraceInfo("Warning: closing lock mutex failed\n");
-	}
+	psLockMutex(&g_sessionTableLock);
 	for (i = 0; i < SSL_SESSION_TABLE_SIZE; i++) {
 		if (g_sessionTable[i].inUse > 1) {
 			psTraceInfo("Warning: closing while session still in use\n");
@@ -178,9 +178,7 @@ void matrixSslClose(void)
 	}
 	memset(g_sessionTable, 0x0,
 		sizeof(sslSessionEntry_t) * SSL_SESSION_TABLE_SIZE);
-	if (psUnlockMutex(&g_sessionTableLock) < 0) {
-		psTraceInfo("Warning: closing unlock mutex failed\n");
-	}
+	psUnlockMutex(&g_sessionTableLock);
 	psDestroyMutex(&g_sessionTableLock);
 #ifdef USE_SHARED_SESSION_CACHE
 	if (munmap(g_sessionTable,
@@ -206,7 +204,9 @@ int32_t matrixSslNewKeys(sslKeys_t **keys, void *memAllocUserPtr)
 {
 	psPool_t	*pool = NULL;
 	sslKeys_t	*lkeys;
+#if  defined(USE_ECC) || defined(REQUIRE_DH_PARAMS)
 	int32_t		rc;
+#endif
 
 	lkeys = psMalloc(pool, sizeof(sslKeys_t));
 	if (lkeys == NULL) {
@@ -386,6 +386,7 @@ int32 matrixSslLoadPkcs12(sslKeys_t *keys, const unsigned char *certFile,
 		return PS_ARG_FAIL;
 	}
 	pool = keys->pool;
+	PS_POOL_USED(pool);
 
 	if (macPass == NULL) {
 		mPass = (unsigned char*)importPass;
@@ -432,77 +433,6 @@ int32 matrixSslLoadRsaKeys(sslKeys_t *keys, const char *certFile,
 /******************************************************************************/
 
 #ifdef USE_ECC
-/**
-	Generate and cache an ephemeral ECC key for later use in ECDHE key exchange.
-	@param[out] keys Keys structure to hold ephemeral keys
-	@param[in] curve ECC curve to generate key on, or NULL to generate for all
-		supported curves.
-	@param[in] hwCtx Context for hardware crypto.
-*/
-int32_t matrixSslGenEphemeralEcKey(sslKeys_t *keys, psEccKey_t *ecc,
-				const psEccCurve_t *curve, void *hwCtx)
-{
-#if ECC_EPHEMERAL_CACHE_USAGE > 0
-	psTime_t	t;
-#endif
-	int32_t		rc;
-
-	psAssert(keys && curve);
-#if ECC_EPHEMERAL_CACHE_USAGE > 0
-	psGetTime(&t, keys->poolUserPtr);
-	(void)psLockMutex(&keys->cache.lock);
-	if (keys->cache.eccPrivKey.curve != curve) {
-		psTraceStrInfo("Generating ephemeral %s key (new curve)\n",
-			curve->name);
-		goto L_REGEN;
-	}
-	if (keys->cache.eccPrivKeyUse > ECC_EPHEMERAL_CACHE_USAGE) {
-		psTraceStrInfo("Generating ephemeral %s key (usage exceeded)\n",
-			curve->name);
-		goto L_REGEN;
-	}
-	if (psDiffMsecs(keys->cache.eccPrivKeyTime, t, keys->poolUserPtr) >
-			(1000 * ECC_EPHEMERAL_CACHE_SECONDS)) {
-		psTraceStrInfo("Generating ephemeral %s key (time exceeded)\n",
-			curve->name);
-		goto L_REGEN;
-	}
-	keys->cache.eccPrivKeyUse++;
-	rc = PS_SUCCESS;
-	if (ecc) {
-		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
-	}
-	(void)psUnlockMutex(&keys->cache.lock);
-	return rc;
-L_REGEN:
-	if (keys->cache.eccPrivKeyUse) {
-		/* We use eccPrivKeyUse == 0 as a flag to note the key not allocated */
-		psEccClearKey(&keys->cache.eccPrivKey);
-		keys->cache.eccPrivKeyUse = 0;
-	}
-	rc = psEccGenKey(keys->pool, &keys->cache.eccPrivKey, curve, hwCtx);
-	if (rc < 0) {
-		(void)psUnlockMutex(&keys->cache.lock);
-		return rc;
-	}
-	keys->cache.eccPrivKeyTime = t;
-	keys->cache.eccPrivKeyUse = 1;
-	rc = PS_SUCCESS;
-	if (ecc) {
-		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
-	}
-	(void)psUnlockMutex(&keys->cache.lock);
-	return rc;
-#else
-	/* Not using ephemeral caching. */
-	if (ecc) {
-		rc = psEccGenKey(keys->pool, ecc, curve, hwCtx);
-		return rc;
-	}
-	rc = PS_SUCCESS;
-	return rc;
-#endif /* ECC_EPHEMERAL_CACHE_USAGE > 0 */
-}
 
 /******************************************************************************/
 
@@ -689,6 +619,77 @@ int32 matrixSslLoadEcKeysMem(sslKeys_t *keys, const unsigned char *certBuf,
 				CAbuf, CAlen, PS_ECC);
 
 }
+/**
+	Generate and cache an ephemeral ECC key for later use in ECDHE key exchange.
+	@param[out] keys Keys structure to hold ephemeral keys
+	@param[in] curve ECC curve to generate key on, or NULL to generate for all
+		supported curves.
+	@param[in] hwCtx Context for hardware crypto.
+*/
+int32_t matrixSslGenEphemeralEcKey(sslKeys_t *keys, psEccKey_t *ecc,
+				const psEccCurve_t *curve, void *hwCtx)
+{
+#if ECC_EPHEMERAL_CACHE_USAGE > 0
+	psTime_t	t;
+#endif
+	int32_t		rc;
+
+	psAssert(keys && curve);
+#if ECC_EPHEMERAL_CACHE_USAGE > 0
+	psGetTime(&t, keys->poolUserPtr);
+	(void)psLockMutex(&keys->cache.lock);
+	if (keys->cache.eccPrivKey.curve != curve) {
+		psTraceStrInfo("Generating ephemeral %s key (new curve)\n",
+			curve->name);
+		goto L_REGEN;
+	}
+	if (keys->cache.eccPrivKeyUse > ECC_EPHEMERAL_CACHE_USAGE) {
+		psTraceStrInfo("Generating ephemeral %s key (usage exceeded)\n",
+			curve->name);
+		goto L_REGEN;
+	}
+	if (psDiffMsecs(keys->cache.eccPrivKeyTime, t, keys->poolUserPtr) >
+			(1000 * ECC_EPHEMERAL_CACHE_SECONDS)) {
+		psTraceStrInfo("Generating ephemeral %s key (time exceeded)\n",
+			curve->name);
+		goto L_REGEN;
+	}
+	keys->cache.eccPrivKeyUse++;
+	rc = PS_SUCCESS;
+	if (ecc) {
+		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
+	}
+	(void)psUnlockMutex(&keys->cache.lock);
+	return rc;
+L_REGEN:
+	if (keys->cache.eccPrivKeyUse) {
+		/* We use eccPrivKeyUse == 0 as a flag to note the key not allocated */
+		psEccClearKey(&keys->cache.eccPrivKey);
+		keys->cache.eccPrivKeyUse = 0;
+	}
+	rc = psEccGenKey(keys->pool, &keys->cache.eccPrivKey, curve, hwCtx);
+	if (rc < 0) {
+		(void)psUnlockMutex(&keys->cache.lock);
+		return rc;
+	}
+	keys->cache.eccPrivKeyTime = t;
+	keys->cache.eccPrivKeyUse = 1;
+	rc = PS_SUCCESS;
+	if (ecc) {
+		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
+	}
+	(void)psUnlockMutex(&keys->cache.lock);
+	return rc;
+#else
+	/* Not using ephemeral caching. */
+	if (ecc) {
+		rc = psEccGenKey(keys->pool, ecc, curve, hwCtx);
+		return rc;
+	}
+	rc = PS_SUCCESS;
+	return rc;
+#endif /* ECC_EPHEMERAL_CACHE_USAGE > 0 */
+}
 
 #endif /* USE_ECC */
 
@@ -832,7 +833,8 @@ int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
 		return PS_ARG_FAIL;
 	}
 	pool = keys->pool;
-	
+	PS_POOL_USED(pool);
+
 	/* Overwrite/Update any response being set */
 	if (keys->OCSPResponseBuf != NULL) {
 		psFree(keys->OCSPResponseBuf, pool);
@@ -1111,7 +1113,6 @@ int32 matrixSslNewSession(ssl_t **ssl, const sslKeys_t *keys,
 	if (flags & SSL_FLAGS_SERVER) {
 #ifndef USE_PSK_CIPHER_SUITE
 		if (keys == NULL) {
-			/* TODO: test not correct if coming from matrixSslNewServer */
 			psTraceInfo("NULL keys parameter passed to matrixSslNewSession\n");
 			return PS_ARG_FAIL;
 		}

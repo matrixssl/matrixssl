@@ -60,37 +60,116 @@ enum {
 	the connection to fail. SECURITY - Uncomment at your own risk */
 /* #define ALLOW_UNKNOWN_CRITICAL_EXTENSIONS */
 
+/* Support for multiple organizational units */
+typedef struct x509OrgUnit {
+	struct x509OrgUnit  *next;
+	char                *name;
+	short               type;
+	uint16_t            len;
+} x509OrgUnit_t;
+
+/* Support for multiple domainComponents */
+typedef struct x509DomainComponent {
+	struct x509DomainComponent *next;
+	char                       *name;
+	short                      type;
+	uint16_t                   len;
+} x509DomainComponent_t;
+
+/* Number of null-bytes to terminate parsed string-type DN attributes with. */
+#define DN_NUM_TERMINATING_NULLS 2
+
 /*
 	DN attributes are used outside the X509 area for cert requests,
 	which have been included in the RSA portions of the code
 */
 typedef struct {
+	/* MUST support according to RFC 5280: */
 	char	*country;
-	char	*state;
-	char	*locality;
 	char	*organization;
-	char	*orgUnit;
+	x509OrgUnit_t *orgUnit;
+	char    *dnQualifier;
+	char    *serialNumber;
+	char	*state;
 	char	*commonName;
+	x509DomainComponent_t *domainComponent;
+#ifdef USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD
+	char	*locality;
+	char    *title;
+	char    *surname;
+	char    *givenName;
+	char    *initials;
+	char    *pseudonym;
+	char    *generationQualifier;
+#endif /* USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD */
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+	char    *streetAddress;
+	char    *postalAddress;
+	char    *telephoneNumber;
+	char    *uid;
+	char    *name;
+	char    *email;
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
 	char	hash[MAX_HASH_SIZE];
 	char	*dnenc; /* CERT_STORE_DN_BUFFER */
 	uint16_t dnencLen;
+	/* MUST support according to RFC 5280: */
 	short	countryType;
 	uint16_t countryLen;
 	short	stateType;
 	uint16_t stateLen;
-	short	localityType;
-	uint16_t localityLen;
 	short	organizationType;
 	uint16_t organizationLen;
-	short	orgUnitType;
-	uint16_t orgUnitLen;
+	short	dnQualifierType;
+	uint16_t dnQualifierLen;
 	short	commonNameType;
 	uint16_t commonNameLen;
+	short   serialNumberType;
+	uint16_t serialNumberLen;
+	short	domainComponentType;
+	uint16_t domainComponentLen;
+#ifdef USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD
+	short	localityType;
+	uint16_t localityLen;
+	short	titleType;
+	uint16_t titleLen;
+	short	surnameType;
+	uint16_t surnameLen;
+	short	givenNameType;
+	uint16_t givenNameLen;
+	short	initialsType;
+	uint16_t initialsLen;
+	short pseudonymType;
+	uint16_t pseudonymLen;
+	short	generationQualifierType;
+	uint16_t generationQualifierLen;
+#endif /* USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD */
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+	short	streetAddressType;
+	uint16_t streetAddressLen;
+	short	postalAddressType;
+	uint16_t postalAddressLen;
+	short	telephoneNumberType;
+	uint16_t telephoneNumberLen;
+	short	uidType;
+	uint16_t uidLen;
+	short	nameType;
+	uint16_t nameLen;
+	short	emailType;
+	uint16_t emailLen;
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
+
 } x509DNattributes_t;
 
+typedef enum {
+	CA_FALSE = 0,
+	CA_UNDEFINED = 127,
+	CA_TRUE = 255
+} x509bcCAValue_t;
+
 typedef struct {
-	int32	cA;
-	int32	pathLenConstraint;
+	x509bcCAValue_t cA;
+	int32	        pathLenConstraint;
 } x509extBasicConstraints_t;
 
 typedef struct psGeneralNameEntry {
@@ -114,6 +193,13 @@ typedef struct psGeneralNameEntry {
 	struct psGeneralNameEntry		*next;
 } x509GeneralName_t;
 
+#define MAX_OID_LEN		16	/**< Maximum number of segments in OID */
+
+#define MAX_POLICY_ATTRIB_LEN 512
+#define MAX_NUM_QUAL_INFOS 10
+#define MAX_POLICIES 10
+#define MAX_UNOTICE_NUMBERS 5
+
 typedef struct {
 	unsigned char	*id;
 	uint16_t		len;
@@ -127,18 +213,64 @@ typedef struct {
 	uint16_t			serialNumLen;
 } x509extAuthKeyId_t;
 
-#ifdef USE_FULL_CERT_PARSE
+#if defined(USE_FULL_CERT_PARSE) || defined(USE_CERT_GEN)
 typedef struct {
 	x509GeneralName_t	*permitted;
 	x509GeneralName_t	*excluded;
 } x509nameConstraints_t;
-#endif /* USE_FULL_CERT_PARSE */
- 
+
+typedef struct x509PolicyQualifierInfo_t {
+	char *cps;
+	char *unoticeOrganization;
+	char *unoticeExplicitText;
+	int32_t unoticeNumbers[MAX_UNOTICE_NUMBERS];
+	uint16_t cpsLen;
+	uint16_t unoticeOrganizationLen;
+	uint16_t unoticeExplicitTextLen;
+	uint16_t unoticeNumbersLen;
+	int unoticeExplicitTextEncoding;
+	int unoticeOrganizationEncoding;
+	struct x509PolicyQualifierInfo_t *next;
+} x509PolicyQualifierInfo_t;
+
+typedef struct x509PolicyInformation_t {
+    uint32_t *policyOid;
+	uint16_t policyOidLen;
+	x509PolicyQualifierInfo_t *qualifiers;
+	struct x509PolicyInformation_t *next;
+} x509PolicyInformation_t;
+
+typedef struct x509certificatePolicies_t {
+	x509PolicyInformation_t *policy;
+} x509certificatePolicies_t;
+
+typedef struct x509policyConstraints_t {
+	int32_t requireExplicitPolicy;
+	int32_t inhibitPolicyMappings;
+} x509policyConstraints_t;
+
+typedef struct x509policyMappings_t {
+	uint32_t *issuerDomainPolicy;
+	uint32_t *subjectDomainPolicy;
+	uint16_t issuerDomainPolicyLen;
+	uint16_t subjectDomainPolicyLen;
+	struct x509policyMappings_t *next;
+} x509policyMappings_t;
+
+typedef struct x509authorityInfoAccess_t {
+	char *ocsp;
+	char *caIssuers;
+	uint16_t ocspLen;
+	uint16_t caIssuersLen;
+	struct x509authorityInfoAccess_t *next;
+} x509authorityInfoAccess_t;
+
+#endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
+
 /******************************************************************************/
 /*
 	OID parsing and lookup.
 */
-#define MAX_OID_LEN		16	/**< Maximum number of segments in OID */
 
 /*
 	X.509 Certificate Extension OIDs
@@ -189,6 +321,9 @@ enum {
 */
 #define id_pxix	1,3,6,1,5,5,7
 
+/*   anyPolicy OBJECT IDENTIFIER ::= { id-ce-certificate-policies 0 } */
+#define id_anyPolicy 2,5,29,32,0
+
 /*
 The following key usage purposes are defined:
 
@@ -238,6 +373,19 @@ enum {
 };
 
 /*
+  id-ad   id-ad OBJECT IDENTIFIER ::= { id-pkix 48 }
+
+  id-ad-caIssuers OBJECT IDENTIFIER ::= { id-ad 2 }
+
+  id-ad-ocsp OBJECT IDENTIFIER ::= { id-ad 1 }
+*/
+#define id_ad id_pxix,48
+enum {
+	id_ad_ocsp = 1,
+	id_ad_caIssuers = 2
+};
+
+/*
 	id-pe	OBJECT IDENTIFIER  ::=  { id-pkix 1 }
 
 	id-pe-authorityInfoAccess		OBJECT IDENTIFIER ::= { id-pe  1 }
@@ -247,6 +395,21 @@ enum {
 enum {
 	id_pe_authorityInfoAccess = 1,
 	id_pe_subjectInfoAccess = 11,
+};
+
+/*
+   -- policyQualifierIds for Internet policy qualifiers
+
+   id-qt          OBJECT IDENTIFIER ::=  { id-pkix 2 }
+   id-qt-cps      OBJECT IDENTIFIER ::=  { id-qt 1 }
+   id-qt-unotice  OBJECT IDENTIFIER ::=  { id-qt 2 }
+
+   PolicyQualifierId ::= OBJECT IDENTIFIER ( id-qt-cps | id-qt-unotice )
+*/
+#define id_qt id_pxix,2
+enum {
+	id_qt_cps = 1,
+	id_qt_unotice = 2
 };
 
 #define OID_ENUM(A) oid_##A
@@ -280,6 +443,12 @@ typedef enum {
 	OID_ENUM(id_kp_emailProtection),
 	OID_ENUM(id_kp_timeStamping),
 	OID_ENUM(id_kp_OCSPSigning),
+	/* Internet policy qualifiers */
+	OID_ENUM(id_qt_cps),
+	OID_ENUM(id_qt_unotice),
+	/* AccessDescriptions. */
+	OID_ENUM(id_ad_caIssuers),
+	OID_ENUM(id_ad_ocsp),
 } oid_e;
 
 /* Make the flag value, given the enum above */
@@ -313,19 +482,24 @@ typedef struct {
 	psPool_t					*pool;
 	x509extBasicConstraints_t	bc;
 	x509GeneralName_t			*san;
+	x509GeneralName_t			*issuerAltName;
 	uint32						critFlags;		/* EXT_CRIT_FLAG(EXT_KEY_USE) */
 	uint32						keyUsageFlags;	/* KEY_USAGE_ */
 	uint32						ekuFlags;		/* EXT_KEY_USAGE_ */
 	x509extSubjectKeyId_t		sk;
 	x509extAuthKeyId_t			ak;
-#ifdef USE_FULL_CERT_PARSE
+#if defined(USE_FULL_CERT_PARSE) || defined(USE_CERT_GEN)
 	x509nameConstraints_t		nameConstraints;
-#endif /* USE_FULL_CERT_PARSE */
+	x509certificatePolicies_t   certificatePolicy;
+	x509policyConstraints_t     policyConstraints;
+	x509policyMappings_t        *policyMappings;
+	x509authorityInfoAccess_t   *authorityInfoAccess;
+#endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
 #ifdef USE_CRL
 	x509GeneralName_t			*crlDist;
 	unsigned char				*crlNum;
 	int32						crlNumLen;
-#endif
+#endif /* USE_CRL */
 } x509v3extensions_t;
 
 #endif /* USE_CERT_PARSE */
@@ -402,6 +576,8 @@ typedef struct psCert {
 #endif
 	unsigned char		*unparsedBin; /* see psX509ParseCertFile */
 	uint16_t			binLen;
+	uint16_t			publicKeyDerOffsetIntoUnparsedBin;
+	uint16_t			publicKeyDerLen;
 	struct psCert		*next;
 } psX509Cert_t;
 
@@ -419,9 +595,47 @@ extern int32_t getExplicitExtensions(psPool_t *pool, const unsigned char **pp,
 					uint8_t known);
 extern void x509FreeExtensions(x509v3extensions_t *extensions);
 extern int32_t psX509ValidateGeneralName(const char *n);
+
+/** Get the number of domainComponents in a distinguished name (DN). */
+extern int32_t psX509GetNumDomainComponents(const x509DNattributes_t *DN);
+
+/** Get a pointer to a domain component.
+
+	@param[in] DN The DN struct from which to fetch the domainComponent.
+	Callet must NOT free this.
+	@param[in] index The index of the domainComponent in the order they
+	appear in the DER encoding.
+*/
+extern x509DomainComponent_t* psX509GetDomainComponent(const x509DNattributes_t *DN,
+													   int32_t index);
+
+/** Get the concatenation of all domainComponents in a DN as a C string.
+
+	This function returns the concanated domainComponents as a string terminated
+	with DN_NUM_TERMINATING_NULLS NULL characters. The output string will
+	contain	the components in the reverse order compared to the order in which
+	they were encoded in the certificate. Usually, this will result in the
+	usual print order, i.e. top-level component (.com, .org, ...) last.
+
+	@param[in] DN The DN struct from which to fetch the domainComponent.
+	@param[out] out_str The concanated domainComponents as a string. This
+	function will malloc a string of suitable length. The caller is responsible
+	for freeing it.
+	@param[out] out_str_len Length of the returned string.
+*/
+extern int32_t psX509GetConcatenatedDomainComponent(const x509DNattributes_t *DN,
+													char **out_str,
+													size_t *out_str_len);
 #endif /* USE_CERT_PARSE */
 
 #ifdef USE_OCSP
+#include <time.h>
+#include <stdbool.h>
+
+/* The default value of allowed mismatch in times in OCSP messages and the local
+   clock. */
+#define PS_OCSP_TIME_LINGER (120)
+
 /* The OCSP structure members point directly into an OCSPResponse stream.
 	They are validated immediately after the parse so if a change request
 	requires these fields to persist, this will all have to change */
@@ -432,8 +646,12 @@ typedef struct {
 	const unsigned char	*certIdSerial;
 	short				certIdSerialLen;
 	short				certStatus;
+	unsigned char           revocationTime[15];
+	unsigned char           revocationReason;
 	const unsigned char	*thisUpdate;
 	short				thisUpdateLen;
+	const unsigned char	*nextUpdate;
+	short				nextUpdateLen;
 } mOCSPSingleResponse_t;
 
 #define MAX_OCSP_RESPONSES 3
@@ -449,16 +667,74 @@ typedef struct {
 	unsigned char			hashResult[MAX_HASH_SIZE];
 	uint16_t				hashLen;
 	psX509Cert_t			*OCSPResponseCert; /* Allocated to hsPool */
+	psBuf_t                         nonce; /* Pointer to response. */
 } mOCSPResponse_t;
+
+typedef enum {
+	PS_CRLREASON_UNSPECIFIED = 0,
+	PS_CRLREASON_KEY_COMPROMISE = 1,
+	PS_CRLREASON_CA_COMPROMISE = 2,
+	PS_CRLREASON_AFFILIATION_CHANGED = 3,
+	PS_CRLREASON_SUPERSEDED = 4,
+	PS_CRLREASON_CESSATION_OF_OPERATION = 5,
+	PS_CRLREASON_CERTIFICATE_HOLD = 6,
+	/* value 7 is not used according to RFC 5280. */
+	PS_CRLREASON_REMOVE_FROM_CRL = 8,
+	PS_CRLREASON_PRIVILEGE_WITHDRAWN = 9,
+	PS_CRLREASON_AA_COMPROMISE = 10
+} x509CrlReason_t;
+
+typedef struct {
+	/* Will be set to 1 if status is known, 0 if not. */
+	bool *knownFlag;
+	/* Will be set to 1 if revoked, 0 if ok. */
+	bool *revocationFlag;
+	/* If response included nonce or both request and response were
+	   without nonce, then set this flag. Requires request+requestLen to
+	   be provided. */
+	bool *nonceMatch;
+	/* Will indicate revocation time (note: timezone = UTC). */
+	struct tm *revocationTime;
+	/* Will indicate revocation reason. */
+	x509CrlReason_t *revocationReason;
+	const void *request;
+	size_t requestLen;
+} psValidateOCSPResponseOptions_t;
 
 extern int32_t parseOCSPResponse(psPool_t *pool, int32_t len,
 					unsigned char **cp, unsigned char *end,
 					mOCSPResponse_t *response);
+
+extern int32_t checkOCSPResponseDates(mOCSPResponse_t *response,
+				      int index,
+				      struct tm *time_now,
+				      struct tm *producedAt,
+				      struct tm *thisUpdate,
+				      struct tm *nextUpdate,
+				      int time_linger);
+
 extern int32_t validateOCSPResponse(psPool_t *pool, psX509Cert_t *trustedOCSP,
 					psX509Cert_t *srvCerts,	mOCSPResponse_t *response);
+extern int32_t validateOCSPResponse_ex(psPool_t *pool, psX509Cert_t *trustedOCSP,
+				       psX509Cert_t *srvCerts,	mOCSPResponse_t *response, psValidateOCSPResponseOptions_t *vOpts);
 extern int32_t matrixSslWriteOCSPRequest(psPool_t *pool, psX509Cert_t *cert,
 					psX509Cert_t *certIssuer, unsigned char **request,
 					uint32_t *requestLen, int32_t flags);
+
+typedef struct {
+	int32_t flags;
+	const psBuf_t *requesterId; /* Optional requestor id. */
+	const psBuf_t *requestExtensions; /* Optional request extensions. */
+} matrixSslWriteOCSPRequestInfo_t;
+
+#define MATRIXSSL_WRITE_OCSP_REQUEST_FLAG_NONCE 1 /* Use nonce. */
+
+extern int32_t matrixSslWriteOCSPRequestExt(
+	psPool_t *pool, psX509Cert_t *cert,
+	psX509Cert_t *certIssuer, unsigned char **request,
+	uint32_t *requestLen,
+	matrixSslWriteOCSPRequestInfo_t *info);
+
 #endif
 
 /******************************************************************************/

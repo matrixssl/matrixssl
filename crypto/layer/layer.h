@@ -55,6 +55,15 @@
 #if defined(USE_AES_GCM)
  #define USE_MATRIX_AES_GCM
 #endif
+#if defined(USE_AES_CMAC)
+ #define USE_MATRIX_AES_CMAC
+#endif
+#if defined(USE_AES_WRAP)
+ #define USE_MATRIX_AES_WRAP
+#endif
+#if defined(USE_AES_CTR)
+ #define USE_MATRIX_AES_CTR
+#endif
 
 #ifdef USE_CHACHA20_POLY1305
  #ifndef USE_LIBSODIUM_CRYPTO

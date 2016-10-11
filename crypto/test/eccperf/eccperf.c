@@ -78,9 +78,7 @@
 
 #define PS_OH sizeof(psPool_t)
 
-/*
-	TODO: Not tuned to smallest K for EACH key size.
-*/
+/**/
 #define POOL_SIGN_192		(8 * 1024) + PS_OH
 #define POOL_VERIFY_192		(8 * 1024) + PS_OH
 #define POOL_MAKE_KEY_192	(8 * 1024) + PS_OH

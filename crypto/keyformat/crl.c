@@ -785,9 +785,13 @@ int32_t psX509AuthenticateCRL(psX509Cert_t *CA,	psX509Crl_t *CRL,
 		}
 	} else if (sigType == PS_ECC) {
 		int32_t status;
+#ifdef USE_ECC
 		rc = psEccDsaVerify(pkiPool, &CA->publicKey.key.ecc,
 				CRL->sigHash, CRL->sigHashLen, CRL->sig, CRL->sigLen, &status,
 				NULL);
+#else
+		rc = PS_DISABLED_FEATURE_FAIL;
+#endif /* USE_ECC */
 		if (status != 1) {
 			psTraceCrypto("Unable to verify ECDSA CRL signature\n");
 			return PS_CERT_AUTH_FAIL_SIG;
@@ -928,7 +932,6 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 		lcrl->nextUpdate[timelen] = '\0';
 		p += timelen;
 		
-		/* TODO: Confirm here if this is already expired */
 	}
 	
 	
@@ -1089,6 +1092,7 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 #endif /* ENABLE_MD5_SIGNED_CERTS */
 #ifdef ENABLE_SHA1_SIGNED_CERTS
 	case SHA1_HASH_SIZE:
+		psSha1PreInit(&hashCtx.sha1);
 		psSha1Init(&hashCtx.sha1);
 		psSha1Update(&hashCtx.sha1, sigStart, (uint32)(sigEnd - sigStart));
 		psSha1Final(&hashCtx.sha1, lcrl->sigHash);
@@ -1096,6 +1100,7 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 #endif /* ENABLE_SHA1_SIGNED_CERTS */
 #ifdef USE_SHA256
 	case SHA256_HASH_SIZE:
+		psSha256PreInit(&hashCtx.sha256);
 		psSha256Init(&hashCtx.sha256);
 		psSha256Update(&hashCtx.sha256, sigStart, (uint32)(sigEnd - sigStart));
 		psSha256Final(&hashCtx.sha256, lcrl->sigHash);
@@ -1103,6 +1108,7 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 #endif /* USE_SHA256 */
 #ifdef USE_SHA384
 	case SHA384_HASH_SIZE:
+		psSha384PreInit(&hashCtx.sha384);
 		psSha384Init(&hashCtx.sha384);
 		psSha384Update(&hashCtx.sha384, sigStart, (uint32)(sigEnd - sigStart));
 		psSha384Final(&hashCtx.sha384, lcrl->sigHash);
@@ -1110,6 +1116,7 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 #endif /* USE_SHA384 */
 #ifdef USE_SHA512
 	case SHA512_HASH_SIZE:
+		psSha512PreInit(&hashCtx.sha512);
 		psSha512Init(&hashCtx.sha512);
 		psSha512Update(&hashCtx.sha512, sigStart, (uint32)(sigEnd - sigStart));
 		psSha512Final(&hashCtx.sha512, lcrl->sigHash);
@@ -1130,9 +1137,7 @@ int32 psX509ParseCRL(psPool_t *pool, psX509Crl_t **crl, unsigned char *crlBin,
 	If the provided cert has a URL based CRL Distribution point, return
 	that.  The url and urlLen point directly into the cert structure so
 	must not be modified.
-	
-	TODO:  This should return all URL dist points in the cert. Not just first
-*/
+	*/
 int32 psX509GetCRLdistURL(psX509Cert_t *cert, char **url, uint32_t *urlLen)
 {
 	x509GeneralName_t	*gn;

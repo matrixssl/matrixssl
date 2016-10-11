@@ -43,17 +43,21 @@ SRC:=\
 	pubkey/ecc.c \
 	pubkey/pubkey.c \
 	pubkey/rsa.c
+#ifdef USE_OPENSSL_CRYPTO
 ifdef USE_OPENSSL_CRYPTO
 SRC+=\
 	digest/digest_openssl.c \
 	symmetric/symmetric_openssl.c \
 	pubkey/rsa_openssl.c
 endif
+#endif
+#ifdef USE_LIBSODIUM_CRYPTO
 ifdef USE_LIBSODIUM_CRYPTO
 SRC+=\
 	symmetric/symmetric_libsodium.c \
 	digest/digest_libsodium.c
 endif
+#endif
 
 # Generated files
 STATIC:=libcrypt_s.a
@@ -64,12 +68,12 @@ compile: $(OBJS) $(STATIC)
 	@echo $(STROPTS)
 
 # Additional Dependencies
-$(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile *.h */*.h
+$(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile *.h */$(BLANK)*.h
 
 # Build the static library
-# Direct stderr to null so we don't see the 'empty file' warnings
+
 $(STATIC): $(OBJS)
-	$(AR) -rcuv $@ $^ 2>/dev/null
+	$(AR) -rcu $@ $^
 
 clean:
 	rm -f $(STATIC) $(OBJS)

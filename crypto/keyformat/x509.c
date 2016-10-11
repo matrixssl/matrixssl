@@ -57,13 +57,28 @@
 /*
 	Distinguished Name attributes
 */
+#define ATTRIB_COMMON_NAME		3
+#define ATTRIB_SURNAME          4
+#define ATTRIB_SERIALNUMBER     5
 #define ATTRIB_COUNTRY_NAME		6
 #define ATTRIB_LOCALITY			7
+#define ATTRIB_STATE_PROVINCE	8
+#define ATTRIB_STREET_ADDRESS   9
 #define ATTRIB_ORGANIZATION		10
 #define ATTRIB_ORG_UNIT			11
+#define ATTRIB_TITLE            12
+#define ATTRIB_POSTAL_ADDRESS   16
+#define ATTRIB_TELEPHONE_NUMBER 20
+#define ATTRIB_NAME             41
+#define ATTRIB_GIVEN_NAME       42
+#define ATTRIB_INITIALS         43
+#define ATTRIB_GEN_QUALIFIER    44
 #define ATTRIB_DN_QUALIFIER		46
-#define ATTRIB_STATE_PROVINCE	8
-#define ATTRIB_COMMON_NAME		3
+#define ATTRIB_PSEUDONYM        65
+
+#define ATTRIB_DOMAIN_COMPONENT 25
+#define ATTRIB_UID              26
+#define ATTRIB_EMAIL            27
 
 /** Enumerate X.509 milestones for issuedBefore() api */
 typedef enum {
@@ -118,7 +133,12 @@ static const struct {
 	OID_LIST(id_kp, id_kp_emailProtection),
 	OID_LIST(id_kp, id_kp_timeStamping),
 	OID_LIST(id_kp, id_kp_OCSPSigning),
-	
+	/* policyIdentifiers */
+	OID_LIST(id_qt, id_qt_cps),
+	OID_LIST(id_qt, id_qt_unotice),
+	/* accessDescriptors */
+	OID_LIST(id_ad, id_ad_caIssuers),
+	OID_LIST(id_ad, id_ad_ocsp),
 	/* List terminator */
 	OID_LIST(0, 0),
 };
@@ -484,6 +504,42 @@ static int32 getRsaPssParams(const unsigned char **pp, int32 size,
 
 /******************************************************************************/
 /*
+  Get the public key (SubjectPublicKeyInfo) in DER format from a psX509Cert_t.
+
+  Precondition: the certificate must have been parsed with psX509ParseCert or
+  psX509ParseCertFile with the CERT_STORE_UNPARSED_BUFFER flag set.
+ */
+PSPUBLIC int32 psX509GetCertPublicKeyDer(psX509Cert_t *cert,
+										 unsigned char *der_out,
+										 uint16_t *der_out_len)
+{
+	if (!cert || !der_out || !der_out_len) {
+		return PS_ARG_FAIL;
+	}
+	if (cert->publicKeyDerOffsetIntoUnparsedBin == 0
+		|| cert->publicKeyDerLen == 0) {
+		psTraceCrypto("No DER format public key stored in this cert. " \
+			"CERT_STORE_DN_BUFFER flag was not used when parsing?");
+		return PS_ARG_FAIL;
+	}
+
+	if (*der_out_len < cert->publicKeyDerLen) {
+		psTraceCrypto("Output buffer is too small");
+		*der_out_len = cert->publicKeyDerLen;
+		return PS_OUTPUT_LENGTH;
+	}
+
+	memcpy(der_out,
+		   cert->unparsedBin + cert->publicKeyDerOffsetIntoUnparsedBin,
+		   cert->publicKeyDerLen);
+
+	*der_out_len = cert->publicKeyDerLen;
+
+	return PS_SUCCESS;
+}
+
+/******************************************************************************/
+/*
 	Parse an X509 v3 ASN.1 certificate stream
 	http://tools.ietf.org/html/rfc3280
 
@@ -498,7 +554,7 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 						psX509Cert_t **outcert, int32 flags)
 {
 	psX509Cert_t		*cert;
-	const unsigned char	*p, *end, *far_end, *certStart;
+	const unsigned char	*p, *end, *far_end, *certStart, *tbsCertStart;
 	uint16_t			len;
 	uint32_t			oneCertLen;
 	int32				parsing, rc;
@@ -507,8 +563,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 	psDigestContext_t	hashCtx;
 	const unsigned char	*certEnd;
 	uint16_t			certLen, plen;
-#endif
-
+	const unsigned char *p_subject_pubkey_info;
+	size_t              subject_pubkey_info_header_len;
+#endif /* USE_CERT_PARSE */
 /*
 	Allocate the cert structure right away.  User MUST always call
 	psX509FreeCert regardless of whether this function succeeds.
@@ -563,6 +620,7 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef ENABLE_CA_CERT_HASH
 		/* We use the cert_sha1_hash type for the Trusted CA Indication so
 			run a SHA1 has over the entire Certificate DER encoding. */
+		psSha1PreInit(&hashCtx.sha1);
 		psSha1Init(&hashCtx.sha1);
 		psSha1Update(&hashCtx.sha1, certStart,
 			oneCertLen + (int32)(p - certStart));
@@ -570,7 +628,7 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #endif
 
 #ifdef USE_CERT_PARSE
-		certStart = p;
+		tbsCertStart = p;
 /*
 		TBSCertificate  ::=  SEQUENCE  {
 		version			[0]		EXPLICIT Version DEFAULT v1,
@@ -592,7 +650,7 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 			return rc;
 		}
 		certEnd = p + len;
-		certLen = certEnd - certStart;
+		certLen = certEnd - tbsCertStart;
 
 /*
 		Version  ::=  INTEGER  {  v1(0), v2(1), v3(2)  }
@@ -603,9 +661,19 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 			return rc;
 		}
 		if (cert->version != 2) {
+#ifndef ALLOW_VERSION_1_ROOT_CERT_PARSE
 			psTraceIntCrypto("ERROR: non-v3 certificate version %d insecure\n",
 				cert->version);
 			return PS_PARSE_FAIL;
+#else
+			if (cert->version != 0 && cert->version != 1) {
+				psTraceIntCrypto("ERROR: unsupported certificate version: %d\n",
+								 cert->version);
+			}
+			/* Allow locally stored, trusted version 1 and version 2 certificates
+			   to be parsed. The SSL layer code will still reject v1 and v2
+			   certificates that arrive over-the-wire. */
+#endif /* ALLOW_VERSION_1_ROOT_CERT_PARSE */
 		}
 /*
 		CertificateSerialNumber  ::=  INTEGER
@@ -710,10 +778,17 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 		algorithm			AlgorithmIdentifier,
 		subjectPublicKey	BIT STRING	}
 */
+		p_subject_pubkey_info = p;
+
+		cert->publicKeyDerOffsetIntoUnparsedBin = (uint16_t)(p - certStart);
+
 		if ((rc = getAsnSequence(&p, (uint32)(end - p), &len)) < 0) {
 			psTraceCrypto("Couldn't get ASN sequence for pubKeyAlgorithm\n");
 			return rc;
 		}
+		subject_pubkey_info_header_len = (p - p_subject_pubkey_info);
+		cert->publicKeyDerLen = len + subject_pubkey_info_header_len;
+
 		if ((rc = getAsnAlgorithmIdentifier(&p, (uint32)(end - p),
 				&cert->pubKeyAlgorithm, &plen)) < 0) {
 			psTraceCrypto("Couldn't parse algorithm id for pubKeyAlgorithm\n");
@@ -766,7 +841,7 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 				cert->pubKeyAlgorithm);
 			return PS_UNSUPPORTED_FAIL;
 		}
-		
+
 #ifdef USE_OCSP
 		/* A sha1 hash of the public key is useful for OCSP */
 		memcpy(cert->sha1KeyHash, sha1KeyHash, SHA1_HASH_SIZE);
@@ -801,9 +876,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 		if (cert->subject.commonName == NULL &&
 				cert->subject.country == NULL &&
 				cert->subject.state == NULL &&
-				cert->subject.locality == NULL &&
 				cert->subject.organization == NULL &&
 				cert->subject.orgUnit == NULL &&
+				cert->subject.domainComponent == NULL &&
 				cert->extensions.san == NULL) {
 			psTraceCrypto("Error. Cert has no name information\n");
 			return PS_PARSE_FAIL;
@@ -859,13 +934,13 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef USE_MD2
 		case OID_MD2_RSA_SIG:
 			psMd2Init(&hashCtx.md2);
-			psMd2Update(&hashCtx.md2, certStart, certLen);
+			psMd2Update(&hashCtx.md2, tbsCertStart, certLen);
 			psMd2Final(&hashCtx.md2, cert->sigHash);
 			break;
 #endif
 		case OID_MD5_RSA_SIG:
 			psMd5Init(&hashCtx.md5);
-			psMd5Update(&hashCtx.md5, certStart, certLen);
+			psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
 			psMd5Final(&hashCtx.md5, cert->sigHash);
 			break;
 #endif
@@ -874,8 +949,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef USE_ECC
 		case OID_SHA1_ECDSA_SIG:
 #endif
+			psSha1PreInit(&hashCtx.sha1);
 			psSha1Init(&hashCtx.sha1);
-			psSha1Update(&hashCtx.sha1, certStart, certLen);
+			psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
 			psSha1Final(&hashCtx.sha1, cert->sigHash);
 			break;
 #endif
@@ -884,8 +960,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef USE_ECC
 		case OID_SHA256_ECDSA_SIG:
 #endif
+			psSha256PreInit(&hashCtx.sha256);
 			psSha256Init(&hashCtx.sha256);
-			psSha256Update(&hashCtx.sha256, certStart, certLen);
+			psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
 			psSha256Final(&hashCtx.sha256, cert->sigHash);
 			break;
 #endif
@@ -894,8 +971,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef USE_ECC
 		case OID_SHA384_ECDSA_SIG:
 #endif
+			psSha384PreInit(&hashCtx.sha384);
 			psSha384Init(&hashCtx.sha384);
-			psSha384Update(&hashCtx.sha384, certStart, certLen);
+			psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
 			psSha384Final(&hashCtx.sha384, cert->sigHash);
 			break;
 #endif
@@ -904,8 +982,9 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef USE_ECC
 		case OID_SHA512_ECDSA_SIG:
 #endif
+			psSha512PreInit(&hashCtx.sha512);
 			psSha512Init(&hashCtx.sha512);
-			psSha512Update(&hashCtx.sha512, certStart, certLen);
+			psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
 			psSha512Final(&hashCtx.sha512, cert->sigHash);
 			break;
 #endif
@@ -915,35 +994,39 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 #ifdef ENABLE_MD5_SIGNED_CERTS
 			case PKCS1_MD5_ID:
 				psMd5Init(&hashCtx.md5);
-				psMd5Update(&hashCtx.md5, certStart, certLen);
+				psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
 				psMd5Final(&hashCtx.md5, cert->sigHash);
 				break;
 #endif
 #ifdef ENABLE_SHA1_SIGNED_CERTS
 			case PKCS1_SHA1_ID:
+				psSha1PreInit(&hashCtx.sha1);
 				psSha1Init(&hashCtx.sha1);
-				psSha1Update(&hashCtx.sha1, certStart, certLen);
+				psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
 				psSha1Final(&hashCtx.sha1, cert->sigHash);
 				break;
 #endif
 #ifdef USE_SHA256
 			case PKCS1_SHA256_ID:
+				psSha256PreInit(&hashCtx.sha256);
 				psSha256Init(&hashCtx.sha256);
-				psSha256Update(&hashCtx.sha256, certStart, certLen);
+				psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
 				psSha256Final(&hashCtx.sha256, cert->sigHash);
 				break;
 #endif
 #ifdef USE_SHA384
 			case PKCS1_SHA384_ID:
+				psSha384PreInit(&hashCtx.sha384);
 				psSha384Init(&hashCtx.sha384);
-				psSha384Update(&hashCtx.sha384, certStart, certLen);
+				psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
 				psSha384Final(&hashCtx.sha384, cert->sigHash);
 				break;
 #endif
 #ifdef USE_SHA512
 			case PKCS1_SHA512_ID:
+				psSha512PreInit(&hashCtx.sha512);
 				psSha512Init(&hashCtx.sha512);
-				psSha512Update(&hashCtx.sha512, certStart, certLen);
+				psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
 				psSha512Final(&hashCtx.sha512, cert->sigHash);
 				break;
 #endif
@@ -1003,11 +1086,40 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 	return (int32)(p - pp);
 }
 
+static void freeOrgUnitList(x509OrgUnit_t *orgUnit, psPool_t *allocPool)
+{
+	x509OrgUnit_t *ou;
+	while (orgUnit != NULL) {
+		ou = orgUnit;
+		orgUnit = ou->next;
+		psFree(ou->name, allocPool);
+		psFree(ou, allocPool);
+	}
+}
+
+static void freeDomainComponentList(x509DomainComponent_t *domainComponent,
+									psPool_t *allocPool)
+{
+	x509DomainComponent_t *dc;
+	while (domainComponent != NULL) {
+		dc = domainComponent;
+		domainComponent = dc->next;
+		psFree(dc->name, allocPool);
+		psFree(dc, allocPool);
+	}
+}
+
 #ifdef USE_CERT_PARSE
 void x509FreeExtensions(x509v3extensions_t *extensions)
 {
 
 	x509GeneralName_t		*active, *inc;
+#if defined(USE_FULL_CERT_PARSE) || defined(USE_CERT_GEN)
+	x509PolicyQualifierInfo_t *qual_info, *qual_info_inc;
+	x509PolicyInformation_t *pol_info, *pol_info_inc;
+	x509policyMappings_t *pol_map, *pol_map_inc;
+	x509authorityInfoAccess_t *authInfo, *authInfoInc;
+#endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
 
 	if (extensions == NULL) {
 		return;
@@ -1021,6 +1133,28 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
 			active = inc;
 		}
 	}
+#if defined(USE_FULL_CERT_PARSE) || defined(USE_CERT_GEN)
+	if (extensions->issuerAltName) {
+		active = extensions->issuerAltName;
+		while (active != NULL) {
+			inc = active->next;
+			psFree(active->data, extensions->pool);
+			psFree(active, extensions->pool);
+			active = inc;
+		}
+	}
+
+	if (extensions->authorityInfoAccess) {
+		authInfo = extensions->authorityInfoAccess;
+		while (authInfo != NULL) {
+			authInfoInc = authInfo->next;
+			psFree(authInfo->ocsp, extensions->pool);
+			psFree(authInfo->caIssuers, extensions->pool);
+			psFree(authInfo, extensions->pool);
+			authInfo = authInfoInc;
+		}
+	}
+#endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
 
 #ifdef USE_CRL
 	if (extensions->crlNum) {
@@ -1061,20 +1195,159 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
 	if (extensions->ak.keyId)	psFree(extensions->ak.keyId, extensions->pool);
 	if (extensions->ak.serialNum) psFree(extensions->ak.serialNum,
 		extensions->pool);
-	if (extensions->ak.attribs.commonName)
-		psFree(extensions->ak.attribs.commonName, extensions->pool);
-	if (extensions->ak.attribs.country) psFree(extensions->ak.attribs.country,
-		extensions->pool);
-	if (extensions->ak.attribs.state) psFree(extensions->ak.attribs.state,
-		extensions->pool);
-	if (extensions->ak.attribs.locality)
-		psFree(extensions->ak.attribs.locality, extensions->pool);
-	if (extensions->ak.attribs.organization)
-		psFree(extensions->ak.attribs.organization, extensions->pool);
-	if (extensions->ak.attribs.orgUnit) psFree(extensions->ak.attribs.orgUnit,
-		extensions->pool);
-	if (extensions->ak.attribs.dnenc) psFree(extensions->ak.attribs.dnenc,
-		extensions->pool);
+	psX509FreeDNStruct(&extensions->ak.attribs, extensions->pool);
+
+#if defined(USE_FULL_CERT_PARSE) || defined(USE_CERT_GEN)
+	pol_info = extensions->certificatePolicy.policy;
+	while (pol_info != NULL) {
+		/* Free PolicyInformation member variables. */
+		pol_info_inc = pol_info->next;
+		psFree(pol_info->policyOid, extensions->pool);
+		qual_info = pol_info->qualifiers;
+		while (qual_info != NULL) {
+			/* Free QualifierInfo member variables. */
+			qual_info_inc = qual_info->next;
+			psFree(qual_info->cps, extensions->pool);
+			psFree(qual_info->unoticeOrganization, extensions->pool);
+			psFree(qual_info->unoticeExplicitText, extensions->pool);
+			psFree(qual_info, extensions->pool);
+			qual_info = qual_info_inc;
+		}
+		psFree(pol_info, extensions->pool);
+		pol_info = pol_info_inc;
+	}
+
+	pol_map = extensions->policyMappings;
+	while (pol_map != NULL) {
+		pol_map_inc = pol_map->next;
+		psFree(pol_map->issuerDomainPolicy, extensions->pool);
+		psFree(pol_map->subjectDomainPolicy, extensions->pool);
+		psFree(pol_map, extensions->pool);
+		pol_map = pol_map_inc;
+	}
+#endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
+}
+
+int32_t psX509GetNumDomainComponents(const x509DNattributes_t *DN)
+{
+	x509DomainComponent_t *dc;
+	int32_t res = 0;
+
+	if (DN == NULL)
+		return PS_ARG_FAIL;
+
+	if (DN->domainComponent == NULL)
+		return 0;
+
+	res = 1;
+	dc = DN->domainComponent;
+	while(dc->next != NULL)  {
+		dc = dc->next;
+		res++;
+	}
+
+	return res;
+}
+
+x509DomainComponent_t* psX509GetDomainComponent(const x509DNattributes_t *DN,
+												int32_t index)
+{
+	x509DomainComponent_t *dc;
+	int32_t i;
+
+	if (DN == NULL || DN->domainComponent == NULL || index < 0)
+		return NULL;
+
+	/*
+	  Note: the DC list is in reverse order. The last item
+	  (i.e the item with largest index) is at the list head.
+	*/
+
+	i = psX509GetNumDomainComponents(DN) - 1; /* Largest index. */
+	if (i < 0)
+		return NULL;
+
+	dc = DN->domainComponent;
+	if (i == index)
+		return dc;
+
+	while(dc->next != NULL) {
+		dc = dc->next;
+	    i--;
+		if (i < 0)
+			return NULL;
+		if (i == index)
+			return dc;
+	}
+
+	return NULL;
+}
+
+int32_t psX509GetConcatenatedDomainComponent(const x509DNattributes_t *DN,
+											 char **out_str,
+											 size_t *out_str_len)
+{
+	x509DomainComponent_t *dc;
+	int32_t i = 0;
+	uint16_t total_len = 0;
+	int32_t num_dcs = 0;
+	int32_t pos = 0;
+
+	if (DN == NULL || out_str == NULL)
+		return PS_ARG_FAIL;
+
+	num_dcs = psX509GetNumDomainComponents(DN);
+	if (num_dcs == 0) {
+		*out_str = NULL;
+		*out_str_len = 0;
+		return PS_SUCCESS;
+	}
+
+	for (i = 0; i < num_dcs; i++) {
+		dc = psX509GetDomainComponent(DN, i);
+		if (dc == NULL)
+			return PS_FAILURE;
+		total_len += dc->len - DN_NUM_TERMINATING_NULLS;
+		 /* We will add a dot between the components. */
+		if (i != (num_dcs - 1))
+			total_len += 1;
+	}
+
+	total_len += DN_NUM_TERMINATING_NULLS;
+
+	*out_str = psMalloc(NULL, total_len);
+	if (*out_str == NULL)
+		return PS_MEM_FAIL;
+	memset(*out_str, 0, total_len);
+
+	/* The top-level DC is usually listed first. So we start from the
+	   other end. */
+	pos = 0;
+	for (i = num_dcs - 1; i >= 0; i--) {
+		dc = psX509GetDomainComponent(DN, i);
+		if (dc == NULL) {
+			psFree(*out_str, NULL);
+			*out_str = NULL;
+			return PS_FAILURE;
+		}
+		memcpy(*out_str + pos, dc->name,
+			   dc->len - DN_NUM_TERMINATING_NULLS);
+		pos += dc->len - DN_NUM_TERMINATING_NULLS;
+		if (i != 0) {
+			strncpy(*out_str + pos, ".", 1);
+			pos++;
+		}
+	}
+
+	if (pos != total_len - DN_NUM_TERMINATING_NULLS) {
+		psFree(*out_str, NULL);
+		*out_str = NULL;
+		return PS_FAILURE;
+	}
+
+	*out_str_len = (size_t)total_len;
+
+	return PS_SUCCESS;
 }
 #endif /* USE_CERT_PARSE */
 
@@ -1238,20 +1511,7 @@ int32_t psX509ValidateGeneralName(const char *n)
 
 /******************************************************************************/
 /*
-	Parses a sequence of GeneralName types
-	TODO: the actual types should be parsed.  Just copying data blob
-
-	GeneralName ::= CHOICE {
-		otherName						[0]		OtherName,
-		rfc822Name						[1]		IA5String,
-		dNSName							[2]		IA5String,
-		x400Address						[3]		ORAddress,
-		directoryName					[4]		Name,
-		ediPartyName					[5]		EDIPartyName,
-		uniformResourceIdentifier		[6]		IA5String,
-		iPAddress						[7]		OCTET STRING,
-		registeredID					[8]		OBJECT IDENTIFIER }
-*/
+	Parses a sequence of GeneralName types*/
 static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
 				uint16_t len, const unsigned char *extEnd,
 				x509GeneralName_t **name, int16_t limit)
@@ -1289,7 +1549,6 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
 			}
 			prevName->next = psMalloc(pool,	sizeof(x509GeneralName_t));
 			if (prevName->next == NULL) {
-				/* TODO: free the list */
 				return PS_MEM_FAIL;
 			}
 			activeName = prevName->next;
@@ -1313,9 +1572,10 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
 					psTraceCrypto("ASN parse error SAN otherName\n");
 					return PS_PARSE_FAIL;
 				}
-				if (*(p++) != ASN_OID ||
-					getAsnLength(&p, (int32)(extEnd - p), &activeName->oidLen) < 0 ||
-					(uint32)(extEnd - p) < activeName->oidLen) {
+				if (*(p++) != ASN_OID
+					|| getAsnLength(&p, (int32)(extEnd - p), &activeName->oidLen) < 0
+					|| (uint32)(extEnd - p) < activeName->oidLen
+					|| activeName->oidLen > sizeof(activeName->oid)) {
 
 					psTraceCrypto("ASN parse error SAN otherName oid\n");
 					return -1;
@@ -1547,7 +1807,7 @@ static void psTraceOid(uint32_t oid[MAX_OID_LEN], uint8_t oidlen)
 	found = 0;
 	for (j = 0; oid_list[j].oid[0] != 0 && !found; j++) {
 		for (i = 0; i < oidlen; i++) {
-			if ((uint16_t)(oid[i] & 0xFFFF) != oid_list[j].oid[i]) {
+			if ((uint8_t)(oid[i] & 0xFF) != oid_list[j].oid[i]) {
 				break;
 			}
 			if ((i + 1) == oidlen) {
@@ -1567,6 +1827,601 @@ static void psTraceOid(uint32_t oid[MAX_OID_LEN], uint8_t oidlen)
 	X509v3 extensions
 */
 
+#ifdef USE_FULL_CERT_PARSE
+static
+int32_t parsePolicyQualifierInfo(psPool_t *pool,
+								 const unsigned char *p,
+								 const unsigned char *extEnd,
+								 uint16_t fullExtLen,
+								 x509PolicyQualifierInfo_t *qualInfo,
+								 uint16_t *qual_info_len)
+{
+	uint32_t oid[MAX_OID_LEN] = {0};
+	uint8_t oidlen;
+	oid_e noid;
+	uint16_t len;
+	const unsigned char *qualifierStart, *qualifierEnd;
+	const unsigned char *noticeNumbersEnd;
+	int i;
+	int32_t noticeNumber;
+
+	qualifierStart = p;
+
+	/* Parse a PolicyQualifierInfo. */
+	if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing certificatePolicies extension\n");
+		return PS_PARSE_FAIL;
+	}
+	*qual_info_len = len + (p - qualifierStart);
+	qualifierEnd = qualifierStart + *qual_info_len;
+
+	/* Parse policyQualifierId. */
+	if (len < 1 || *p++ != ASN_OID) {
+		psTraceCrypto("Malformed policy qualifier header\n");
+		return PS_PARSE_FAIL;
+	}
+	if (getAsnLength(&p, fullExtLen, &len) < 0 ||
+		fullExtLen < len) {
+		psTraceCrypto("Malformed extension length\n");
+		return PS_PARSE_FAIL;
+	}
+	if ((oidlen = psParseOid(p, len, oid)) < 1) {
+		psTraceCrypto("Malformed extension OID\n");
+		return PS_PARSE_FAIL;
+	}
+	/* PolicyQualifierId ::= OBJECT IDENTIFIER ( id-qt-cps | id-qt-unotice )*/
+	noid = psFindOid(oid, oidlen);
+	p += len;
+	if (noid == oid_id_qt_cps) {
+		if (*p++ != ASN_IA5STRING) {
+			psTraceCrypto("Malformed extension OID\n");
+			return PS_PARSE_FAIL;
+		}
+		if (getAsnLength(&p, fullExtLen, &len) < 0 ||
+			fullExtLen < len) {
+			psTraceCrypto("Malformed extension length\n");
+			return PS_PARSE_FAIL;
+		}
+		qualInfo->cps = psMalloc(pool, len+1);
+		qualInfo->cpsLen = len;
+		memcpy(qualInfo->cps,
+			   p, len);
+		qualInfo->cps[len] = 0; /* Store as C string. */
+		p += len;
+	} else if(noid == oid_id_qt_unotice) {
+
+		/* UserNotice ::= SEQUENCE {
+		   noticeRef        NoticeReference OPTIONAL,
+		   explicitText     DisplayText OPTIONAL } */
+		if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+			psTraceCrypto("Error parsing certificatePolicies extension\n");
+			return PS_PARSE_FAIL;
+		}
+		if (len == 0 || p >= qualifierEnd) {
+			/* No optional noticeRef or explicitText.
+			   Nothing left to parse. */
+			return PS_SUCCESS;
+		}
+		if (*p == (ASN_SEQUENCE | ASN_CONSTRUCTED)) {
+			/*    NoticeReference ::= SEQUENCE {
+				  organization     DisplayText,
+				  noticeNumbers    SEQUENCE OF INTEGER } */
+			if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+				psTraceCrypto("Error parsing certificatePolicies extension\n");
+				return PS_PARSE_FAIL;
+			}
+			/* Parse explicitText. */
+			if (*p != ASN_UTF8STRING &&
+				*p != ASN_VISIBLE_STRING &&
+				*p != ASN_BMPSTRING &&
+				*p != ASN_IA5STRING) {
+				psTraceCrypto("Error parsing certificatePolicies extension." \
+							  "Only UTF8String, IA5String, BMPString and " \
+							  "VisibleString are supported in NoticeReferences.\n");
+				return PS_PARSE_FAIL;
+			}
+			qualInfo->unoticeOrganizationEncoding = *p;
+			p++;
+			/* Parse organization. */
+			if (getAsnLength(&p, fullExtLen, &len) < 0 ||
+				fullExtLen < len) {
+				psTraceCrypto("Malformed extension length\n");
+				return PS_PARSE_FAIL;
+			}
+			qualInfo->unoticeOrganization = psMalloc(pool, len+1);
+			if (qualInfo->unoticeOrganization == NULL)
+				return PS_MEM_FAIL;
+			qualInfo->unoticeOrganizationLen = len;
+			memcpy(qualInfo->unoticeOrganization, p, len);
+			qualInfo->unoticeOrganization[len] = 0;  /* Store as C string. */
+			p += len;
+			/* Parse noticeNumbers. */
+			if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+				psTraceCrypto("Error parsing certificatePolicies extension\n");
+				return PS_PARSE_FAIL;
+			}
+			noticeNumbersEnd = p+len;
+			i = 0;
+			while (p != noticeNumbersEnd) {
+				if (i == MAX_UNOTICE_NUMBERS) {
+					psTraceCrypto("Too many UserNoticeNumbers.\n");
+					return PS_PARSE_FAIL;
+				}
+				if (getAsnInteger(&p, len, &noticeNumber) < 0) {
+					psTraceCrypto("Malformed extension length\n");
+					return PS_PARSE_FAIL;
+				}
+				qualInfo->unoticeNumbers[i] = noticeNumber;
+				i++;
+			}
+			qualInfo->unoticeNumbersLen = i;
+		}
+		if (p >= qualifierEnd) {
+			/* The UserNotice contained noticeRef, but not explicitText. */
+			return PS_SUCCESS;
+		}
+		/* Parse explicitText. */
+		if (*p != ASN_UTF8STRING &&
+			*p != ASN_VISIBLE_STRING &&
+			*p != ASN_BMPSTRING &&
+			*p != ASN_IA5STRING) {
+				psTraceCrypto("Error parsing certificatePolicies extension." \
+							  "Only UTF8String, IA5String, BMPString and " \
+							  "VisibleString are supported in explicitText.\n");
+				return PS_PARSE_FAIL;
+		}
+		qualInfo->unoticeExplicitTextEncoding = *p;
+		p++;
+		if (getAsnLength(&p, fullExtLen, &len) < 0 ||
+			fullExtLen < len) {
+			psTraceCrypto("Malformed extension length\n");
+			return PS_PARSE_FAIL;
+		}
+		qualInfo->unoticeExplicitText = psMalloc(pool, len+1);
+		if (qualInfo->unoticeExplicitText == NULL)
+			return PS_MEM_FAIL;
+		qualInfo->unoticeExplicitTextLen = len;
+		memcpy(qualInfo->unoticeExplicitText, p, len);
+		qualInfo->unoticeExplicitText[len] = 0; /* Store as C string. */
+		p += len;
+	} else {
+		psTraceCrypto("Unsupported policyQualifierId\n");
+		return PS_PARSE_FAIL;
+	}
+
+	return PS_SUCCESS;
+}
+
+static
+int32_t parsePolicyInformation(psPool_t *pool,
+							   const unsigned char *p,
+							   const unsigned char *extEnd,
+							   uint16_t fullExtLen,
+							   x509PolicyInformation_t *polInfo,
+							   uint16_t *pol_info_len)
+{
+	uint32_t oid[MAX_OID_LEN] = {0};
+	uint8_t oidlen;
+	uint16_t len;
+	const unsigned char *qualifierEnd;
+	const unsigned char *polInfoStart, *polInfoEnd;
+	x509PolicyQualifierInfo_t *qualInfo;
+	uint16_t qualInfoLen;
+	int i;
+
+	polInfoStart = p;
+
+	/*
+	  PolicyInformation ::= SEQUENCE {
+	  policyIdentifier   CertPolicyId,
+	  policyQualifiers   SEQUENCE SIZE (1..MAX) OF
+	  PolicyQualifierInfo OPTIONAL }
+	*/
+
+	if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing certificatePolicies extension\n");
+		return PS_PARSE_FAIL;
+	}
+	*pol_info_len = len + (p-polInfoStart);
+	polInfoEnd = polInfoStart + *pol_info_len;
+
+	/* Parse CertPolicyId. */
+	if (*p++ != ASN_OID) {
+		psTraceCrypto("Malformed extension header\n");
+		return PS_PARSE_FAIL;
+	}
+	if (getAsnLength(&p, fullExtLen, &len) < 0 ||
+		fullExtLen < len) {
+		psTraceCrypto("Malformed extension length\n");
+		return PS_PARSE_FAIL;
+	}
+	if ((oidlen = psParseOid(p, len, oid)) < 1) {
+		psTraceCrypto("Malformed extension OID\n");
+		return PS_PARSE_FAIL;
+	}
+	p += len;
+	if (oidlen == 0 || oidlen > MAX_OID_LEN) {
+		psTraceCrypto("Malformed extension OID\n");
+		return PS_PARSE_FAIL;
+	}
+
+	/* Store the policy ID. */
+	polInfo->policyOid = psMalloc(pool, oidlen*sizeof(uint32_t));
+	if (polInfo->policyOid == NULL)
+		return PS_MEM_FAIL;
+	for (i = 0; i < oidlen; i++) {
+		polInfo->policyOid[i] = oid[i];
+	}
+	polInfo->policyOidLen = oidlen;
+
+	if ((p >= polInfoEnd) ||
+		(*p != (ASN_SEQUENCE | ASN_CONSTRUCTED))) {
+		/* No optional PolicyQualifierInfos. */
+		return PS_SUCCESS;
+	}
+
+	/* Parse policyQualifiers := SEQUENCE SIZE (1..MAX) OF
+	   PolicyQualifierInfo OPTIONAL*/
+	if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing certificatePolicies extension\n");
+		return PS_PARSE_FAIL;
+	}
+	qualifierEnd = p + len;
+
+	polInfo->qualifiers = psMalloc(pool, sizeof(x509PolicyQualifierInfo_t));
+	if (polInfo->qualifiers == NULL)
+		return PS_MEM_FAIL;
+	memset(polInfo->qualifiers, 0, sizeof(x509PolicyQualifierInfo_t));
+	qualInfo = polInfo->qualifiers;
+
+	/* Parse initial PolicyQualifierInfo. */
+	if (parsePolicyQualifierInfo(pool,
+								 p,
+								 extEnd,
+								 fullExtLen,
+								 qualInfo,
+								 &qualInfoLen) < 0) {
+		return PS_PARSE_FAIL;
+	}
+	p += qualInfoLen;
+
+	/* More PolicyQualifierInfos? */
+	while ((p < qualifierEnd)
+		   && (p < extEnd)
+		   && (*p == (ASN_SEQUENCE | ASN_CONSTRUCTED))) {
+		qualInfo->next = psMalloc(pool, sizeof(x509PolicyQualifierInfo_t));
+		if (qualInfo->next == NULL)
+			return PS_MEM_FAIL;
+		memset(qualInfo->next, 0, sizeof(x509PolicyQualifierInfo_t));
+		qualInfo = qualInfo->next;
+
+		if (parsePolicyQualifierInfo(pool,
+									 p,
+									 extEnd,
+									 fullExtLen,
+									 qualInfo,
+									 &qualInfoLen) < 0) {
+			return PS_PARSE_FAIL;
+		}
+		p += qualInfoLen;
+	}
+
+	return PS_SUCCESS;
+}
+
+static
+int32_t parsePolicyConstraints(psPool_t *pool,
+							   const unsigned char *p,
+							   const unsigned char *extEnd,
+							   x509policyConstraints_t *policyConstraints,
+							   uint16_t *polConstraintsLen)
+{
+	uint16_t len;
+	const unsigned char *polConstraintsStart, *polConstraintsEnd;
+	unsigned char tag;
+	int num_ints = 0;
+
+	/*
+	  PolicyConstraints ::= SEQUENCE {
+	  requireExplicitPolicy           [0] SkipCerts OPTIONAL,
+	  inhibitPolicyMapping            [1] SkipCerts OPTIONAL }
+
+	  SkipCerts ::= INTEGER (0..MAX)
+	*/
+
+	polConstraintsStart = p;
+
+	if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing policyConstraints extension\n");
+		return PS_PARSE_FAIL;
+	}
+	polConstraintsEnd = p + len;
+	*polConstraintsLen = (polConstraintsEnd - polConstraintsStart);
+
+	if (len == 0) {
+		/* Empty PolicyConstraints. This is allowed by RFC 5280:
+		   "The behavior of clients that encounter an empty policy
+		   constraints field is not addressed in this profile.*/
+		return PS_SUCCESS;
+	}
+
+	/* Parse up to 2 SkipCerts INTEGERS with context-specific tags 0 and 1. */
+	while( num_ints < 2 && (*p == ASN_CONTEXT_SPECIFIC ||
+							*p == (ASN_CONTEXT_SPECIFIC + 1)) ) {
+		tag = *p++;
+		if (getAsnLength(&p, (uint32)(polConstraintsEnd - p), &len) < 0 ||
+			(uint32)(polConstraintsEnd - p) < len) {
+			psTraceCrypto("getAsnLength failure in policyConstraints parsing\n");
+			return PS_PARSE_FAIL;
+		}
+		/* We only accept single-octet SkipCerts values. Should be enough
+		   for all reasonable applications. */
+		if (len != 1) {
+			psTraceCrypto("Too large SkipCerts value in PolicyConstraints.\n");
+			return PS_PARSE_FAIL;
+		}
+		if (tag == ASN_CONTEXT_SPECIFIC)
+			policyConstraints->requireExplicitPolicy = (int32_t)*p;
+		else
+			policyConstraints->inhibitPolicyMappings = (int32_t)*p;
+		p += len;
+		++num_ints;
+	}
+
+	if (p != polConstraintsEnd) {
+		psTraceCrypto("Error parsing policyConstraints extension\n");
+		return PS_PARSE_FAIL;
+	}
+
+	return PS_SUCCESS;
+}
+
+static
+int32_t parsePolicyMappings(psPool_t *pool,
+							const unsigned char *p,
+							const unsigned char *extEnd,
+							x509policyMappings_t *policyMappings,
+							uint16_t *polMappingsLen)
+{
+	uint32_t oid[MAX_OID_LEN] = {0};
+	uint16_t len, oidlen;
+	const unsigned char *polMappingsStart, *polMappingsEnd;
+	x509policyMappings_t *pol_map;
+	int i;
+	int num_mappings = 0;
+
+	/*
+	  PolicyMappings ::= SEQUENCE SIZE (1..MAX) OF SEQUENCE {
+	  issuerDomainPolicy      CertPolicyId,
+	  subjectDomainPolicy     CertPolicyId }
+	*/
+
+	polMappingsStart = p;
+
+	if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing policyMappings extension\n");
+		return PS_PARSE_FAIL;
+	}
+	polMappingsEnd = p + len;
+	*polMappingsLen = (polMappingsEnd - polMappingsStart);
+
+	pol_map = policyMappings;
+	while (p < polMappingsEnd &&
+		   *p == (ASN_SEQUENCE | ASN_CONSTRUCTED)) {
+
+		if (num_mappings > 0) {
+			pol_map->next = psMalloc(pool, sizeof(x509policyMappings_t));
+			if (pol_map->next == NULL)
+				return PS_MEM_FAIL;
+			memset(pol_map->next, 0, sizeof(x509policyMappings_t));
+			pol_map = pol_map->next;
+		}
+
+		if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+			psTraceCrypto("Error parsing policyMappings extension\n");
+			return PS_PARSE_FAIL;
+		}
+
+		/* Parse issuerDomainPolicy OID. */
+		if (*p++ != ASN_OID) {
+			psTraceCrypto("Malformed extension header\n");
+			return PS_PARSE_FAIL;
+		}
+
+		if (getAsnLength(&p, (uint32)(polMappingsEnd - p), &len) < 0 ||
+			(uint32)(polMappingsEnd - p) < len) {
+			psTraceCrypto("getAsnLength failure in policyMappings parsing\n");
+			return PS_PARSE_FAIL;
+		}
+		memset(oid, 0, sizeof(oid));
+		if ((oidlen = psParseOid(p, len, oid)) < 1) {
+			psTraceCrypto("Malformed extension OID\n");
+			return PS_PARSE_FAIL;
+		}
+		p += len;
+
+		pol_map->issuerDomainPolicy = psMalloc(pool, len*sizeof(uint32_t));
+		memset(pol_map->issuerDomainPolicy, 0, len*sizeof(uint32_t));
+
+		for (i = 0; i < oidlen; i++) {
+			pol_map->issuerDomainPolicy[i] = oid[i];
+		}
+		pol_map->issuerDomainPolicyLen = len;
+
+		/* Parse subjectDomainPolicy OID. */
+		if (*p++ != ASN_OID) {
+			psTraceCrypto("Malformed extension header\n");
+			return PS_PARSE_FAIL;
+		}
+
+		if (getAsnLength(&p, (uint32)(polMappingsEnd - p), &len) < 0 ||
+			(uint32)(polMappingsEnd - p) < len) {
+			psTraceCrypto("getAsnLength failure in policyMappings parsing\n");
+			return PS_PARSE_FAIL;
+		}
+		memset(oid, 0, sizeof(oid));
+		if ((oidlen = psParseOid(p, len, oid)) < 1) {
+			psTraceCrypto("Malformed extension OID\n");
+			return PS_PARSE_FAIL;
+		}
+		p += len;
+
+		pol_map->subjectDomainPolicy = psMalloc(pool, len*sizeof(uint32_t));
+		memset(pol_map->subjectDomainPolicy, 0, len*sizeof(uint32_t));
+
+		for (i = 0; i < oidlen; i++) {
+			pol_map->subjectDomainPolicy[i] = oid[i];
+		}
+		pol_map->subjectDomainPolicyLen = len;
+
+		++num_mappings;
+	}
+
+	if (p != polMappingsEnd) {
+		psTraceCrypto("Error parsing policyMappings extension\n");
+		return PS_PARSE_FAIL;
+	}
+
+	return PS_SUCCESS;
+}
+
+static
+int32_t parseAuthorityInfoAccess(psPool_t *pool,
+								 const unsigned char *p,
+								 const unsigned char *extEnd,
+								 x509authorityInfoAccess_t **authInfo,
+								 uint16_t *authInfoLen)
+{
+	uint16_t len, oidlen, adLen;
+	const unsigned char *authInfoStart, *authInfoEnd;
+	x509authorityInfoAccess_t *pAuthInfo;
+	uint32_t oid[MAX_OID_LEN] = {0};
+	oid_e noid;
+	int first_entry = 0;
+
+	authInfoStart = p;
+/*
+
+   id-pe-authorityInfoAccess OBJECT IDENTIFIER ::= { id-pe 1 }
+
+   AuthorityInfoAccessSyntax  ::=
+           SEQUENCE SIZE (1..MAX) OF AccessDescription
+
+   AccessDescription  ::=  SEQUENCE {
+           accessMethod          OBJECT IDENTIFIER,
+           accessLocation        GeneralName  }
+
+   id-ad OBJECT IDENTIFIER ::= { id-pkix 48 }
+
+   id-ad-caIssuers OBJECT IDENTIFIER ::= { id-ad 2 }
+
+   id-ad-ocsp OBJECT IDENTIFIER ::= { id-ad 1 }
+*/
+
+	/* AuthorityInfoAccessSyntax. */
+	if (getAsnSequence(&p, (int32)(extEnd - p), &len) < 0) {
+		psTraceCrypto("Error parsing authKeyId extension\n");
+		return PS_PARSE_FAIL;
+	}
+
+	authInfoEnd = p + len;
+	*authInfoLen = (authInfoEnd - authInfoStart);
+
+	if (*authInfo == NULL) {
+		*authInfo = psMalloc(pool, sizeof(x509authorityInfoAccess_t));
+		if (*authInfo == NULL)
+			return PS_MEM_FAIL;
+		memset(*authInfo, 0, sizeof(x509authorityInfoAccess_t));
+		first_entry = 1;
+	}
+
+	pAuthInfo = *authInfo;
+
+	while (p < authInfoEnd &&
+		   *p == (ASN_SEQUENCE | ASN_CONSTRUCTED)) {
+
+		/* Find the end of the list. */
+		while (pAuthInfo->next != NULL) {
+			pAuthInfo = pAuthInfo->next;
+		}
+		if (!first_entry) {
+			/* Malloc space for a new entry. */
+			pAuthInfo->next = psMalloc(pool,
+									   sizeof(x509authorityInfoAccess_t));
+			if (pAuthInfo->next == NULL)
+				return PS_MEM_FAIL;
+			memset(pAuthInfo->next, 0,
+				   sizeof(x509authorityInfoAccess_t));
+			pAuthInfo = pAuthInfo->next;
+		} else
+			first_entry = 0;
+
+		/* AccessDescription. */
+		if (getAsnSequence(&p, (int32)(extEnd - p), &adLen) < 0) {
+			psTraceCrypto("Error parsing authKeyId extension\n");
+			return PS_PARSE_FAIL;
+		}
+		/* accessMethod. */
+		if (*p++ != ASN_OID) {
+			psTraceCrypto("Malformed extension header\n");
+			return PS_PARSE_FAIL;
+		}
+		if (getAsnLength(&p, (uint32)(authInfoEnd - p), &len) < 0 ||
+			(uint32)(authInfoEnd - p) < len) {
+			psTraceCrypto("getAsnLength failure in authInfo parsing\n");
+			return PS_PARSE_FAIL;
+		}
+		memset(oid, 0, sizeof(oid));
+		if ((oidlen = psParseOid(p, len, oid)) < 1) {
+			psTraceCrypto("Malformed extension OID\n");
+			return PS_PARSE_FAIL;
+		}
+		noid = psFindOid(oid, oidlen);
+		p += len;
+		if (noid != oid_id_ad_caIssuers &&
+			noid != oid_id_ad_ocsp) {
+			psTraceCrypto("Unsupported AccessDescription: " \
+						  "only oid_ad_caIssuers and id_ad_ocsp " \
+						  "are supported. \n");
+			return PS_PARSE_FAIL;
+		}
+		/* accessLocation. */
+		switch (*p++) {
+		case (ASN_CONTEXT_SPECIFIC + 6):
+			/* uniformResourceIdentifier [6]  IA5String. */
+			if (getAsnLength(&p, (uint32)(authInfoEnd - p), &len) < 0 ||
+				(uint32)(authInfoEnd - p) < len) {
+				psTraceCrypto("getAsnLength failure in authInfo parsing\n");
+				return PS_PARSE_FAIL;
+			}
+			if (noid == oid_id_ad_ocsp) {
+				pAuthInfo->ocsp = psMalloc(pool, len);
+				if (pAuthInfo->ocsp == NULL)
+					return PS_MEM_FAIL;
+				memcpy(pAuthInfo->ocsp, p, len);
+				pAuthInfo->ocspLen = len;
+				p += len;
+			} else { /* oid_id_ad_caIssuers */
+				pAuthInfo->caIssuers = psMalloc(pool, len);
+				if (pAuthInfo->caIssuers == NULL)
+					return PS_MEM_FAIL;
+				memcpy(pAuthInfo->caIssuers, p, len);
+				pAuthInfo->caIssuersLen = len;
+				p += len;
+			}
+			break;
+		default:
+			psTraceCrypto("Unsupported string type in AUTH_INFO ACC " \
+						  "(only uniformResourceIdenfitier is " \
+						  "supported). \n");
+			return PS_PARSE_FAIL;
+		}
+	} /* Next AccessDescription, if any. */
+
+	return PS_SUCCESS;
+}
+#endif /* USE_FULL_CERT_PARSE */
+
 int32_t getExplicitExtensions(psPool_t *pool, const unsigned char **pp,
 								 uint16_t inlen, int32_t expVal,
 								 x509v3extensions_t *extensions, uint8_t known)
@@ -1582,13 +2437,17 @@ int32_t getExplicitExtensions(psPool_t *pool, const unsigned char **pp,
 	uint16_t		subExtLen;
 	const unsigned char	*subSave;
 	int32_t				nc = 0;
-#endif
+	x509PolicyInformation_t *pPolicy;
+	const unsigned char *policiesEnd;
+#endif /* USE_FULL_CERT_PARSE */
 
 	end = p + inlen;
 	if (inlen < 1) {
 		return PS_ARG_FAIL;
 	}
 	extensions->pool = pool;
+	extensions->bc.cA = CA_UNDEFINED;
+
 	if (known) {
 		goto KNOWN_EXT;
 	}
@@ -1723,9 +2582,13 @@ KNOWN_EXT:
 					if (*p > 0 && *p != 0xFF) {
 						psTraceCrypto("Warning: cA TRUE should be 0xFF\n");
 					}
-					extensions->bc.cA = *p++;
+					if (*p > 0)
+						extensions->bc.cA = CA_TRUE;
+					else
+						extensions->bc.cA = CA_FALSE;
+					p++;
 				} else {
-					extensions->bc.cA = 0;
+					extensions->bc.cA = CA_UNDEFINED;
 				}
 /*
 				Now need to check if there is a path constraint. Only makes
@@ -2019,6 +2882,15 @@ KNOWN_EXT:
 					}
 				}
 				break;
+			case OID_ENUM(id_pe_authorityInfoAccess):
+				if (parseAuthorityInfoAccess(pool, p,
+											 extEnd,
+											 &extensions->authorityInfoAccess,
+											 &len) < 0) {
+					return PS_PARSE_FAIL;
+				}
+				p += len;
+				break;
 #endif /* USE_CRL */
 #endif /* FULL_CERT_PARSE */
 
@@ -2048,7 +2920,7 @@ KNOWN_EXT:
 						psTraceCrypto("Error keyLen in authKeyId extension\n");
 						return PS_PARSE_FAIL;
 					}
-					extensions->ak.keyId =psMalloc(pool, extensions->ak.keyLen);
+					extensions->ak.keyId = psMalloc(pool, extensions->ak.keyLen);
 					if (extensions->ak.keyId == NULL) {
 						psError("Mem allocation err: extensions->ak.keyId\n");
 						return PS_MEM_FAIL;
@@ -2116,13 +2988,89 @@ KNOWN_EXT:
 				memcpy(extensions->sk.id, p, extensions->sk.len);
 				p = p + extensions->sk.len;
 				break;
+#ifdef USE_FULL_CERT_PARSE
 
-			/* These extensions are known but not handled */
 			case OID_ENUM(id_ce_certificatePolicies):
-			case OID_ENUM(id_ce_policyMappings):
-			case OID_ENUM(id_ce_issuerAltName):
-			case OID_ENUM(id_ce_subjectDirectoryAttributes):
+/*
+            certificatePolicies ::= SEQUENCE SIZE (1..MAX) OF PolicyInformation
+*/
+				/* Parse certificatePolicies := SEQUENCE SIZE (1..MAX) OF
+				   PolicyInformation. */
+				if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+					psTraceCrypto("Error parsing certificatePolicies extension\n");
+					return PS_PARSE_FAIL;
+				}
+				policiesEnd = p + len;
+				extensions->certificatePolicy.policy
+					= psMalloc(pool, sizeof(x509PolicyInformation_t));
+				memset(extensions->certificatePolicy.policy, 0,
+					   sizeof(x509PolicyInformation_t));
+				pPolicy = extensions->certificatePolicy.policy;
+
+				/* Parse a single PolicyInformation. */
+				if (parsePolicyInformation(pool, p, extEnd, fullExtLen,
+										   pPolicy, &len) < 0) {
+					return PS_PARSE_FAIL;
+				}
+				p += len;
+
+				/* Parse further PolicyInformations, if present. */
+				while ((p < policiesEnd)
+					   && (p < extEnd)
+					   && (*p == (ASN_SEQUENCE | ASN_CONSTRUCTED))) {
+
+					pPolicy->next = psMalloc(pool, sizeof(x509PolicyInformation_t));
+					memset(pPolicy->next, 0, sizeof(x509PolicyInformation_t));
+					pPolicy = pPolicy->next;
+					if (parsePolicyInformation(pool, p, extEnd, fullExtLen,
+											   pPolicy, &len) < 0) {
+						return PS_PARSE_FAIL;
+					}
+					p += len;
+				} /* End or PolicyInformation parsing. */
+				break;
 			case OID_ENUM(id_ce_policyConstraints):
+				if (parsePolicyConstraints(pool, p,
+										   extEnd,
+										   &extensions->policyConstraints,
+										   &len) < 0) {
+					return PS_PARSE_FAIL;
+				}
+				p += len;
+				break;
+			case OID_ENUM(id_ce_policyMappings):
+				extensions->policyMappings = psMalloc(pool,
+													  sizeof(x509policyMappings_t));
+				memset(extensions->policyMappings, 0, sizeof(x509policyMappings_t));
+				if (parsePolicyMappings(pool, p,
+										extEnd,
+										extensions->policyMappings,
+										&len) < 0) {
+					return PS_PARSE_FAIL;
+				}
+
+				p += len;
+				break;
+			case OID_ENUM(id_ce_issuerAltName):
+				if (getAsnSequence(&p, (uint32)(extEnd - p), &len) < 0) {
+					psTraceCrypto("Error parsing issuerAltName extension\n");
+					return PS_PARSE_FAIL;
+				}
+				/* NOTE: The final limit parameter was introduced for this
+					case because a well known search engine site sends back
+					about 7 KB worth of subject alt names and that has created
+					memory problems for a couple users.  Set the -1 here to
+					something reasonable (5) if you've found yourself here 
+					for this memory reason */
+				if (parseGeneralNames(pool, &p, len, extEnd, &extensions->issuerAltName,
+						-1) < 0) {
+					psTraceCrypto("Error parsing altSubjectName names\n");
+					return PS_PARSE_FAIL;
+				}
+				break;
+#endif /* USE_FULL_CERT_PARSE */
+			/* These extensions are known but not handled */
+			case OID_ENUM(id_ce_subjectDirectoryAttributes):
 			case OID_ENUM(id_ce_inhibitAnyPolicy):
 			case OID_ENUM(id_ce_freshestCRL):
 			case OID_ENUM(id_pe_subjectInfoAccess):
@@ -2568,7 +3516,8 @@ static int32_t getImplicitBitString(psPool_t *pool, const unsigned char **pp,
 	}
 
 	p++;
-	if (getAsnLength(&p, len, bitLen) < 0) {
+	if (getAsnLength(&p, len, bitLen) < 0
+		|| *bitLen < 2) {
 		psTraceCrypto("Malformed implicitBitString\n");
 		return PS_PARSE_FAIL;
 	}
@@ -2599,9 +3548,12 @@ int32_t psX509GetDNAttributes(psPool_t *pool, const unsigned char **pp,
 {
 	const unsigned char		*p = *pp;
 	const unsigned char		*dnEnd, *dnStart, *moreInSetPtr;
+	x509OrgUnit_t			*orgUnit;
+	x509DomainComponent_t   *domainComponent;
 	int32					id, stringType, checkHiddenNull, moreInSet;
 	uint16_t				llen, setlen, arcLen;
 	char					*stringOut;
+	uint32_t                i;
 #ifdef USE_SHA1
 	psSha1_t	hash;
 #elif defined(USE_SHA256)
@@ -2660,6 +3612,7 @@ MORE_IN_SET:
 /*
 		id-at   OBJECT IDENTIFIER       ::=     {joint-iso-ccitt(2) ds(5) 4}
 		id-at-commonName		OBJECT IDENTIFIER		::=		{id-at 3}
+		id-at-serialNumber		OBJECT IDENTIFIER		::=		{id-at 5}
 		id-at-countryName		OBJECT IDENTIFIER		::=		{id-at 6}
 		id-at-localityName		OBJECT IDENTIFIER		::=		{id-at 7}
 		id-at-stateOrProvinceName		OBJECT IDENTIFIER	::=	{id-at 8}
@@ -2669,15 +3622,65 @@ MORE_IN_SET:
 		*pp = p;
 /*
 		Currently we are skipping OIDs not of type {joint-iso-ccitt(2) ds(5) 4}
+		(domainComponent is currently the only exception).
 		However, we could be dealing with an OID we MUST support per RFC.
-		domainComponent is one such example.
 */
 		if (dnEnd - p < 2) {
 			psTraceCrypto("Malformed DN attributes 4\n");
 			return PS_LIMIT_FAIL;
 		}
+
+		/*
+		  Check separately for domainComponent and uid, since those do not
+		  start with the 0x5504 (id-at) pattern the code below expects.
+		*/
+		/*
+		   Note: According to RFC 5280, "... implementations of this
+		   specification MUST be prepared to receive the domainComponent
+		   attribute, as defined in [RFC4519]."
+		*/
+		if (arcLen == 10 &&
+			*p == 0x09 &&
+			*(p+1) == 0x92 &&
+			*(p+2) == 0x26 &&
+			*(p+3) == 0x89 &&
+			*(p+4) == 0x93 &&
+			*(p+5) == 0xf2 &&
+			*(p+6) == 0x2c &&
+			*(p+7) == 0x64 &&
+			*(p+8) == 0x01) {
+			if (*(p+9) == 0x19) {
+				p += 10;
+				id = ATTRIB_DOMAIN_COMPONENT;
+				goto oid_parsing_done;
+			}
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+			else if (*(p+9) == 0x01) {
+				p += 10;
+				id = ATTRIB_UID;
+				goto oid_parsing_done;
+			}
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
+		}
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+		if (arcLen == 9 &&
+			*p == 0x2a &&
+			*(p+1) == 0x86 &&
+			*(p+2) == 0x48 &&
+			*(p+3) == 0x86 &&
+			*(p+4) == 0xf7 &&
+			*(p+5) == 0x0d &&
+			*(p+6) == 0x01 &&
+			*(p+7) == 0x09 &&
+			*(p+8) == 0x01) {
+			p += 9;
+			id = ATTRIB_EMAIL;
+			goto oid_parsing_done;
+		}
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
+
 		/* check id-at */
-		if ((*p++ != 85) || (*p++ != 4) ) {
+		if ((*p++ != 85) || (*p++ != 4)) {
 			/* OIDs we are not parsing */
 			p = *pp;
 /*
@@ -2703,6 +3706,7 @@ MORE_IN_SET:
 			return PS_LIMIT_FAIL;
 		}
 		id = (int32)*p++;
+	oid_parsing_done:
 		/* Done with OID parsing */
 		stringType = (int32)*p++;
 
@@ -2728,18 +3732,19 @@ MORE_IN_SET:
 			case ASN_T61STRING:
 			case ASN_BMPSTRING:
 			case ASN_BIT_STRING:
-				stringOut = psMalloc(pool, llen + 2);
+				stringOut = psMalloc(pool, llen + DN_NUM_TERMINATING_NULLS);
 				if (stringOut == NULL) {
 					psError("Memory allocation error in getDNAttributes\n");
 					return PS_MEM_FAIL;
 				}
 				memcpy(stringOut, p, llen);
 /*
-				Terminate with 2 null chars to support standard string
-				manipulations with any potential unicode types.
+				Terminate with DN_NUM_TERMINATING_NULLS null chars to support
+				standard string manipulations with any potential unicode types.
 */
-				stringOut[llen] = '\0';
-				stringOut[llen + 1] = '\0';
+				for (i = 0; i < DN_NUM_TERMINATING_NULLS; i++) {
+					stringOut[llen + i] = '\0';
+				}
 
 				if (checkHiddenNull) {
 					if ((uint32)strlen(stringOut) != llen) {
@@ -2750,7 +3755,7 @@ MORE_IN_SET:
 				}
 
 				p = p + llen;
-				llen += 2; /* Add the two null bytes for length assignments */
+				llen += DN_NUM_TERMINATING_NULLS; /* Add null bytes for length assignments */
 				break;
 			default:
 				psTraceIntCrypto("Unsupported DN attrib type %d\n", stringType);
@@ -2766,22 +3771,6 @@ MORE_IN_SET:
 				attribs->countryType = (short)stringType;
 				attribs->countryLen = (short)llen;
 				break;
-			case ATTRIB_STATE_PROVINCE:
-				if (attribs->state) {
-					psFree(attribs->state, pool);
-				}
-				attribs->state = stringOut;
-				attribs->stateType = (short)stringType;
-				attribs->stateLen = (short)llen;
-				break;
-			case ATTRIB_LOCALITY:
-				if (attribs->locality) {
-					psFree(attribs->locality, pool);
-				}
-				attribs->locality = stringOut;
-				attribs->localityType = (short)stringType;
-				attribs->localityLen = (short)llen;
-				break;
 			case ATTRIB_ORGANIZATION:
 				if (attribs->organization) {
 					psFree(attribs->organization, pool);
@@ -2791,12 +3780,29 @@ MORE_IN_SET:
 				attribs->organizationLen = (short)llen;
 				break;
 			case ATTRIB_ORG_UNIT:
-				if (attribs->orgUnit) {
-					psFree(attribs->orgUnit, pool);
+				orgUnit = psMalloc(pool, sizeof(x509OrgUnit_t));
+				orgUnit->name = stringOut;
+				orgUnit->type = (short)stringType;
+				orgUnit->len = llen;
+				/* Push the org unit onto the front of the list */
+				orgUnit->next = attribs->orgUnit;
+				attribs->orgUnit = orgUnit;
+				break;
+			case ATTRIB_DN_QUALIFIER:
+				if (attribs->dnQualifier) {
+					psFree(attribs->dnQualifier, pool);
 				}
-				attribs->orgUnit = stringOut;
-				attribs->orgUnitType = (short)stringType;
-				attribs->orgUnitLen = (short)llen;
+				attribs->dnQualifier = stringOut;
+				attribs->dnQualifierType = (short)stringType;
+				attribs->dnQualifierLen = (short)llen;
+				break;
+			case ATTRIB_STATE_PROVINCE:
+				if (attribs->state) {
+					psFree(attribs->state, pool);
+				}
+				attribs->state = stringOut;
+				attribs->stateType = (short)stringType;
+				attribs->stateLen = (short)llen;
 				break;
 			case ATTRIB_COMMON_NAME:
 				if (attribs->commonName) {
@@ -2806,6 +3812,131 @@ MORE_IN_SET:
 				attribs->commonNameType = (short)stringType;
 				attribs->commonNameLen = (short)llen;
 				break;
+			case ATTRIB_SERIALNUMBER:
+				if (attribs->serialNumber) {
+					psFree(attribs->serialNumber, pool);
+				}
+				attribs->serialNumber = stringOut;
+				attribs->serialNumberType = (short)stringType;
+				attribs->serialNumberLen = (short)llen;
+				break;
+			case ATTRIB_DOMAIN_COMPONENT:
+				domainComponent = psMalloc(pool, sizeof(x509DomainComponent_t));
+				domainComponent->name = stringOut;
+				domainComponent->type = (short)stringType;
+				domainComponent->len = llen;
+				/* Push the org unit onto the front of the list */
+				domainComponent->next = attribs->domainComponent;
+				attribs->domainComponent = domainComponent;
+				break;
+#ifdef USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD
+			case ATTRIB_LOCALITY:
+				if (attribs->locality) {
+					psFree(attribs->locality, pool);
+				}
+				attribs->locality = stringOut;
+				attribs->localityType = (short)stringType;
+				attribs->localityLen = (short)llen;
+				break;
+			case ATTRIB_TITLE:
+				if (attribs->title) {
+					psFree(attribs->title, pool);
+				}
+				attribs->title = stringOut;
+				attribs->titleType = (short)stringType;
+				attribs->titleLen = (short)llen;
+				break;
+			case ATTRIB_SURNAME:
+				if (attribs->surname) {
+					psFree(attribs->surname, pool);
+				}
+				attribs->surname = stringOut;
+				attribs->surnameType = (short)stringType;
+				attribs->surnameLen = (short)llen;
+				break;
+			case ATTRIB_GIVEN_NAME:
+				if (attribs->givenName) {
+					psFree(attribs->givenName, pool);
+				}
+				attribs->givenName = stringOut;
+				attribs->givenNameType = (short)stringType;
+				attribs->givenNameLen = (short)llen;
+				break;
+			case ATTRIB_INITIALS:
+				if (attribs->initials) {
+					psFree(attribs->initials, pool);
+				}
+				attribs->initials = stringOut;
+				attribs->initialsType = (short)stringType;
+				attribs->initialsLen = (short)llen;
+				break;
+			case ATTRIB_PSEUDONYM:
+				if (attribs->pseudonym) {
+					psFree(attribs->pseudonym, pool);
+				}
+				attribs->pseudonym = stringOut;
+				attribs->pseudonymType = (short)stringType;
+				attribs->pseudonymLen = (short)llen;
+				break;
+			case ATTRIB_GEN_QUALIFIER:
+				if (attribs->generationQualifier) {
+					psFree(attribs->generationQualifier, pool);
+				}
+				attribs->generationQualifier = stringOut;
+				attribs->generationQualifierType = (short)stringType;
+				attribs->generationQualifierLen = (short)llen;
+				break;
+#endif /* USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD */
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+			case ATTRIB_STREET_ADDRESS:
+				if (attribs->streetAddress) {
+					psFree(attribs->streetAddress, pool);
+				}
+				attribs->streetAddress = stringOut;
+				attribs->streetAddressType = (short)stringType;
+				attribs->streetAddressLen = (short)llen;
+				break;
+			case ATTRIB_POSTAL_ADDRESS:
+				if (attribs->postalAddress) {
+					psFree(attribs->postalAddress, pool);
+				}
+				attribs->postalAddress = stringOut;
+				attribs->postalAddressType = (short)stringType;
+				attribs->postalAddressLen = (short)llen;
+				break;
+			case ATTRIB_TELEPHONE_NUMBER:
+				if (attribs->telephoneNumber) {
+					psFree(attribs->telephoneNumber, pool);
+				}
+				attribs->telephoneNumber = stringOut;
+				attribs->telephoneNumberType = (short)stringType;
+				attribs->telephoneNumberLen = (short)llen;
+				break;
+			case ATTRIB_UID:
+				if (attribs->uid) {
+					psFree(attribs->uid, pool);
+				}
+				attribs->uid = stringOut;
+				attribs->uidType = (short)stringType;
+				attribs->uidLen = (short)llen;
+				break;
+			case ATTRIB_NAME:
+				if (attribs->name) {
+					psFree(attribs->name, pool);
+				}
+				attribs->name = stringOut;
+				attribs->nameType = (short)stringType;
+				attribs->nameLen = (short)llen;
+				break;
+			case ATTRIB_EMAIL:
+				if (attribs->email) {
+					psFree(attribs->email, pool);
+				}
+				attribs->email = stringOut;
+				attribs->emailType = (short)stringType;
+				attribs->emailLen = (short)llen;
+				break;
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
 			default:
 				/* Not a MUST support, so just ignore unknown */
 				psFree(stringOut, pool);
@@ -2818,10 +3949,12 @@ MORE_IN_SET:
 	}
 	/* Hash is used to quickly compare DNs */
 #ifdef USE_SHA1
+	psSha1PreInit(&hash);
 	psSha1Init(&hash);
 	psSha1Update(&hash, dnStart, (dnEnd - dnStart));
 	psSha1Final(&hash, (unsigned char*)attribs->hash);
 #else
+	psSha256PreInit(&hash);
 	psSha256Init(&hash);
 	psSha256Update(&hash, dnStart, (dnEnd - dnStart));
 	psSha256Final(&hash, (unsigned char*)attribs->hash);
@@ -2836,13 +3969,33 @@ MORE_IN_SET:
 */
 void psX509FreeDNStruct(x509DNattributes_t *dn, psPool_t *allocPool)
 {
-	if (dn->country)		psFree(dn->country, allocPool);
-	if (dn->state)			psFree(dn->state, allocPool);
-	if (dn->locality)		psFree(dn->locality, allocPool);
-	if (dn->organization)	psFree(dn->organization, allocPool);
-	if (dn->orgUnit)		psFree(dn->orgUnit, allocPool);
-	if (dn->commonName)		psFree(dn->commonName, allocPool);
-	if (dn->dnenc)			psFree(dn->dnenc, allocPool);
+	psFree(dn->dnenc, allocPool);
+
+	psFree(dn->country, allocPool);
+	psFree(dn->organization, allocPool);
+	freeOrgUnitList(dn->orgUnit, allocPool);
+	psFree(dn->dnQualifier, allocPool);
+	psFree(dn->state, allocPool);
+	psFree(dn->commonName, allocPool);
+	psFree(dn->serialNumber, allocPool);
+	freeDomainComponentList(dn->domainComponent, allocPool);
+#ifdef USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD
+	psFree(dn->locality, allocPool);
+	psFree(dn->title, allocPool);
+	psFree(dn->surname, allocPool);
+	psFree(dn->givenName, allocPool);
+	psFree(dn->initials, allocPool);
+	psFree(dn->pseudonym, allocPool);
+	psFree(dn->generationQualifier, allocPool);
+#endif /* USE_EXTRA_DN_ATTRIBUTES_RFC5280_SHOULD */
+#ifdef USE_EXTRA_DN_ATTRIBUTES
+	psFree(dn->streetAddress, allocPool);
+	psFree(dn->postalAddress, allocPool);
+	psFree(dn->telephoneNumber, allocPool);
+	psFree(dn->uid, allocPool);
+	psFree(dn->name, allocPool);
+	psFree(dn->email, allocPool);
+#endif /* USE_EXTRA_DN_ATTRIBUTES */
 }
 
 
@@ -2954,7 +4107,7 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
 		Certificate authority constraint only available in version 3 certs.
 		Only parsing version 3 certs by default though.
 */
-		if ((ic->version > 1) && (ic->extensions.bc.cA <= 0)) {
+		if ((ic->version > 1) && (ic->extensions.bc.cA != CA_TRUE)) {
 			if (sc != ic) {
 				psTraceCrypto("Issuer does not have basicConstraint CA permissions\n");
 				sc->authStatus = PS_CERT_AUTH_FAIL_BC;
@@ -3374,10 +4527,133 @@ static int32_t x509ConfirmSignature(const unsigned char *sigHash,
 	return PS_SUCCESS;
 }
 #endif /* USE_RSA */
+
 /******************************************************************************/
 #endif /* USE_CERT_PARSE */
 
 #ifdef USE_OCSP
+
+/******************************************************************************/
+
+static unsigned parse_digits(const unsigned char **c_p,
+			     unsigned digits,
+			     unsigned minimum,
+			     unsigned maximum)
+{
+	const unsigned char *c = *c_p;
+	unsigned result = 0;
+
+	while(digits) {
+		if (*c < '0' || *c > '9')
+			return (unsigned) -1;
+		result *= 10;
+		result += *c - '0';
+		c++;
+		digits--;
+	}
+
+	*c_p = c;
+
+	if (result < minimum || result > maximum)
+		return (unsigned) -1;
+
+	return result;
+}
+
+/**
+	Verify a string has (nearly) valid date range format and length.
+	Optionally output it in struct tm format.
+ */
+static unsigned char parsedate_ocsp(const unsigned char *p,
+				    unsigned int time_type,
+				    unsigned int time_len,
+				    struct tm *target)
+{
+	unsigned year, month, mday, hour, min, sec;
+	const unsigned char *c = p;
+	if (time_type != ASN_GENERALIZEDTIME)
+		return 0;
+	/* Format shall be YYYYMMDDHHMMSSZ (according to RFC 5280). */
+	if (time_len != 15)
+		return 0;
+
+	year = parse_digits(&c, 4, 1900, 2999);
+	if (year == (unsigned) -1)
+		return 0;
+
+	month = parse_digits(&c, 2, 1, 12);
+	if (month == (unsigned) -1)
+		return 0;
+
+	mday = parse_digits(&c, 2, 1, 31);
+	if (mday == (unsigned) -1)
+		return 0;
+
+	hour = parse_digits(&c, 2, 0, 23);
+	if (hour == (unsigned) -1)
+		return 0;
+
+	min = parse_digits(&c, 2, 0, 59);
+	if (min == (unsigned) -1)
+		return 0;
+
+	/* Allow up-to 2 leap seconds. */
+	sec = parse_digits(&c, 2, 0, 61);
+	if (sec == (unsigned) -1)
+		return 0;
+
+	/* Time zone must be UTC (Zulu). */
+	if (*c != 'Z')
+		return 0;
+
+	if (target) {
+		/* Zeroize all fields as some systems have extra fields
+		   in struct tm. */
+		memset(target, 0, sizeof(*target));
+		target->tm_year = (int) year - 1900;
+		target->tm_mon = (int) month - 1;
+		target->tm_mday = (int) mday;
+		target->tm_hour = (int) hour;
+		target->tm_min = (int) min;
+		target->tm_sec = (int) sec;
+		/* Note: target->tm_wday and target->tm_yday are not set. */
+	}
+	return 1;
+}
+
+static int32_t parse_nonce_ext(const unsigned char *p, size_t sz,
+			       psBuf_t *nonceExtension)
+{
+	psParseBuf_t pb;
+	psParseBuf_t extensions;
+	psParseBuf_t extension;
+
+	memset(nonceExtension, 0, sizeof(psBuf_t));
+	if (psParseBufFromStaticData(&pb, p, sz) == PS_SUCCESS) {
+		if (psParseBufTryReadTagSub(&pb, &extensions, 0xA1)) {
+			while(psParseBufTryReadSequenceSub(&extensions,
+							   &extension)) {
+				psParseBuf_t sub;
+				psParseBufReadSequenceSub(&extension, &sub);
+				if (psParseBufTrySkipBytes(
+					    &sub,
+					    (const unsigned char *)
+					    "\x06\x09\x2b\x06\x01\x05"
+					    "\x05\x07\x30\x01\x02", 11)) {
+					psParseBufReadTagRef(
+						&sub, nonceExtension, 0x04);
+				}
+				psParseBufFinish(&sub);
+				if (psParseBufFinish(&extension) != PS_SUCCESS)
+					break;
+			}
+			psParseBufFinish(&extensions);
+		}
+	}
+	return PS_SUCCESS; /* No parsing errors detected. */
+}
+
+
 static int32_t parseSingleResponse(uint32_t len, const unsigned char **cp,
 						const unsigned char *end, mOCSPSingleResponse_t *res)
 {
@@ -3456,21 +4732,36 @@ static int32_t parseSingleResponse(uint32_t len, const unsigned char **cp,
 			revoked             [1]     IMPLICIT RevokedInfo,
 			unknown             [2]     IMPLICIT UnknownInfo }
 	*/
+	memset(res->revocationTime, 0, sizeof(res->revocationTime));
+	res->revocationReason = 0;
 	if (*p == (ASN_CONTEXT_SPECIFIC | ASN_PRIMITIVE | 0)) {
 		res->certStatus = 0;
 		p += 2;
 	} else if (*p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 1)) {
 		res->certStatus = 1;
-		psTraceCrypto("OCSP CertStatus is revoked.  Skipping details\n");
+		psTraceCrypto("OCSP CertStatus is revoked.\n");
 		/* RevokedInfo ::= SEQUENCE {
 				revocationTime              GeneralizedTime,
 				revocationReason    [0]     EXPLICIT CRLReason OPTIONAL }
 		*/
-		if (getAsnSequence(&p, (int32)(end - p), &glen) < 0) {
+		p += 1;
+		if (getAsnLength(&p, (int32)(end - p), &glen) < 0) {
 			psTraceCrypto("Initial parseSingleResponse parse failure\n");
 			return PS_PARSE_FAIL;
 		}
-		/* skip it */
+		/* get revocation time. */
+		if (p[0] == 0x18 && p[1] == sizeof(res->revocationTime) &&
+		    glen >= sizeof(res->revocationTime) + 2) {
+			memcpy(res->revocationTime, p + 2,
+			       sizeof(res->revocationTime));
+			if (glen >= sizeof(res->revocationTime) + 0x5 &&
+			    p[17] == 0xa0 && p[18] == 0x03 &&
+			    p[19] == 0x0a && p[20] == 0x01 && p[21] >= 0 &&
+				p[21] <= 10 && p[21] != 7) {
+				res->revocationReason = p[21];
+			}
+		}
+		/* skip the rest of revocation info */
 		p += glen;
 	} else if (*p == (ASN_CONTEXT_SPECIFIC | ASN_PRIMITIVE | 2)) {
 		res->certStatus = 2;
@@ -3496,18 +4787,25 @@ static int32_t parseSingleResponse(uint32_t len, const unsigned char **cp,
 	p += glen;
 
 	/* nextUpdate          [0] EXPLICIT GeneralizedTime OPTIONAL, */
-	
-	if (*p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 0)) {
+	res->nextUpdate = NULL;
+	res->nextUpdateLen = 0;
+	if ((uint32)(end - p) >= 2 &&
+	    *p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 0)) {
 		p++;
 		if (getAsnLength(&p, (uint32)(end - p), &glen) < 0 ||
 				(uint32)(end - p) < glen) {
 			return PS_PARSE_FAIL;
 		}
-		p += glen; /* SKIPPING  */
+		if (*p == ASN_GENERALIZEDTIME && glen > 2) {
+			res->nextUpdate = p + 2;
+			res->nextUpdateLen = glen - 2;
+		}
+		p += glen;
 	}
-	
+
 	/* singleExtensions    [1] EXPLICIT Extensions OPTIONAL */
-	if (*p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 1)) {
+	if ((uint32)(end - p) >= 2 &&
+	    *p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 1)) {
 		p++;
 		if (getAsnLength(&p, (uint32)(end - p), &glen) < 0 ||
 				(uint32)(end - p) < glen) {
@@ -3619,11 +4917,13 @@ static int32_t parseBasicOCSPResponse(psPool_t *pool, uint32_t len,
 		psTraceCrypto("Malformed producedAt in ResponseData\n");
 		return PS_PARSE_FAIL;
 	}
-	psAssert(glen <= 20); /* TODO: length hardcoded in structure */
+	/* Perform quick parsing on data. */
+	if (parsedate_ocsp(p, ASN_GENERALIZEDTIME, glen, NULL) == 0)
+		return PS_PARSE_FAIL;
 	res->timeProducedLen = glen;
 	res->timeProduced = p;
 	p += glen;
-		
+
 	/* responses                SEQUENCE OF SingleResponse, */
 	if (getAsnSequence(&p, (int32)(end - p), &glen) < 0) {
 		psTraceCrypto("Initial SingleResponse parse failure\n");
@@ -3648,9 +4948,10 @@ static int32_t parseBasicOCSPResponse(psPool_t *pool, uint32_t len,
 			}
 		}
 	}
-		
 	/* responseExtensions   [1] EXPLICIT Extensions OPTIONAL } */
 	if (*p == (ASN_CONTEXT_SPECIFIC | ASN_CONSTRUCTED | 1)) {
+		if (parse_nonce_ext(p, end - p, &res->nonce) != PS_SUCCESS)
+			return PS_PARSE_FAIL;
 		p++;
 		if (getAsnLength(&p, (uint32)(end - p), &glen) < 0 ||
 				(uint32)(end - p) < glen) {
@@ -3820,7 +5121,7 @@ int32_t parseOCSPResponse(psPool_t *pool, int32_t len, unsigned char **cp,
 			psTraceCrypto("Error parsing UserKeyingMaterial\n");
 			return PS_PARSE_FAIL;
 		}
-	
+
 		/* ResponseBytes ::= SEQUENCE {
 			responseType            OBJECT IDENTIFIER,
 			response                OCTET STRING }
@@ -3849,6 +5150,7 @@ int32_t parseOCSPResponse(psPool_t *pool, int32_t len, unsigned char **cp,
 					signature            BIT STRING,
 					certs        [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL }
 			*/
+			memset(response, 0, sizeof(*response));
 			if (parseBasicOCSPResponse(pool, blen, &p, end, response) < 0) {
 				psTraceCrypto("parseBasicOCSPResponse failure\n");
 				return PS_PARSE_FAIL;
@@ -3868,75 +5170,233 @@ int32_t parseOCSPResponse(psPool_t *pool, int32_t len, unsigned char **cp,
 	return PS_SUCCESS;
 }
 
-/* Diff the current time against the OCSP timestamp and confirm it's not
-	longer than the user is willing to trust */
-static int16_t checkOCSPtimestamp(mOCSPResponse_t *response)
-{
-	/* GeneralizedTime values MUST be
-		expressed in Greenwich Mean Time (Zulu) and MUST include seconds
-		(i.e., times are YYYYMMDDHHMMSSZ), even where the number of seconds
-		is zero.  GeneralizedTime values MUST NOT include fractional seconds.
-	*/
-#ifdef POSIX
-	struct tm		mytime;
-	time_t			currrawtime, myrawtime;
-	double			diffsecs;
-	const unsigned char	*c;
-	
-	/* timeProduced here is the producedAt of the response which is the
-		time the signature was generated */
-	c = response->timeProduced;
-	
-	/* Goal is to create time_t from this GeneralizedTime to perform a 
-		diff against current time (also a time_t) */
-	memset(&mytime, 0x0, sizeof(struct tm));
-	mytime.tm_year = 1000 * (c[0] - '0') + 100 * (c[1] - '0') +
-		10 * (c[2] - '0') + (c[3] - '0'); c += 4;
-	mytime.tm_year -= 1900;
-	mytime.tm_mon  = 10 * (c[0] - '0') + (c[1] - '0'); c += 2;
-	mytime.tm_mon--; /* month is 0 based for some reason */
-	mytime.tm_mday = 10 * (c[0] - '0') + (c[1] - '0'); c += 2;
-	mytime.tm_hour = 10 * (c[0] - '0') + (c[1] - '0'); c += 2;
-	mytime.tm_min = 10 * (c[0] - '0') + (c[1] - '0'); c += 2;
-	mytime.tm_sec = 10 * (c[0] - '0') + (c[1] - '0');
-	
-	/* If there is no timegm on the platform, maybe there will be a mktime
-		which will interpret 'mytime' as local time rather than GMT.  This
-		change will cause a margin of error in the difftime below if
-		the current time is not adjusted for GMT */
-	//myrawtime = mktime(&mytime); /* margin of error will exist */
-	myrawtime = timegm(&mytime); /* Adds missing members of mytime */
-	
-	/* current time */
-	time(&currrawtime);
+/* Check validity of OCSP response and obtain the date stamps from it.
 
-	diffsecs = difftime(currrawtime, myrawtime);
-	
-	if (diffsecs < 0 || diffsecs > OCSP_VALID_TIME_WINDOW) {
-		return PS_LIMIT_FAIL;
+   If time_now is not provided, the current time will be requested from
+   the oeprating system.
+   This function extracts data information from parsed OCSP response.
+   Because the dates in mOCSPResponse_t are references to memory containing
+   binary OCSP response, that memory must not have been released before calling
+   this function. time_linger is useful to deal with the fact that the
+   peer and this host may have tiny difference in their clocks.
+
+   @param response Pointer to OCSP response structure (from parseOCSPResponse)
+   @param index The index of OCSP single response to handle (0 for the first).
+   @param timeNow A pointer to structure filled in with gmtime(), structure
+   initialized to all zero or NULL.
+   @param producedAt If non-NULL Will be filled in with time the structure
+   was produced.
+   @param thisUpdate If non-NULL Will be filled in with time the OCSP
+   information was updated (usually the same as producedAt).
+   @param nextUpdate If non-NULL Will be filled in with time the OCSP
+   information needs to be updated.
+   @param time_linger Amout of flexibility in comparison of times.
+   Recommended value: PS_OCSP_TIME_LINGER (120)
+   @retval PS_SUCCESS If the dates were extracted from response and the
+   response in comparison with timeNow is valid.
+   @retval PS_TIMEOUT_FAIL The datas were extracted from response, but
+   the response has timed out. (Or the response is too far in future.)
+   @retval PS_PARSE_FAIL If error occurred parsing the data information in
+   the request.
+ */
+int32_t checkOCSPResponseDates(mOCSPResponse_t *response,
+			       int index,
+			       struct tm *timeNow,
+			       struct tm *producedAt,
+			       struct tm *thisUpdate,
+			       struct tm *nextUpdate,
+			       int time_linger)
+{
+	struct tm tmp, tmp2, tmp3, tmp4;
+	unsigned char ok = 1;
+	int32 err;
+	mOCSPSingleResponse_t	*subjectResponse;
+
+	if (index >= MAX_OCSP_RESPONSES)
+		return PS_ARG_FAIL;
+
+	if (timeNow == NULL) {
+		memset(&tmp, 0, sizeof tmp);
+		timeNow = &tmp;
 	}
-	return PS_SUCCESS;
-	
-#else
-/* Warn if we are skipping the date validation checks. */
-#ifdef WIN32
-#pragma message("OCSP DATE VALIDITY NOT SUPPORTED ON THIS PLATFORM.")
-#else
-#warning "OCSP DATE VALIDITY NOT SUPPORTED ON THIS PLATFORM."
-#endif
-	return PS_SUCCESS;
-#endif /* POSIX */
+
+	if (timeNow->tm_year == 0) {
+		/* The structure appears not filled in, use gmtime() to
+		   get the current time. */
+		time_t time_seconds = time(NULL);
+		struct tm *new_tm = gmtime(&time_seconds);
+		if (new_tm == NULL)
+			return PS_FAIL;
+		memcpy(timeNow, new_tm, sizeof(struct tm));
+	}
+
+	if (thisUpdate == NULL)
+		thisUpdate = &tmp2;
+
+	if (nextUpdate == NULL)
+		nextUpdate = &tmp3;
+
+	if (producedAt == NULL)
+		producedAt = &tmp4;
+
+	ok &= parsedate_ocsp(response->timeProduced,
+			     ASN_GENERALIZEDTIME,
+			     response->timeProducedLen,
+			     producedAt);
+
+	subjectResponse = &response->singleResponse[index];
+
+	if (subjectResponse->thisUpdate)
+		ok &= parsedate_ocsp(subjectResponse->thisUpdate,
+				     ASN_GENERALIZEDTIME,
+				     subjectResponse->thisUpdateLen,
+				     thisUpdate);
+	else
+		ok = 0;
+
+	if (subjectResponse->nextUpdate != NULL) {
+		ok &= parsedate_ocsp(subjectResponse->nextUpdate,
+				     ASN_GENERALIZEDTIME,
+				     subjectResponse->nextUpdateLen,
+				     nextUpdate);
+	} else {
+		/* If there is no next update, the server supports
+		   continous updates and nextUpdate time is considered
+		   identical to the this update time. */
+		ok &= parsedate_ocsp(subjectResponse->thisUpdate,
+				     ASN_GENERALIZEDTIME,
+				     subjectResponse->thisUpdateLen,
+				     nextUpdate);
+	}
+
+	if (ok == 1) {
+		/* Convert times to seconds for comparison.
+		   These also fill in additional fields in tm, like
+		   current day. */
+		time_t thisUpdateTime = timegm(thisUpdate);
+		time_t nextUpdateTime = timegm(nextUpdate);
+		time_t nextUpdateTimeNew;
+		time_t nowTime = timegm(timeNow);
+		(void)timegm(producedAt);
+
+		/* Move thisUpdate_time linger seconds back. */
+		if (thisUpdateTime > time_linger)
+			thisUpdateTime -= time_linger;
+		else
+			thisUpdateTime = 0;
+
+		/* Move nextUpdate_time linger seconds to future.
+		   This is not done for times very close to end of
+		   representable time range, such as Y2K38 (on 32-bit
+		   devices). */
+		nextUpdateTimeNew = nextUpdateTime + time_linger;
+		if (nextUpdateTimeNew > nextUpdateTime)
+			nextUpdateTime = nextUpdateTimeNew;
+
+		if (thisUpdateTime <= nowTime && nowTime <= nextUpdateTime)
+			err = PS_SUCCESS;
+		else
+			err = PS_TIMEOUT_FAIL;
+	} else {
+		err = PS_PARSE_FAIL;
+	}
+	return err;
 }
 
-int32_t validateOCSPResponse(psPool_t *pool, psX509Cert_t *trustedOCSP,
-			psX509Cert_t *srvCerts, mOCSPResponse_t *response)
+
+/* Diff the current time against the OCSP timestamp and confirm it's not
+	longer than the user is willing to trust */
+static int32_t checkOCSPtimestamp(mOCSPResponse_t *response, int index)
 {
+	return checkOCSPResponseDates(response, index, NULL, NULL, NULL, NULL,
+				      PS_OCSP_TIME_LINGER);
+}
+
+/* Partial OCSP request parser: just locate nonceExtension if present. */
+static int32_t parseOcspReq(const void *data, size_t datalen,
+			    psBuf_t *nonceExtension)
+{
+	psParseBuf_t pb;
+	psParseBuf_t ocspRequest;
+	psParseBuf_t tbsRequest;
+	psParseBuf_t extensions;
+	psParseBuf_t extension;
+	psParseBuf_t requestList;
+	psParseBuf_t request;
+	psParseBuf_t requestCert;
+	psParseBuf_t requestCertContent;
+	int rc;
+
+	rc = psParseBufFromStaticData(&pb, data, datalen);
+	if (rc != PS_SUCCESS)
+		return rc;
+	psParseBufReadSequenceSub(&pb, &ocspRequest);
+	/* Ensure subbuffer is advanced and main buffer is not. */
+	psParseBufReadSequenceSub(&ocspRequest, &tbsRequest);
+	/* Ignore version number (v1 == 0) if present. */
+	psParseBufTrySkipBytes(&tbsRequest, (const unsigned char *)
+			       "\xA0\x03\x02\x01\x00", 5);
+	/* Skip requestorName if present. */
+	psParseBufTrySkipTag(&tbsRequest, 0xA1);
+	/* Skip requestList (must be present with at least one request). */
+	psParseBufReadSequenceSub(&tbsRequest, &requestList);
+	psParseBufReadSequenceSub(&requestList, &request);
+	psParseBufReadSequenceSub(&request, &requestCert);
+	psParseBufReadSequenceSub(&requestCert, &requestCertContent);
+	psParseBufFinish(&requestCertContent);
+	psParseBufFinish(&requestCert);
+	psParseBufFinish(&request);
+	psParseBufFinish(&requestList);
+	if (psParseBufTryReadTagSub(&tbsRequest, &extensions, 0xA2)) {
+		while(psParseBufTryReadSequenceSub(&extensions, &extension)) {
+			psParseBuf_t sub;
+			psParseBufReadSequenceSub(&extension, &sub);
+			if (psParseBufTrySkipBytes(
+				    &sub,
+				     (const unsigned char *)
+				    "\x06\x09\x2b\x06\x01\x05"
+				    "\x05\x07\x30\x01\x02", 11)) {
+				psParseBufReadTagRef(
+					&sub, nonceExtension, 0x04);
+			}
+			psParseBufFinish(&sub);
+			if (psParseBufFinish(&extension) != PS_SUCCESS)
+				break;
+		}
+		psParseBufFinish(&extensions);
+	}
+	psParseBufFinish(&tbsRequest);
+	return psParseBufFinish(&ocspRequest);
+}
+
+int32_t validateOCSPResponse_ex(psPool_t *pool, psX509Cert_t *trustedOCSP,
+				psX509Cert_t *srvCerts, mOCSPResponse_t *response,
+				psValidateOCSPResponseOptions_t *vOpts
+	)
+{
+	static psValidateOCSPResponseOptions_t vOptsDefault;
 	psX509Cert_t			*curr, *issuer, *subject, *ocspResIssuer;
 	mOCSPSingleResponse_t	*subjectResponse;
 	unsigned char			sigOut[MAX_HASH_SIZE];
 	int32					sigOutLen, sigType, index;
 	psPool_t				*pkiPool = NULL;
-	
+	bool knownFlag = false;
+	bool revocationFlag = false;
+	psBuf_t nonceExtReq = { NULL };
+
+	/* use default validation options if not specified. */
+	if (vOpts == NULL) {
+		vOpts = &vOptsDefault;
+	}
+
+	/* Find interesting options from request. */
+	if (vOpts->request) {
+		int rc = parseOcspReq(vOpts->request, vOpts->requestLen,
+				      &nonceExtReq);
+		if (rc != PS_SUCCESS)
+			return PS_ARG_FAIL;
+	}
+
 	/* Find the OCSP cert that signed the response.  First place to look is
 		within the OCSPResponse itself */
 	issuer = NULL;
@@ -4058,17 +5518,33 @@ int32_t validateOCSPResponse(psPool_t *pool, psX509Cert_t *trustedOCSP,
 	
 	/* If the response is reporting that this cert is bad right in the status,
 		just return that immediately and stop the connection */
-	if (subjectResponse->certStatus != 0) {
-		psTraceCrypto("ERROR: OCSP info: server cert is revoked!\n");
-		return PS_FAILURE;
+	if (subjectResponse->certStatus == 0) {
+		knownFlag = true;
+		revocationFlag = false;
+	} else if (subjectResponse->certStatus == 1) {
+		knownFlag = true;
+		revocationFlag = true;
+		/* Server is revoked, but still check rest of
+		   the response. */
 	}
-	
+
 	/* Is the response within the acceptable time window */
-	if (checkOCSPtimestamp(response) < 0) {
+	if (checkOCSPtimestamp(response, index) != PS_SUCCESS) {
 		psTraceCrypto("ERROR: OCSP response older than threshold\n");
 		return PS_FAILURE;
 	}
-	
+
+	/* Check if nonces match. */
+	if (nonceExtReq.buf && vOpts->nonceMatch) {
+		if (response->nonce.buf == NULL)
+			*(vOpts->nonceMatch) = false; /* No nonce in response. */
+		else
+			/* Compare nonces. */
+			*(vOpts->nonceMatch) =
+				psBufEq(&nonceExtReq,
+					&response->nonce);
+	}
+
 #if 0 /* The issuer here is pointing to the cert that signed the OCSPRespose
 			and that is not necessarily the parent of the subject cert we
 			are looking at.  If we want to include this test, we'd need to
@@ -4170,9 +5646,45 @@ int32_t validateOCSPResponse(psPool_t *pool, psX509Cert_t *trustedOCSP,
 	}
 #endif
 	
+	if (vOpts->knownFlag)
+		*(vOpts->knownFlag) = knownFlag;
+
+	if (knownFlag == false) {
+		/* The certificate is not known. */
+		return PS_FAILURE;
+	} else {
+		if (vOpts->revocationFlag)
+			*(vOpts->revocationFlag) = revocationFlag;
+
+		if (vOpts->revocationTime) {
+			if (parsedate_ocsp(
+				    subjectResponse->revocationTime,
+				    ASN_GENERALIZEDTIME,
+				    sizeof(subjectResponse->revocationTime),
+				    vOpts->revocationTime))
+				(void)timegm(vOpts->revocationTime);
+		}
+
+		if (vOpts->revocationReason)
+			*(vOpts->revocationReason) =
+				subjectResponse->revocationReason;
+
+		/* Function fails if certificate was revoked. */
+		if (revocationFlag)
+			return PS_FAILURE;
+	}
+
 	/* Was able to successfully confirm OCSP signature for our subject */
 	return PS_SUCCESS;
 }
+
+int32_t validateOCSPResponse(psPool_t *pool, psX509Cert_t *trustedOCSP,
+			     psX509Cert_t *srvCerts,
+			     mOCSPResponse_t *response) {
+	return validateOCSPResponse_ex(pool, trustedOCSP, srvCerts, response,
+				       NULL);
+}
+
 #endif /* USE_OCSP */
 
 #endif /* USE_X509 */

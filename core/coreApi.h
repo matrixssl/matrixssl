@@ -46,6 +46,29 @@ extern "C" {
 
 /******************************************************************************/
 /*
+	psCore helper macros: for communicating with compiler
+	These macros allow to remove spurious warnings.
+*/
+
+/* Tell compiler a variable is intended that it can be set, but not used.
+   (The variable is for debugging, future extension or used in some
+   conditionally disabled/unifdeffed branches of execution). */
+#define PS_VARIABLE_SET_BUT_UNUSED(x) do { (void)(x); } while(0)
+
+/* Tell compiler a variable is intended that it can be unused.
+   This is for compilers which detect variables that are not set.
+   (The variable is for debugging, future extension or used in some
+   conditionally disabled/unifdeffed branches of execution). */
+#define PS_VARIABLE_UNUSED(x) do { (void)(x); } while(0)
+
+/* Tell compiler a function parameter is intended that it can be unused.
+   This is for compilers which detect parameters that are not used.
+   (The parameter is for debugging, future extension or used in some
+   conditionally disabled/unifdeffed branches of execution). */
+#define PS_PARAMETER_UNUSED(x) do { (void)(x); } while(0)
+
+/******************************************************************************/
+/*
 	psCore return codes
 */
 #define PS_CORE_IS_OPEN		1
@@ -71,7 +94,10 @@ extern "C" {
 #define PS_INTERRUPT_FAIL	-14 /* An interrupt occurred and MAY be an error */
 #define PS_PENDING			-15 /* In process. Not necessarily an error */
 #define PS_EAGAIN			-16 /* Try again later. Not necessarily an error */
-
+#define PS_OUTPUT_LENGTH    -17 /* Output length negotiation:
+								   output buffer is too small. */
+#define PS_HOSTNAME_RESOLUTION -18 /* Cannot resolve host name. */
+#define PS_CONNECT -19             /* Cannot connect to remote host. */
 #define	PS_TRUE		1
 #define	PS_FALSE 	0
 
@@ -111,6 +137,36 @@ typedef struct {
 	unsigned char	*end;	/* Pointer to first byte of invalid data */
 	int32			size;	/* Size of buffer in bytes */
 } psBuf_t;
+
+/* Dynamically allocated automatically resizing psBuf_t. */
+struct psDynBuf;
+typedef struct psDynBuf psDynBuf_t;
+struct psDynBuf {
+    psBuf_t buf;
+    psPool_t *pool;
+    int err;
+    psDynBuf_t *master;
+};
+#define PS_DYNBUF_GROW 256 /* Usual grow amount. */
+
+/* Buffer for parsing input. */
+struct psParseBuf;
+typedef struct psParseBuf psParseBuf_t;
+/* The contents of parsebuf are exactly the same than psDynBuf_t.
+   this allows them to share some of implementation. */
+struct psParseBuf {
+    psBuf_t buf;
+    psPool_t *pool;
+    int err;
+    psParseBuf_t *master;
+};
+
+/* psDynBuf or psParseBuf allocated from this pool
+   is never freed automatically. */
+extern psPool_t * const psStaticAllocationsPool;
+
+/* Function definitions for Static and Dynamic Buffer API. */
+#include "psbuf.h"
 
 /******************************************************************************/
 
@@ -165,15 +221,15 @@ PSPUBLIC int32		psGetFileBuf(psPool_t *pool, const char *fileName,
 #ifdef USE_MULTITHREADING
 #define PS_SHARED	0x1
 PSPUBLIC int32_t	psCreateMutex(psMutex_t *mutex, uint32_t flags);
-PSPUBLIC int32_t	psLockMutex(psMutex_t *mutex);
-PSPUBLIC int32_t	psUnlockMutex(psMutex_t *mutex);
+PSPUBLIC void		psLockMutex(psMutex_t *mutex);
+PSPUBLIC void		psUnlockMutex(psMutex_t *mutex);
 PSPUBLIC void		psDestroyMutex(psMutex_t *mutex);
 #else
 /** @note These are defines rather than inline functions because it allows
 the caller to not allocate a mutex that will never be used. */
 #define psCreateMutex(A, B)	(PS_SUCCESS)
-#define psLockMutex(A)		(PS_SUCCESS)
-#define psUnlockMutex(A)	(PS_SUCCESS)
+#define psLockMutex(A)		do { } while(0)
+#define psUnlockMutex(A)	do { } while(0)
 #define psDestroyMutex(A)
 #endif /* USE_MULTITHREADING */
 

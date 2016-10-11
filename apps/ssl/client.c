@@ -1539,7 +1539,7 @@ static int32_t fetchParseAndAuthCRLfromUrl(psPool_t *pool, unsigned char *url,
 		from the cert authentication.  Here, we run through the
 		list of potential issuers the caller thinks could work */
 	for (ic = potentialIssuers; ic != NULL; ic = ic->next) {
-		if (psX509AuthenticateCRL(ic, crl, NULL) > 0) {
+		if (psX509AuthenticateCRL(ic, crl, NULL) >= 0) {
 			_psTrace("NOTE: Able to authenticate CRL\n");
 			break; /* Stop looking */
 		}
@@ -1595,7 +1595,7 @@ static int32_t fetchParseAndAuthCRLfromCert(psPool_t *pool, psX509Cert_t *cert,
 				from the cert authentication.  Here, we run through the
 				list of potential issuers the caller thinks could work */
 			for (ic = potentialIssuers; ic != NULL; ic = ic->next) {
-				if (psX509AuthenticateCRL(ic, crl, NULL) > 0) {
+				if (psX509AuthenticateCRL(ic, crl, NULL) >= 0) {
 					_psTrace("NOTE: Able to authenticate CRL\n");
 					break; /* Stop looking */
 				}
@@ -1612,7 +1612,7 @@ static int32_t fetchParseAndAuthCRLfromCert(psPool_t *pool, psX509Cert_t *cert,
 					certificate of the server chain will need to be 
 					authenticated */
 				for (ic = cert; ic != NULL; ic = ic->next) {
-					if (psX509AuthenticateCRL(ic, crl, NULL) > 0) {
+					if (psX509AuthenticateCRL(ic, crl, NULL) >= 0) {
 						_psTrace("NOTE: Able to authenticate CRL\n");
 						break; /* Stop looking */
 					}
@@ -1751,6 +1751,7 @@ int32 fetchCRL(psPool_t *pool, char *url, uint32_t urlLen,
 	/* Get a chunk at a time so we can peek at the size on the first chunk
 		and allocate the correct CRL size */
 	crlBin = NULL;
+	crlBinLen = 0;
 	*crlBuf = NULL;
 	*crlBufLen = 0;
 	sawOK = sawContentLength = 0;

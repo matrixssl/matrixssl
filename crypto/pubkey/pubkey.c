@@ -125,7 +125,7 @@ int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
 {
 	psRsaKey_t		*rsakey;
 	psEccKey_t		*ecckey;
-	int				keytype;
+	int				keytype = 1;
 	unsigned char	*keyBuf;
 	int32			keyBufLen;
 	
@@ -133,8 +133,10 @@ int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
 	rsakey = &privkey->key.rsa;
 	ecckey = &privkey->key.ecc;
 	if (pemOrDer == 1) {
+		/* PEM file. */
 		if (pkcs1ParsePrivFile(pool, keyfile, password, rsakey)
 				< PS_SUCCESS) {
+			/* psEccParsePrivFile will also try pkcs8ParsePrivBin. */
 			if (psEccParsePrivFile(pool, keyfile, password, ecckey)
 					< PS_SUCCESS) {
 				psTraceStrCrypto("Unable to parse private key file %s\n",
@@ -146,22 +148,42 @@ int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
 			keytype = 1;
 		}
 	} else {
+		/* DER file. */
 		if (psGetFileBuf(pool, keyfile, &keyBuf, &keyBufLen) < PS_SUCCESS) {
 			psTraceStrCrypto("Unable to open private key file %s\n", keyfile);
 			return -1;
 		}
+		/* A raw RSAPrivateKey? */
 		if (psRsaParsePkcs1PrivKey(pool, keyBuf, keyBufLen, rsakey)
 				< PS_SUCCESS) {
+			/* A raw ECPrivateKey? */
 			if (psEccParsePrivKey(pool, keyBuf, keyBufLen, ecckey, NULL)
 					< PS_SUCCESS) {
-				psTraceCrypto("Unable to parse private key\n");
-				psFree(keyBuf, pool);
-				return -1;
+#ifdef USE_PKCS8
+				/* A PKCS #8 PrivateKeyInfo containing an ECPrivateKey? */
+				if (pkcs8ParsePrivBin(pool, keyBuf, keyBufLen, password,
+									  privkey)) {
+#endif /* USE_PKCS8 */
+					/* Nothing worked. */
+					psTraceCrypto("Unable to parse private key. " \
+								  "Supported formats are RSAPrivateKey, " \
+								  "ECPrivateKey and PKCS #8.\n");
+					psFree(keyBuf, pool);
+					return -1;
+				}
+#ifdef USE_PKCS8
+				if (privkey->type == PS_RSA)
+					keytype = 1;
+				else if (privkey->type == PS_ECC)
+					keytype = 2;
+				goto parsed;
+#endif /* USE_PKCS8 */
 			}
 			keytype = 2;
 		} else {
 			keytype = 1;
 		}
+parsed:
 		psFree(keyBuf, pool);
 	}
 

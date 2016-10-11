@@ -1,6 +1,6 @@
 /**
  *      @file    dh3072.h
- *      @version $Format:%h%d$
+ *	@version $Format:%h%d$
  *
  *      Summary.
  */

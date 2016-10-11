@@ -41,6 +41,7 @@
 */
 
 /** Symmetric. @security These are generally insecure and not enabled by default. */
+//#define USE_RC2
 //#define USE_ARC4
 //#define USE_SEED
 //#define USE_IDEA
@@ -133,6 +134,7 @@ extern int32_t matrixCryptoGetPrngData(unsigned char *bytes, uint16_t size,
 #define OID_SHA256_RSA_SIG		655 /* 42.134.72.134.247.13.1.1.11 */
 #define OID_SHA384_RSA_SIG		656 /* 42.134.72.134.247.13.1.1.12 */
 #define OID_SHA512_RSA_SIG		657 /* 42.134.72.134.247.13.1.1.13 */
+#define OID_SHA1_DSA_SIG        517 /* 1.2.840.10040.4.3 */
 #define OID_SHA1_ECDSA_SIG		520	/* 42.134.72.206.61.4.1 */
 #define OID_SHA224_ECDSA_SIG	523 /* 42.134.72.206.61.4.3.1 */
 #define OID_SHA256_ECDSA_SIG	524 /* 42.134.72.206.61.4.3.2 */
@@ -141,6 +143,7 @@ extern int32_t matrixCryptoGetPrngData(unsigned char *bytes, uint16_t size,
 
 /* Public key algorithms */
 #define OID_RSA_KEY_ALG			645
+#define OID_DSA_KEY_ALG         515 /* 1.2.840.10040.4.1 */
 #define OID_ECDSA_KEY_ALG		518 /* 1.2.840.10045.2.1 */
 
 /* Encryption algorithms */
@@ -155,10 +158,8 @@ extern int32_t matrixCryptoGetPrngData(unsigned char *bytes, uint16_t size,
 #define OID_AES_256_WRAP		457 /* 2.16.840.1.101.3.4.1.45 */
 #define OID_AES_256_GCM			458	/* 2.16.840.1.101.3.4.1.46 */
 
-								/* TODO: Made this up.  Couldn't find */
 #define OID_AES_CMAC			612	/* 2.16.840.1.101.3.4.1.200 */
 
-/* TODO: These are not officially defined yet */
 #define OID_AES_CBC_CMAC_128	143
 #define OID_AES_CBC_CMAC_192	144
 #define OID_AES_CBC_CMAC_256	145

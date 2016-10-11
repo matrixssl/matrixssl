@@ -1,5 +1,5 @@
 /**
- *	@file    testkeys/EC/521_EC.h
+ *	@file    521_EC.h
  *	@version $Format:%h%d$
  *
  *	Auto generated from PEM file.

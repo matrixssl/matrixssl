@@ -37,6 +37,7 @@
 #include "matrixssl/matrixsslApi.h"
 
 #ifdef USE_SERVER_SIDE_SSL
+#ifdef MATRIX_USE_FILE_SYSTEM
 
 #include <signal.h>         /* Defines SIGTERM, etc. */
 
@@ -85,11 +86,11 @@ static int				g_disabledCiphers;
 static uint16_t			g_disabledCipher[SSL_MAX_DISABLED_CIPHERS];
 
 #define MAX_KEYFILE_PATH	256
-#define MAX_KEYFILE_NAME	32
 static char				g_keyfilePath[MAX_KEYFILE_PATH];
-static char				g_privkeyFile[MAX_KEYFILE_NAME];
-static char				g_identityCert[MAX_KEYFILE_NAME];
-static char				g_dhParamFile[MAX_KEYFILE_NAME];
+static char				g_privkeyFile[MAX_KEYFILE_PATH];
+static char				g_identityCert[MAX_KEYFILE_PATH];
+static char				g_dhParamFile[MAX_KEYFILE_PATH];
+static char				g_caFile[MAX_KEYFILE_PATH];
 static char				g_password[32];
 
 static unsigned char	g_httpResponseHdr[] = "HTTP/1.0 200 OK\r\n"
@@ -103,22 +104,11 @@ static unsigned char	g_httpResponseHdr[] = "HTTP/1.0 200 OK\r\n"
 
 #ifdef USE_STATELESS_SESSION_TICKETS
 static int32 sessTicketCb(void *keys, unsigned char name[16], short found);
-
-/* SAMPLE KEYS:  DO NOT USE IN PRODUCTION */
-static unsigned char sessTicketSymKey[32] = {
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08};
-
-static unsigned char sessTicketMacKey[32] = {
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08,
-    0x2A, 0x34, 0xC2, 0x11, 0x45, 0x8F, 0x3D, 0x08};
+static unsigned char sessTicketSymKey[32] = { 0 };
+static unsigned char sessTicketMacKey[32] = { 0 };
 #endif
 
-/***************************** Static Prototypes ******************************/
+/****************************** Local Functions *******************************/
 
 static int32 selectLoop(sslKeys_t *keys, SOCKET lfd);
 static int32 httpWriteResponse(httpConn_t *conn);
@@ -155,9 +145,11 @@ int32 sessTicketCb(void *keys, unsigned char name[16], short found)
         /* Was already cached */
         return PS_SUCCESS;
     }
-    /* Example.  If name was located, the keys would be loaded this way */
+    /* Example.  If name was located, different keys would be loaded this way. Of course here
+	we are loading the same keys already loaded. */
     return matrixSslLoadSessionTicketKeys((sslKeys_t*)keys, name,
-            sessTicketSymKey, 32, sessTicketMacKey, 32);
+            sessTicketSymKey, sizeof(sessTicketSymKey),
+			sessTicketMacKey, sizeof(sessTicketMacKey));
 }
 #endif
 
@@ -166,7 +158,6 @@ void SNIcallback(void *ssl, char *hostname, int32 hostnameLen,
 {
 	ssl_t	*lssl = ssl;
 	*newKeys = lssl->keys;
-	
 }
 
 /******************************************************************************/
@@ -650,6 +641,7 @@ static void usage(void)
 		"\n"
 		"-c <file>           - Server certificate file\n"
 		"-k <file>           - Server private key file of certificate\n"
+		"-a <file>           - CA certificate file\n"
 		"-p <pass>           - Private key password\n"
 		"-d <file>           - Diffie-Hellman parameters file\n"
 		"-D <dir>            - Directory path to certificate, private key, \n"
@@ -715,9 +707,10 @@ static int32 process_cmd_options(int32 argc, char **argv)
 
 	
 	memset(g_keyfilePath, 0, MAX_KEYFILE_PATH);
-	memset(g_privkeyFile, 0, sizeof(MAX_KEYFILE_NAME));
-	memset(g_identityCert, 0, sizeof(MAX_KEYFILE_NAME));
-	memset(g_dhParamFile, 0, sizeof(MAX_KEYFILE_NAME));
+	memset(g_privkeyFile, 0, sizeof(MAX_KEYFILE_PATH));
+	memset(g_identityCert, 0, sizeof(MAX_KEYFILE_PATH));
+	memset(g_dhParamFile, 0, sizeof(MAX_KEYFILE_PATH));
+	memset(g_caFile, 0, sizeof(MAX_KEYFILE_PATH));
 	memset(g_password, 0, 32);
 	
 	g_port				= HTTPS_PORT;
@@ -725,7 +718,7 @@ static int32 process_cmd_options(int32 argc, char **argv)
 	g_disabledCiphers	= 0;
 
 	opterr = 0;
-	while ((optionChar = getopt(argc, argv, "c:d:D:hk:p:P:v:x:")) != -1)
+	while ((optionChar = getopt(argc, argv, "c:d:a:D:hk:p:P:v:x:")) != -1)
 	{
 		switch (optionChar)
 		{
@@ -756,16 +749,25 @@ static int32 process_cmd_options(int32 argc, char **argv)
 		case 'c':
 			// Certfile
 			str_len = strlen(optarg);
-			if (str_len > MAX_KEYFILE_NAME - 1) {
+			if (str_len > MAX_KEYFILE_PATH - 1) {
 				return -1;
 			}
 			strncpy(g_identityCert, optarg, str_len);
 			break;
 		
+		case 'a':
+			// Cert authority file
+			str_len = strlen(optarg);
+			if (str_len > MAX_KEYFILE_PATH - 1) {
+				return -1;
+			}
+			strncpy(g_caFile, optarg, str_len);
+			break;
+		
 		case 'd':
 			// Diffie-Hellman parameters
 			str_len = strlen(optarg);
-			if (str_len > MAX_KEYFILE_NAME - 1) {
+			if (str_len > MAX_KEYFILE_PATH - 1) {
 				return -1;
 			}
 			strncpy(g_dhParamFile, optarg, str_len);
@@ -775,7 +777,7 @@ static int32 process_cmd_options(int32 argc, char **argv)
 		case 'k':
 			// Keyfile
 			str_len = strlen(optarg);
-			if (str_len > MAX_KEYFILE_NAME - 1) {
+			if (str_len > MAX_KEYFILE_PATH - 1) {
 				return -1;
 			}
 			strncpy(g_privkeyFile, optarg, str_len);
@@ -784,7 +786,7 @@ static int32 process_cmd_options(int32 argc, char **argv)
 		case 'p':
 			// password
 			str_len = strlen(optarg);
-			if (str_len > MAX_KEYFILE_NAME - 1) {
+			if (str_len > MAX_KEYFILE_PATH - 1) {
 				return -1;
 			}
 			strncpy(g_password, optarg, str_len);
@@ -822,13 +824,13 @@ int32 main(int32 argc, char **argv)
 	WSADATA			wsaData;
 #endif
 #ifdef USE_STATELESS_SESSION_TICKETS
-    unsigned char   randKey[16];
+    unsigned char   sessTicketName[16];
 #endif
 	char			certpath[FILENAME_MAX];
 	char			keypath[FILENAME_MAX];
 	char			capath[FILENAME_MAX];
 	sslKeys_t		*keys = NULL;
-	
+
 #ifdef WIN32
 	WSAStartup(MAKEWORD(1, 1), &wsaData);
 #endif
@@ -847,29 +849,31 @@ int32 main(int32 argc, char **argv)
 		_psTrace("MatrixSSL library init failure.  Exiting\n");
 		return rc;
 	}
-	
+
 	if (matrixSslNewKeys(&keys, NULL) < 0) {
 		return -1;
 	}
-	
+
 	if (0 != process_cmd_options(argc, argv)) {
 		usage();
 		return 0;
 	}
-	
-#ifdef USE_OCSP
-	OCSPRequestAndResponseTest();
-#endif
-	
+
 #ifdef USE_STATELESS_SESSION_TICKETS
-	_psTrace("Session Ticket resumption enabled\n");
-	_psTrace("WARNING: Do not use sample session ticket keys in production\n");
-	matrixSslSetSessionTicketCallback(keys, sessTicketCb);
-	psGetEntropy(randKey, 16, NULL);
-	if (matrixSslLoadSessionTicketKeys(keys, randKey,
-		sessTicketSymKey, 32, sessTicketMacKey, 32) < 0) {
-		_psTrace("Error loading session ticket encryption key\n");
+	if (matrixCryptoGetPrngData(sessTicketSymKey, sizeof(sessTicketSymKey), NULL) < 0
+			|| matrixCryptoGetPrngData(sessTicketMacKey, sizeof(sessTicketMacKey), NULL) < 0
+			|| matrixCryptoGetPrngData(sessTicketName, sizeof(sessTicketName), NULL) < 0) {
+		_psTrace("Error generating session ticket encryption key\n");
+		return EXIT_FAILURE;
 	}
+	if (matrixSslLoadSessionTicketKeys(keys, sessTicketName,
+			sessTicketSymKey, sizeof(sessTicketSymKey),
+			sessTicketMacKey, sizeof(sessTicketMacKey)) < 0) {
+		_psTrace("Error loading session ticket encryption key\n");
+		return EXIT_FAILURE;
+	}
+	matrixSslSetSessionTicketCallback(keys, sessTicketCb);
+	_psTrace("Session Ticket resumption enabled\n");
 #endif
 
 
@@ -888,7 +892,7 @@ int32 main(int32 argc, char **argv)
 		snprintf(certpath, FILENAME_MAX - 1, "%s/%s",
 			KEY_DIR, g_defaultCertFile);
 	}
-	
+
 	if (g_privkeyFile[0] != 0) {
 		// User provided a key
 		if (g_keyfilePath[0] != 0) {
@@ -903,9 +907,21 @@ int32 main(int32 argc, char **argv)
 		snprintf(keypath, FILENAME_MAX - 1, "%s/%s",
 			KEY_DIR, g_defaultPrivkeyFile);
 	}
-	
-	snprintf(capath, FILENAME_MAX - 1, "%s/%s", KEY_DIR, g_defaultCAFile);
-	
+
+	if (g_caFile[0] != 0) {
+		// User provided a CA file
+		if (g_keyfilePath[0] != 0) {
+			snprintf(capath, FILENAME_MAX - 1, "%s/%s",
+				g_keyfilePath, g_caFile);
+		} else {
+			snprintf(capath, FILENAME_MAX - 1, "%s", g_caFile);
+		}
+	} else {
+		// Default key
+		snprintf(capath, FILENAME_MAX - 1, "%s/%s",
+			KEY_DIR, g_defaultCAFile);
+	}
+
 	/* Still don't have a generic key loading function.  Try RSA first and
 		then ECC if that doesn't load */
 	if ((rc = matrixSslLoadRsaKeys(keys, certpath, keypath, g_password, capath)) < 0) {
@@ -1150,3 +1166,13 @@ int32 main(int32 argc, char **argv)
 
 /******************************************************************************/
 
+#else
+#include <stdio.h>
+
+int main(int argc, char **argv)
+{
+	printf("You need to #define MATRIX_USE_FILE_SYSTEM for this test\n");
+	return 1;
+}
+
+#endif /* MATRIX_USE_FILE_SYSTEM */

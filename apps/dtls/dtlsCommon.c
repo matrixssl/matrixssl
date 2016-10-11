@@ -44,8 +44,7 @@ static int num_dropped = 0;
 void udpInitProxy(void)
 {
 	/* This function is no longer needed, since we are
-	   using matrixCryptoGetPrngData instead of psGetPrng.
-	   TODO: remove? */
+	   using matrixCryptoGetPrngData instead of psGetPrng. */
 }
 
 /******************************************************************************/
@@ -118,8 +117,7 @@ int32 udpSend(SOCKET s, unsigned char *buf, int len,
 #endif /* DTLS_PACKET_LOSS_TEST */
 #ifdef DTLS_PACKET_LOSS_TEST
 	psTraceIntDtls("%d packets dropped so far\n",
-				   num_dropped); /* TODO: print different counts
-									for client and server. */
+				   num_dropped);
 #endif /* DTLS_PACKET_LOSS_TEST */
 	return len;
 }

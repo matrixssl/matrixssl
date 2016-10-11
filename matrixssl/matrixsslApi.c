@@ -1133,9 +1133,6 @@ int32 matrixSslProcessedData(ssl_t *ssl, unsigned char **ptbuf, uint32 *ptlen)
 		if (ssl->flags & SSL_FLAGS_AEAD_R) {
 			/* This overhead was removed from rec.len after the decryption
 				to keep buffer logic working. */
-			/* TODO: This is for checking async or not.  If async, this length
-				tweak never happens.  Need a more generic way to look for
-				blocking or not */
 			ctlen += AEAD_TAG_LEN(ssl) + AEAD_NONCE_LEN(ssl);
 		}
 		memmove(ssl->inbuf, ssl->inbuf + ctlen, ssl->inlen);

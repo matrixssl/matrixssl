@@ -22,18 +22,13 @@ include $(MATRIXSSL_ROOT)/common.mk
 # Linked files
 STATICS:=../libcrypt_s.a $(MATRIXSSL_ROOT)/core/libcore_s.a
 
-DIRS:=rsaperf eccperf dhperf
-
-.PHONY: $(DIRS) clean
-
 all: compile
 
-compile: $(OBJS) $(EXE) $(DIRS)
-
-# Note this requires MAKECMDGOALS to be defined by make,
-# otherwise clean target doesn't work
-$(DIRS):
-	$(MAKE) $(MAKECMDGOALS) --directory=$@
+compile: $(OBJS) $(EXE)
+	if [ -e rsaperf ]; then $(MAKE) --directory=rsaperf; fi
+	if [ -e eccperf ]; then $(MAKE) --directory=eccperf; fi
+	if [ -e dhperf ]; then $(MAKE) --directory=dhperf; fi
+	if [ -e clperf ]; then $(MAKE) --directory=clperf; fi
 
 # Additional Dependencies
 $(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile $(wildcard *.h)
@@ -44,6 +39,10 @@ $(SPEED_EXE): $(SPEED_SRC:.c=.o) $(STATICS)
 $(VECTOR_EXE): $(VECTOR_SRC:.c=.o) $(STATICS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-clean: $(DIRS)
+clean:
 	rm -f $(EXE) $(OBJS)
+	if [ -e rsaperf ]; then $(MAKE) clean --directory=rsaperf;fi
+	if [ -e eccperf ]; then $(MAKE) clean --directory=eccperf;fi
+	if [ -e dhperf ]; then $(MAKE) clean --directory=dhperf;fi
+	if [ -e clperf ]; then $(MAKE) clean --directory=clperf;fi
 

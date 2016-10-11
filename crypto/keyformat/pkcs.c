@@ -283,7 +283,6 @@ int32 pkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
 			(unsigned char*)salt, 8, icount, (unsigned char*)desKeyBin,
 			DES3_KEYLEN);
 		psDes3Init(&ctx.des3, (unsigned char*)iv, desKeyBin);
-		/* TODO: possible some compilers will not like this const removal */
 		psDes3Decrypt(&ctx.des3, p, (unsigned char*)p, len);
 		/* @security SECURITY - we zero out des3 key when done with it */
 		memset_s(&ctx, sizeof(psCipherContext_t), 0x0, sizeof(psCipherContext_t));
@@ -1017,21 +1016,7 @@ static int32 parseSafeContents(psPool_t *pool, unsigned char *password,
 		/* Attributes are at the end of the data */
 		while (p != safeLen) {
 #ifdef PARSE_PKCS12_SAFE_ATTRIBS
-			/*
-				TODO: incomplete parse
-
-				PKCS12Attribute ::= SEQUENCE {
-					attrId ATTRIBUTE.&id ({PKCS12AttrSet}),
-					attrValues SET OF ATTRIBUTE.&Type ({PKCS12AttrSet}{@attrId})
-				} -- This type is compatible with the X.500 type ’Attribute’
-
-				PKCS12AttrSet ATTRIBUTE ::= {
-					PKCS 12 V1.0: PERSONAL INFORMATION EXCHANGE SYNTAX 9
-					friendlyName | -- from PKCS #9
-					localKeyId, -- from PKCS #9
-					... -- Other attributes are allowed
-				}
-			*/
+			/**/
 			if ((rc = getAsnSet(&p, (int32)(end - p), &attriblen)) < 0) {
 				return rc;
 			}

@@ -90,7 +90,7 @@ int32 parseClientHelloExtensions(ssl_t *ssl, unsigned char **cp, unsigned short 
 		extLen = *c << 8; c++; /* Total length of list, in bytes */
 		extLen += *c; c++;
 		/* extLen must be minimum 2 b type 2 b len and 0 b value */
-		if ((uint32)(end - c) < extLen || extLen < 4) {
+		if ((uint32)(end - c) != extLen || extLen < 4) {
 			ssl->err = SSL_ALERT_DECODE_ERROR;
 			psTraceInfo("Invalid extension header len\n");
 			return MATRIXSSL_ERROR;
@@ -215,7 +215,9 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 #ifdef USE_ECC_CIPHER_SUITE
 	unsigned short	dataLen, curveId;
 	uint32			ecFlags;
-#endif /* USE_ECC_CIPHER_SUITE */
+#elif defined USE_OCSP
+	unsigned short	dataLen;
+#endif /* USE_ECC_CIPHER_SUITE || USE_OCSP */
 #ifdef USE_TLS_1_2
 	unsigned short	tmpLen;
 #endif
@@ -242,7 +244,6 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 			ssl->err = SSL_ALERT_HANDSHAKE_FAILURE;
 			return MATRIXSSL_ERROR;
 		}
-		/* TODO: User can disable? */
 		ssl->extFlags.extended_master_secret = 1;
 		break;
 
@@ -948,8 +949,7 @@ static int ServerHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 			psTraceInfo("Server sent bad ECPointFormatList\n");
 			return MATRIXSSL_ERROR;
 		}
-		extLen--; /* TODO: check that one of these bytes is 0
-								(uncompressed point support) */
+		extLen--;
 		break;
 #endif /* USE_ECC_CIPHER_SUITE */
 

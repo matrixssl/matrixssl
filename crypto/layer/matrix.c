@@ -1,5 +1,5 @@
 /**
- *	@file    matrixcrypto.c
+ *	@file    matrix.c
  *	@version $Format:%h%d$
  *
  *	Matrix Crypto Initialization and utility layer.
@@ -63,6 +63,9 @@ int32_t psCryptoOpen(const char *config)
 		psError("pscore open failure\n");
 		return PS_FAILURE;
 	}
+#ifdef USE_FLPS_BINDING
+	flps_binding();
+#endif /* USE_FLPS_BINDING */
 	psOpenPrng();
 #ifdef USE_CRL
 	psCrlOpen();

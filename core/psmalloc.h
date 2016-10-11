@@ -49,6 +49,11 @@
 
 #define MATRIX_NO_POOL		(void *)0x0
 
+/* Introduce variables used for memory pooling, so that the compiler does not
+   give spurious warnings even when memory pools are not supported by the
+   target operating system. */
+#define PS_POOL_USED(poolVar) PS_VARIABLE_SET_BUT_UNUSED(poolVar)
+
 /******************************************************************************/
 /*
 	Native memory routines
@@ -76,7 +81,7 @@
 void *psMallocNative(size_t size);
 void psFreeNative(void *ptr);
 
-typedef int32_t psPool_t;
+typedef int32 psPool_t;
 
 /******************************************************************************/
 

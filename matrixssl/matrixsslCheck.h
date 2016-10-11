@@ -71,7 +71,7 @@ extern "C" {
 #error "USE_SHARED_SESSION_CACHE only implemented for POSIX platforms."
 #endif
 #ifndef USE_MULTITHREADING
-#error "USE_MULTITHREADING required for USE_SHARED_MESSAGE_CACHE."
+#error "USE_MULTITHREADING required for USE_SHARED_SESSION_CACHE."
 #endif
 #endif
 

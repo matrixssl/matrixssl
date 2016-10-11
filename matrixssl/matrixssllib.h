@@ -1683,10 +1683,19 @@ extern int32_t eccSuitesSupported(const ssl_t *ssl,
 #ifdef USE_MATRIXSSL_STATS
 extern void matrixsslUpdateStat(ssl_t *ssl, int32_t type, int32_t value);
 #else
+#ifdef __GNUC__
+static __inline
+void matrixsslUpdateStat(ssl_t *ssl __attribute__((__unused__)),
+			 int32_t type __attribute__((__unused__)),
+			 int32_t value __attribute__((__unused__)))
+{
+}
+#else
 static __inline
 void matrixsslUpdateStat(ssl_t *ssl, int32_t type, int32_t value)
 {
 }
+#endif
 #endif /* USE_MATRIXSSL_STATS */
 
 #ifdef __cplusplus

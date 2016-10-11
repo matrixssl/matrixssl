@@ -83,6 +83,8 @@
  #else
   #define PSTM_MIPS	/* MIPS assembly supported on 32 bit only */
  #endif
+#elif defined(__aarch64__)
+ #define PSTM_64BIT /* Supported by architecture */
 #endif
 #endif /* GNUC/CLANG */
 
@@ -235,13 +237,15 @@ extern void	osdepEntropyClose(void);
   typedef signed long long	int64_t;
  #endif
 #elif defined(METAL)
- typedef signed long int32;
- typedef unsigned long uint32;
- typedef signed short int16;
- typedef unsigned short uint16;
+ #include <stdint.h>
+ typedef int32_t int32;
+ typedef uint32_t uint32;
+ typedef int16_t int16;
+ typedef uint16_t uint16;
+ typedef uint8_t uint8;
  #ifdef HAVE_NATIVE_INT64
-  typedef unsigned long long	uint64;
-  typedef signed long long	int64;
+  typedef int64_t int64;
+  typedef uint64_t uint64;
  #endif
 #elif defined (NUCLEUS)
  #include <stdint.h>

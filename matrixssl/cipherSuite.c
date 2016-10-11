@@ -2306,15 +2306,11 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 				
 				In this flexible server case, the SNI callback function is
 				NOT USED.
-				
-				TODO: To comply with spec the server SHALL include an SNI
-				extension if it was used to help select keys.  Maybe just
-				always send it in this flexible case? */
+				*/
 			wantKey.serverName = ssl->expectedName;
 #ifdef USE_TLS_1_2
 			wantKey.hashAlg = ssl->hashSigAlg;
 #else
-			/* TODO: WHAT DO WE DO FOR NON TLS 1.2? */
 			wantKey.hashAlg = 0;
 #endif
 #ifdef USE_ECC_CIPHER_SUITE
@@ -2325,7 +2321,6 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 #endif
 		
 #ifndef USE_ONLY_PSK_CIPHER_SUITE	
-			/* TODO: This was wrapped for compile-time purposes */
 			/* Invoke the user's callback */
 			givenKey = (ssl->sec.pubkeyCb)(ssl, &wantKey);
 #endif
