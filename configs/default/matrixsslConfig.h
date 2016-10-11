@@ -238,6 +238,12 @@ extern "C" {
 
 /******************************************************************************/
 /**
+	Enable the Certificate Transparecy TLS extension
+ */
+//#define USE_SCT
+
+/******************************************************************************/
+/**
 	Enable the Trusted CA Indication CLIENT_HELLO extension.  Will send the
 	sha1 hash of each CA file to the server for help in server selection.
 	This extra level of define is to help isolate the SHA1 requirement
@@ -271,6 +277,13 @@ extern "C" {
 	feature is disabled by default.
 */
 //#define USE_REHANDSHAKING
+
+/******************************************************************************/
+/**
+	Only available server side. Allows matrixSSL to chose the strongest cipher
+	from the client's supported list.
+*/
+//#define USE_SERVER_PREFERRED_CIPHERS
 
 /******************************************************************************/
 /**
