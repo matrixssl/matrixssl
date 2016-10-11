@@ -630,7 +630,17 @@ extern int32_t psX509GetConcatenatedDomainComponent(const x509DNattributes_t *DN
 
 #ifdef USE_OCSP
 #include <time.h>
+
+#ifdef WIN32
+#define false   0
+#define true    1
+
+#define bool int
+
+#define timegm _mkgmtime
+#else
 #include <stdbool.h>
+#endif
 
 /* The default value of allowed mismatch in times in OCSP messages and the local
    clock. */

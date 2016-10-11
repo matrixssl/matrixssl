@@ -399,7 +399,7 @@ static int32_t nextUpdateTest(char *c, int32 timeType)
 			if (sysTime.wDay > d) {
 				return -1;
 			} else if (sysTime.wDay == d) {
-				if (sysTime.wHour > h)
+				if (sysTime.wHour > h) {
 					return -1;
 				}
 			}

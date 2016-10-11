@@ -637,7 +637,7 @@ int32_t matrixSslGenEphemeralEcKey(sslKeys_t *keys, psEccKey_t *ecc,
 	psAssert(keys && curve);
 #if ECC_EPHEMERAL_CACHE_USAGE > 0
 	psGetTime(&t, keys->poolUserPtr);
-	(void)psLockMutex(&keys->cache.lock);
+	psLockMutex(&keys->cache.lock);
 	if (keys->cache.eccPrivKey.curve != curve) {
 		psTraceStrInfo("Generating ephemeral %s key (new curve)\n",
 			curve->name);
@@ -659,7 +659,7 @@ int32_t matrixSslGenEphemeralEcKey(sslKeys_t *keys, psEccKey_t *ecc,
 	if (ecc) {
 		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
 	}
-	(void)psUnlockMutex(&keys->cache.lock);
+	psUnlockMutex(&keys->cache.lock);
 	return rc;
 L_REGEN:
 	if (keys->cache.eccPrivKeyUse) {
@@ -669,7 +669,7 @@ L_REGEN:
 	}
 	rc = psEccGenKey(keys->pool, &keys->cache.eccPrivKey, curve, hwCtx);
 	if (rc < 0) {
-		(void)psUnlockMutex(&keys->cache.lock);
+		psUnlockMutex(&keys->cache.lock);
 		return rc;
 	}
 	keys->cache.eccPrivKeyTime = t;
@@ -678,7 +678,7 @@ L_REGEN:
 	if (ecc) {
 		rc = psEccCopyKey(ecc, &keys->cache.eccPrivKey);
 	}
-	(void)psUnlockMutex(&keys->cache.lock);
+	psUnlockMutex(&keys->cache.lock);
 	return rc;
 #else
 	/* Not using ephemeral caching. */
