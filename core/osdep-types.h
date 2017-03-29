@@ -181,7 +181,9 @@
 #   if defined(WIN32)
 #    include <windows.h>
 #    define strcasecmp lstrcmpiA
-#    define snprintf _snprintf
+#    if defined(_MSC_VER) && _MSC_VER < 1900 /*MSVC2015*/
+#      define snprintf _snprintf
+#    endif
 #   endif
 #   include <stdint.h>
 typedef int32_t int32;
