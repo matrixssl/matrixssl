@@ -643,7 +643,7 @@ typedef struct
     uint64_t value;
 }  __attribute__((__packed__, __aligned__(4))) pstmnt_uint64_aligned4_t;
 
-__extension__ typedef unsigned __int128 pstmntDD_word;
+__extension__ typedef __uint128_t pstmntDD_word;
 
 #  ifndef PSTMNT_VERYLONG_MULADD_CARRY
 #   define PSTMNT_VERYLONG_MULADD_CARRY(uu, u, v, b, a)    \
