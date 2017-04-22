@@ -854,7 +854,7 @@ pstmnt_square(
     }
 
     /* No square function, just use multiplier. */
-    pstmnt_mult(a, a, r, n);
+    pstmnt_mult(a, a, r, sz);
 }
 # endif
 

@@ -2366,9 +2366,9 @@ int32_t haveKeyMaterial(const ssl_t *ssl, int32 cipherType, short reallyTest)
 #endif /* VALIDATE_KEY_MATERIAL */
 
 
-#ifdef USE_SERVER_SIDE_SSL
+# ifdef USE_SERVER_SIDE_SSL
 
-#ifdef USE_SERVER_PREFERRED_CIPHERS
+# ifdef USE_SERVER_PREFERRED_CIPHERS
 
 /*	quick sort support for sorting descendingly the client's supported
 	supported cipher list
@@ -2399,7 +2399,7 @@ void quick_sort_desc(uint32 *v, int l, int r) {
 		quick_sort_desc(v, i, r);
 }
 
-#endif /* USE_SERVER_PREFERRED_CIPHERS */
+# endif /* USE_SERVER_PREFERRED_CIPHERS */
 
 /*	0 return is a key was found
 	<0 is no luck
@@ -2414,7 +2414,7 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
     sslPubkeyId_t wantKey;
     sslKeys_t *givenKey = NULL;
 
-#ifdef USE_SERVER_PREFERRED_CIPHERS
+# ifdef USE_SERVER_PREFERRED_CIPHERS
 
 #define MAX_CIPHERS 256
 
@@ -2445,7 +2445,7 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 	while (i < cn) {
 		cipher = ciphers[i++];
 
-#else
+# else
 
 	end = c + listLen;
 	while (c < end) {
@@ -2459,6 +2459,8 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 			cipher += *c << 8; c++;
 			cipher += *c; c++;
 		}
+
+# endif /* USE_SERVER_PREFERRED_CIPHERS */
 
         /* Checks if this cipher suite compiled into the library.
             ALSO, in the cases of static server keys (ssl->keys not NULL)

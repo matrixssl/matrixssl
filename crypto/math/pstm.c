@@ -1582,7 +1582,7 @@ static uint64 psDiv128(uint128 *numerator, uint64 denominator)
 
 /* This version of division uses short & small function, but offers
    bit worse performance than some others. */
-int pstm_div(psPool_t *pool, const pstm_int *a, const pstm_int *b,
+int32_t pstm_div(psPool_t *pool, const pstm_int *a, const pstm_int *b,
     pstm_int *c, pstm_int *d)
 {
     pstm_int ta, tb, tq, q;
