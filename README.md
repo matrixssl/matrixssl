@@ -29,6 +29,7 @@ Sensitive emails can be encrypted using the public key in this directory [pgp.as
 + Server Name Indication and Stateless Session Tickets
 + RFC7301 Application Protocol Negotiation
 + Server and client X.509 certificate chain authentication
++ Client authentication with an external security token
 + Parsing of X.509 .pem and ASN.1 DER certificate formats
 + PKCS#1.5, PKCS#5 PKCS#8 and PKCS#12 support for key formatting
 + RSASSA-PSS Signature Algorithm support

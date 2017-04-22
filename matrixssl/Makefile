@@ -42,3 +42,6 @@ $(STATIC): $(OBJS)
 clean:
 	rm -f $(STATIC) $(OBJS)
 
+# Allows to check configuration options.
+parse-config:
+	echo '#include "matrixsslConfig.h"' | $(CC) $(CFLAGS) -dM -E -x c -

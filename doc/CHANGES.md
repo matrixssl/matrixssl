@@ -1,11 +1,331 @@
 MatrixSSL Release Notes
-========
+=======================
 
-#Changes in 3.8.6
---------
+Changes in 3.9.0
+----------------
+
+> **Version 3.9.0**
+> March 2017
+> (C) Copyright 2017 INSIDE Secure - All Rights Reserved
+
+1. BUG FIXES SINCE 3.8.7b
+ - Fixed server-side handling of client authentication with Server Name Indication
+ - Constant Time Modular Exponentiation
+
+2. NEW FEATURES SINCE 3.8.7b
+
+ - RFC 5280 Compliant Certificate Matching
+ - Certificate Validation Configuration Options
+ - Client Authentication using an External Security Token
+ - X.509 Generation Improvements (Commercial Edition Only)
+ - Added psX509GetOnelineDN API
+ - Added matrixValidateCertsExt API
+ - Support for RSA-MD2 and RSA-MD5 Signatures in CSR and CRL Parsing
+ - ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE Compatibility Option
+
+3. OTHER CHANGES SINCE 3.8.7b
+ - Indent style changes
+
+#1. BUG FIXES SINCE 3.8.7b
+
+## Fixed server-side handling of client authentication with Server Name Indication
+
+This bug caused client authentication to fail when MatrixSSL was used
+as the server and the client was sending the Server Name Indication
+extension.
+
+## Constant Time Modular Exponentiation
+
+It was reported by Andreas Zankl that Matrix Crypto implementation had
+a side-channel information leak via instruction cache. In response to
+the research, Matrix Crypto modular exponentiation was changed to use
+code that does not leak information via instruction cache and uses
+constant-time execution.  The new code is slower. (Note: The SafeZone
+CL/CLS cryptography used in MatrixSSL FIPS Edition has been using
+constant time modular exponention before.)
+
+#2. NEW FEATURES SINCE 3.8.7b
+
+## RFC 5280 Compliant Certificate Matching
+
+Matching certificate fields in MatrixSSL has been improved. MatrixSSL
+now implements the requirement from RFC 5280 that Subject Alternative Name
+is used for matching instead of subject Common Name if alternative
+name is available.  Subject Alternative Name contain more precise
+information on the type of the field and thus avoids false positive field
+matches.  MatrixSSL now allows RFC 5280 compliant matching of email
+addresses, where only domain name part is case insensitive.  It is now
+possible to specify the type of name to match with new session
+options. See the Session Options section in the MatrixSSL APIs manual
+for details.
+
+The issues in certificate matching were reported by Suphannee Sivakorn from
+Columbia University.
+
+## Certificate Validation Configuration Options
+
+New session options have been added for configuring MatrixSSL's
+internal certificate validation process. These include options for
+specifying the field in the server certificate against which the
+expected server name should be matched, an option to limit the maximum
+certificate chain validation depth and options for retaining the peer
+certificate after processing. See the Session Options section in the
+MatrixSSL APIs manual for details.
+
+## Client Authentication using an External Security Token
+
+MatrixSSL's external client authentication feature allows
+client-side private key operation in TLS client authentication,
+i.e. the signing of the handshake_messages hash in the
+CertificateVerify handshake message, to be offloaded from MatrixSSL to
+an external module such as a security or authentication token.  See
+the MatrixSSL External Module Integration manual for details.
+
+## X.509 Generation Improvements (Commercial Edition Only)
+
+Support has been added for encoding the netscape-comment certificate
+extension. The psParseCertReqBufExt API has been added. This version
+of psParseCertReqBufExt allows storing additional information from
+the parsed CSR. Another additional API is psX509SetPublicKey, which
+can be used to set the public key in a psCertConfig_t struct, before
+it is passed to the CSR or certificate encoding routines. See the
+MatrixSSL Certificates and Certificate Revocation Lists manual for
+details.
+
+## Added psX509GetOnelineDN API
+
+The new psX509GetOnelineDN API can be used to generate a one-line
+string representation of a Distinguished Name.
+
+## Added matrixValidateCertsExt API
+
+The new matrixValidateCertsExt API has an additional options struct
+argument for configuring some aspects of the certificate chain
+validation process. The old matrixValidateCerts API is now deprecated.
+
+## Support for RSA-MD2 and RSA-MD5 Signatures in CSR and CRL Parsing
+
+Support for RSA-MD2 and RSA-MD5 signature verification has been added
+to CSR parsing, and support for RSA-MD2 signature verification has
+been added to CRL parsing. These insecure, legacy algorithms are
+disabled by default, but they can be enabled by defining USE_MD2 or
+USE_MD5.
+
+## ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE Compatibility Option
+
+The ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE build-time option allows CRL
+authentication to succeed even when signer CA's cert does not have the
+keyUsage extension and thus no cRLSign bit. This option is for
+compatibility with old CRL issuer certs. RFC 5280 requires CRL issuer
+certs to have the keyUsage extension and the cRLSign bit.
+
+#3. OTHER CHANGES SINCE 3.8.7b
+
+## Indent style changes
+
+Indent style has been changed and made more consistent accross source
+and header files.
+
+Changes in 3.8.7b
+-----------------
+
+> **Version 3.8.7b**
+> January 2017
+> (C) Copyright 2017 INSIDE Secure - All Rights Reserved
+
+
+
+1. BUG FIXES SINCE 3.8.7
+- Fixed compile error if SHA224 was enabled.
+- Fixed compile warning around HTTP2 alpn detection.
+- Fixed issue where a cipher suite could be negotiated that did not match the authentication type for the keys.
+
+#1. BUG FIXES SINCE 3.8.7
+
+## Fixed issue where a cipher suite could be negotiated that did not match the authentication type for the keys.
+
+This manifested in the default apps/ssl/server.c example when Chrome was connected. It negotiated an ECDSA based cipher even though keys loaded by default were RSA keys.
+
+
+Changes in 3.8.7
+----------------
+
+> **Version 3.8.7**
+> November 2016
+> (C) Copyright 2016 INSIDE Secure - All Rights Reserved
+
+
+
+1. BUG FIXES SINCE 3.8.6
+ - Fixed Wrong Computation Results Bug In pstm.c Division
+ - Fixed Memory Corruption In psDhImportPubKey
+ - Fixed RSA Public Key Read Overflow
+ - X.509/CRL/OCSP Timestamp Validation
+ - Unix Year 2038 Problem Fix
+ - Stricter OID Comparison
+ - Multibyte String Handling
+ - Configuration Robustness Improvements
+ - X.509 Certificate Parsing Read Overflow
+ - PKCS #8 Buffer Read Overflow
+ - OCSP Bug Fixes
+ - Generic Bug Fixes For Test Programs
+ - Changes to Recommended Configurations
+ - psMutex Locking and Unlocking APIs Compiler Warnings Removed
+ - MD5 and SHA-1 Combined Digest Function
+ - Coverity Issues Fixed
+ - Yarrow Build Issues Fixed
+
+2. NEW FEATURES SINCE 3.8.6
+  - SHA-512 for X.509 Certificates Improvements
+  - OCSP Improvements
+  - X.509 Certificate Domain Components
+  - New Configuration: Minimal PSK
+
+
+#1. BUG FIXES SINCE 3.8.6
+
+## Fixed Wrong Computation Results Bug In pstm.c Division
+
+The bug could cause some big number mathematics to return wrong values when divisor and dividend are very far from each other.
+This issue is related to public key computation problems
+reported by Security Researcher [Hanno Böck](https://hboeck.de/).
+
+## Fixed Memory Corruption In psDhImportPubKey
+
+Importing Diffie-Hellman public key cleared some memory beyond end of the key.
+On some systems this bug may have caused memory corruption.
+
+## Fixed RSA Public Key Read Overflow
+
+When importing RSA key from certificate, maliciously crafted RSA public key could cause read buffer overflow and crash.
+
+## X.509/CRL/OCSP Timestamp Validation
+
+MatrixSSL accepted some X.509 certificates with illegal timestamps,
+such as leap day in an ordinary year. In additional, some two
+digit years were parsed incorrectly. Timestamp parsing has been
+altered everywhere to use new psBrokenDownDate API, which correctly
+handles these corner cases. Some of X.509 time parsing issues were
+reported by Sze Yiu Chau.
+
+## Unix Year 2038 Problem Fix
+
+On 32-bit Unix devices, time_t type, which is signed will overflow in 2038.
+A workaround was added that will allow timestamps and dates to be processed
+correctly by MatrixSSL on and after Tuesday 19 January 2038.
+
+## Stricter OID Comparison
+
+The OID comparison in MatrixSSL uses a simple non-cryptographic digest
+function, based on sum of bytes, which is not collision free. Comparison of OID
+binary representation was added to ensure unknown OIDs are not accidentally
+interpreted the same than some of existing OIDs.
+This issue was reported by Sze Yiu Chau.
+
+## Multibyte String Handling
+
+The MatrixSSL now includes function to recode strings containing multibyte
+(BMPString) characters as UTF-8 strings. This handling is applied to
+X.509 certificate fields, such as Subject Name. This allows code using
+MatrixSSL to work with BMPString input without actually knowing the encoding
+used.
+
+## Configuration Robustness Improvements
+
+MatrixSSL has been made more robust with configurations: changing
+configuration options is less likely to cause problems building the software.
+
+These improvements allow smaller configurations for embedded systems.
+(E.g. build without DTLS, or build only server-side or client-side support.)
+
+## X.509 Certificate Parsing Read Overflow
+
+Fixed read overflow from X.509 certificate date handling and
+removed possible buffer read overflow in parseGeneralNames().
+Without these fixes maliciously crafted X.509 certificate could
+cause software crash.
+
+
+## PKCS #8 Buffer Read Overflow
+
+Fixed reading overly large invalid PKCS #8 encoded private key.
+Without this fix, maliciously crafted PKCS #8 file could cause
+software crash.
+
+
+## OCSP Bug Fixes
+
+In lieu of OCSP improvements, small bugs in OCSP implementation have
+been fixed. The most notable bug was a memory leak.
+
+
+## Generic Bug Fixes For Test Programs
+
+Removed some warnings and memory leaks from test programs.
+Made test programs confirm to Unix/POSIX return value scheme on relevant
+platforms.
+
+
+## Changes to Recommended Configurations
+
+The recommended configurations have been edited slightly.
+Most notably, the tracing is disabled by default on non-debug configurations.
+
+
+## psMutex Locking and Unlocking APIs Compiler Warnings Removed
+
+Removed return value from psLockMutex() and psUnlockMutex() APIs.
+This removes several warnings regarding return values not being used.
+
+
+## MD5 and SHA-1 Combined Digest Function
+
+The MatrixSSL will now invoke combined MD5 and SHA-1 hash function `psMd5Sha1`,
+whenever possible instead of separate MD5 and SHA-1 hash functions.
+
+## Coverity Issues Fixed
+
+Implementation of `getTicketKeys` and `parseSSLHandshake`
+functions was changed to remove issues detected by Coverity.
+
+## Yarrow Build Issues Fixed
+
+MatrixSSL comes with a version of Yarrow PRNG. Its use has been deprecated,
+but the PRNG continued to be shipped with MatrixSSL. Unfortunately, the
+latest versions of MatrixSSL had compilation errors in yarrow.c.
+Those errors have been fixed, and the source code file has been marked
+deprecated.
+
+#2. NEW FEATURES SINCE 3.8.6
+
+## SHA-512 for X.509 Certificates Improvements
+
+MatrixSSL can use SHA-512 to sign self-signed certificate or certificate request. SHA-512 was already previously supported for verification of X.509 certificates.
+(This feature can be used only on MatrixSSL Commercial Edition.)
+
+## OCSP Improvements
+
+OCSP example application apps/crypto/ocsp.c
+(Commercial Edition Only) and MatrixSSL Developer Guide have
+been improved to give more documentation regarding OCSP request.
+OCSP request can now use requestorId feature and request status of list of certificates.
+
+## X.509 Certificate Domain Components
+
+Added Functions for obtaining contents of X.509 certificate Domain
+Component field(s).
+
+## New Configuration: Minimal PSK
+
+New configuration psk added. This configuration provides small footprint MatrixSSL build with only Pre-Shared Key and TLS 1.2 functionality using Matrix Crypto.
+
+
+Changes in 3.8.6
+----------------
+
 > **Version 3.8.6**
 > October 2016
-> *&copy; INSIDE Secure - 2016 - All Rights Reserved*
+> (C) Copyright 2016 INSIDE Secure - All Rights Reserved
 
 1. BUG FIXES
  - Critical parsing bug for X.509 certificates
@@ -39,7 +359,7 @@ In some cases RSA key generation of 4096 bit keys would fail and return with an 
 Warnings across multiple platforms and compilers were fixed. Various compile time configuration combination build issues were fixed.
 
 ##MatrixSSH compatibility issue
-Newer versions of MatrixSSH server were incompatible with the PuTTY client. A fix has been included and enabled by default `USE_PUTTY_WORKAROUND`. 
+Newer versions of MatrixSSH server were incompatible with the PuTTY client. A fix has been included and enabled by default `USE_PUTTY_WORKAROUND`.
 *Note this does not affect the standard MatrixSSL codebase*.
 
 #2 FEATURES AND IMPROVEMENTS
@@ -90,17 +410,19 @@ Added additional field parsing support for X.509, including multiple OU support.
 ##Removed OpenSSL API Emulation
  - `opensslApi.c` and `opensslSocket.c` files removed temporarily in anticipation of moving to a more fully supported OpenSSL layer.
 
-#Changes in 3.8.5
---------
+Changes in 3.8.5
+----------------
+
 > **Version 3.8.5**
 > September 2016
 > *Note: 3.8.5 was a limited customer release only.*
 
-#Changes in 3.8.4
---------
+Changes in 3.8.4
+----------------
+
 > **Version 3.8.4**
 > July 2016
-> *&copy; INSIDE Secure - 2016 - All Rights Reserved*
+> (C) Copyright 2016 INSIDE Secure - All Rights Reserved
 
 1. FEATURES AND IMPROVEMENTS
  - Coverity coverage
@@ -157,11 +479,12 @@ SSLv3 mode is not recommended for deployment, but had become broken in a recent 
 ## Assembly compatibility with more compilers
 Fixed "invalid register constraints" error on some versions of GCC and LLVM for ARM, MIPS and x86_64.
 
-#Changes in 3.8.3
---------
+Changes in 3.8.3
+----------------
+
 > **Version 3.8.3**
 > April 2016
-> *&copy; INSIDE Secure - 2016 - All Rights Reserved*
+> (C) Copyright 2016 INSIDE Secure - All Rights Reserved
 
 1. FEATURES AND IMPROVEMENTS
   - Simplified Configuration Options
@@ -279,7 +602,7 @@ HMAC-SHA1 or HMAC-SHA256 are now used to generate the DTLS cookie, and additiona
 ##Fixed key type verification for chosen cipher suite
 An internal verification function that determined whether the server key type was correct for the chosen cipher suite has now been fixed.  Previous versions would sometimes incorrectly determine the server was using the wrong key type if the server was using a certificate chain where parent certificates did not use the same key type.  This bug resulted in a failed handshake and is now fixed.
 
-##Validation of RSA Signature Creation 
+##Validation of RSA Signature Creation
 An internal RSA validation of created signatures has been added to the library in the `psRsaEncryptPriv()` function.
 
 Security researcher Florian Weimer has shown it is possible for RSA private key information to leak under some special failure circumstances.  Information on the exploit can be found here: https://people.redhat.com/~fweimer/rsa-crt-leaks.pdf
@@ -301,11 +624,12 @@ TLS cipher suites with CBC mode in TLS 1.1 and 1.2 could have an access violatio
 - *Microsoft Windows* targets do not support certificate date validation currently. Users requiring this feature can use Windows APIs to get and parse the current date, using the POSIX implementation as a reference.
 - *Arm* platforms linking with some versions of *OpenSSL* `libcrypto` library may have errors in AES-CBC cipher suites due to the library's inability to handle in-situ encryption within the same block.
 
-#Changes in 3.8.2
---------
+Changes in 3.8.2
+----------------
+
 > **Version 3.8.2**
 > December 2015
-> *&copy; INSIDE Secure - 2015 - All Rights Reserved*
+> (C) Copyright 2015 INSIDE Secure - All Rights Reserved
 
 1. FILE/API REORGANIZATION
   - File Locations
@@ -355,7 +679,7 @@ Test keys and certificates moved from ./sampleCerts to ./testkeys.
 XCode and Visual Studio projects moved to ./xcode and ./visualstudio.
 
 Several file changes and renames are present as well:
- 
+
 TLS Decoding moved ./matrixssl/sslDecode.c from ./matrixssl/sslDecode.c,
 ./matrixssl/hsDecode.c and ./matrixssl/extDecode.c.
 Private key import/export from ./crypto/pubkey/pkcs.c. to

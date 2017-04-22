@@ -11,6 +11,7 @@ SRC:=\
 	memset_s.c \
 	corelib.c \
 	psbuf.c \
+	psUtil.c \
 	$(OSDEP)/osdep.c
 
 ASM:=memset_s.s
@@ -24,11 +25,11 @@ compile: $(ASM) $(OBJS) $(STATIC)
 
 # Special rule to build memset_s function without optimization
 memset_s.o: memset_s.c
-	$(CC) -O0 -Wall -ffunction-sections -fdata-sections -o $@ -c $<
+	$(CC) -O0 -Wall -ffunction-sections -fdata-sections -o $@ $(CFLAGS_MEMSET_S) -c $<
 
 # Generate the (.s) assembly file to verify zero is being performed
 $(ASM): memset_s.c
-	$(CC) -O0 -g -fverbose-asm -S $<
+	$(CC) -O0 -g -fverbose-asm $(CFLAGS_MEMSET_S) -S $<
 
 # Additional Dependencies
 $(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile *.h

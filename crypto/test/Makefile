@@ -4,7 +4,7 @@
 #   'make gold' builds optimized.
 #
 #	Copyright (c) PeerSec Networks, 2002-2010. All Rights Reserved
-#	Copyright (c) 2013-2016 INSIDE Secure Corporation. All Rights Reserved.
+#	Copyright (c) 2013-2017 INSIDE Secure Corporation. All Rights Reserved.
 #
 
 MATRIXSSL_ROOT:=../..

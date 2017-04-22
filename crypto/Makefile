@@ -3,7 +3,7 @@
 #   'make' builds debug (Default).
 #   'make gold' builds optimized.
 #
-#   Copyright (c) 2013-2016 INSIDE Secure Corporation. All Rights Reserved.
+#   Copyright (c) 2013-2017 INSIDE Secure Corporation. All Rights Reserved.
 #
 
 MATRIXSSL_ROOT:=..
@@ -28,12 +28,14 @@ SRC:=\
 	digest/md4.c \
 	digest/md2.c \
 	keyformat/asn1.c \
+	keyformat/asn1fmt.c \
 	keyformat/base64.c \
 	keyformat/crl.c \
 	keyformat/pkcs.c \
 	keyformat/x509.c \
 	layer/matrix.c \
 	math/pstm.c \
+	math/pstmnt.c \
 	math/pstm_montgomery_reduce.c \
 	math/pstm_mul_comba.c \
 	math/pstm_sqr_comba.c \
@@ -58,6 +60,29 @@ SRC+=\
 	digest/digest_libsodium.c
 endif
 #endif
+
+# Deal with a build flags special case:
+# Comba multiplier and squaring requires all registers it can get on x86.
+# These extra compilation definitions make those registers available for
+# these files to use.
+COMBA_MULTIPLIER_DEBUG=ON # Default on non-x86 platforms (debug build).
+ifneq (,$(findstring i386-,$(CCARCH)))
+COMBA_MULTIPLIER_DEBUG=OFF
+endif
+ifneq (,$(findstring i486-,$(CCARCH)))
+COMBA_MULTIPLIER_DEBUG=OFF
+endif
+ifneq (,$(findstring i586-,$(CCARCH)))
+COMBA_MULTIPLIER_DEBUG=OFF
+endif
+ifneq (,$(findstring i686-,$(CCARCH)))
+COMBA_MULTIPLIER_DEBUG=OFF
+endif
+ifeq '$(COMBA_MULTIPLIER_DEBUG)' 'OFF'
+CFLAGS_BASE:=$(CFLAGS)
+math/pstm_mul_comba.o: CFLAGS=$(CFLAGS_BASE) -fomit-frame-pointer
+math/pstm_sqr_comba.o: CFLAGS=$(CFLAGS_BASE) -fomit-frame-pointer
+endif
 
 # Generated files
 STATIC:=libcrypt_s.a

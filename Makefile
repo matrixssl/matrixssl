@@ -3,7 +3,7 @@
 #
 # Copyright (c) 2016 INSIDE Secure Corporation. All Rights Reserved.
 #
-#
+# @version $Format:%h%d$
 
 # A list of the most important build targets provided by this Makefile:
 # Make command            Description
@@ -27,6 +27,11 @@
 #                         using the MatrixSSL stock crypto.
 # make all-rsaonly        Build MatrixSSL using options that disable ECC and DH,
 #                         using the MatrixSSL stock crypto.
+# make all-psk            Build MatrixSSL with support for only a single PSK
+#                         ciphersuite using MatrixSSL stock crypto.
+#                         This is the smallest possible configuration,
+#                         except that both server- and client-side TLS are enabled
+#                         for easier testing.
 #
 # Additional targets for MatrixSSL FIPS Edition
 #
@@ -97,6 +102,12 @@ CONFIG_FIPS_AVAILABLE=1
 CONFIG_NONFIPS_PREFIX=nonfips-
 endif
 
+ifneq (,$(findstring -DUSE_EXT_EXAMPLE_MODULE, $(CFLAGS)))
+D_USE_EXT_EXAMPLE_MODULE=1
+else
+D_USE_EXT_EXAMPLE_MODULE=0
+endif
+
 # These are some examples of configuration selection targets for MatrixSSL.
 # You can instead apply any of any of configurations in configs directory with
 # make CONFIGNAME-config and then proceed with make all / make libs etc.
@@ -109,6 +120,11 @@ all-noecc:
 # Only support RSA (MatrixSSL stock crypto)
 all-rsaonly:
 	make $(CONFIG_NONFIPS_PREFIX)rsaonly-config
+	make all
+
+# Only support RSA (MatrixSSL stock crypto)
+all-psk:
+	make $(CONFIG_NONFIPS_PREFIX)psk-config
 	make all
 
 # A commonly recommended set of options for MatrixSSL using stock crypto,
@@ -169,12 +185,17 @@ test-combined-default-nonfips:
 
 .PHONY: all libs tests apps clean
 
+ext:
+	if [ "$(D_USE_EXT_EXAMPLE_MODULE)" = "1" ]; then $(MAKE) --directory=ext/psext-example; \
+	elif $(MAKE) --directory=matrixssl parse-config | grep -q '#define USE_EXT_EXAMPLE_MODULE'; then $(MAKE) --directory=ext/psext-example; fi \
+
 # Add dependencies
 all: libs tests apps
 all: check-config
 libs: check-config
-tests: check-config libs
-apps: check-config libs
+tests: check-config libs ext
+apps: check-config libs ext
+ext: check-config libs
 all-utils: check-config
 
 # Alias
@@ -193,10 +214,20 @@ tests:
 	if make --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms/test;fi
 
 # Note apps is also a direct subdirectory
-apps:
-	$(MAKE) --directory=apps/ssl
-	$(MAKE) --directory=apps/dtls
+#ifdef MATRIXSSL_COMMERCIAL
+
+APPS_ADDITIONAL = apps_crypto
+
+.PHONY: apps_crypto
+
+apps_crypto:
 	if [ -e apps/crypto ];then $(MAKE) --directory=apps/crypto;fi
+
+#endif /* MATRIXSSL_COMMERCIAL */
+
+apps: $(APPS_ADDITIONAL)
+	if make --directory=matrixssl parse-config | grep -q '#define USE_ZLIB_COMPRESSION'; then EXTRA_LDFLAGS=-lz $(MAKE) --directory=apps/ssl; else $(MAKE) --directory=apps/ssl; fi;
+	$(MAKE) --directory=apps/dtls
 
 clean:
 	$(MAKE) clean --directory=core
@@ -212,6 +243,7 @@ clean:
 	if [ -e apps/crypto ];then $(MAKE) clean --directory=apps/crypto;fi
 	if [ -e crypto/cms/test ]; then $(MAKE) clean --directory=crypto/cms/test;fi
 	if [ -e matrixssh ]; then $(MAKE) clean --directory=matrixssh; fi
+	if [ -e ext/psext-example ]; then $(MAKE) clean --directory=ext/psext-example;fi
 
 clobber: clean clean-config
 

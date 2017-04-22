@@ -11,7 +11,7 @@ INSTALL
 	Compile and run instructions
 LICENSE
 	GPLv2 License
-CHANGES.md
+CHANGES_v3.9.md
 	Changelog for latest packaged version
 
 matrixssl/

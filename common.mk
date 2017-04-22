@@ -1,10 +1,15 @@
 ##
 # Common Makefile definitions.
-#
+# @version $Format:%h%d$
 # Copyright (c) 2013-2016 INSIDE Secure Corporation. All Rights Reserved.
 #
 #-------------------------------------------------------------------------------
 
+
+# Allow extra CFLAGS, CPPFLAGS and LDFLAGS to be used.
+LDFLAGS += $(EXTRA_LDFLAGS)
+CFLAGS += $(CFLAGS_STANDARD) $(CFLAGS_PLATFORM) $(CFLAGS_ADDITIONAL) $(CFLAGS_WARNINGS) $(CFLAGS_CPU) $(CFLAGS_ASM) $(CFLAGS_PROFILE) $(DEBUGGABLE) $(EXTRA_CFLAGS)
+CPPFLAGS += $(CPPFLAGS_STANDARD) $(CPPFLAGS_PLATFORM) $(CPPFLAGS_ADDITIONAL) $(CPPFLAGS_WARNINGS) $(CPPFLAGS_CPPPU) $(CPPFLAGS_ASM) $(CPPFLAGS_PROFILE) $(DEBUGGABLE) $(EXTRA_CPPFLAGS)
 
 #-------------------------------------------------------------------------------
 ## Makefile variables that must be defined in this file
@@ -227,12 +232,13 @@ ifneq (,$(findstring arm,$(CCARCH)))
  endif
 endif
 
+CFLAGS_GARBAGE_COLLECTION=-ffunction-sections -fdata-sections
 ifdef MATRIX_DEBUG
-CFLAGS+=-ffunction-sections -fdata-sections
+CFLAGS+=$(CFLAGS_GARBAGE_COLLECTION)
 endif
 ifndef MATRIX_DEBUG
 CFLAGS_OMIT_FRAMEPOINTER=-fomit-frame-pointer
-CFLAGS+=-ffunction-sections -fdata-sections $(CFLAGS_OMIT_FRAMEPOINTER)
+CFLAGS+=$(CFLAGS_GARBAGE_COLLECTION) $(CFLAGS_OMIT_FRAMEPOINTER)
 endif
 
 # If we are using clang (it may be invoked via 'cc' or 'gcc'),
