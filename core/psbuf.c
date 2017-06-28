@@ -301,9 +301,11 @@ void assert_subbuf(psDynBuf_t *sub)
     assert(sub->buf.buf + sub->buf.size >= db->buf.start &&
         sub->buf.buf + sub->buf.size <= db->buf.end);
 
+#ifdef PSBUF_DEBUG_WITH_MEMSET
     /* For debugging: Mark head and tail visually. */
     memset(sub->buf.buf, '(', sub->buf.start - sub->buf.buf);
     memset(sub->buf.end, ')', sub->buf.buf + sub->buf.size - sub->buf.end);
+#endif /* PSBUF_DEBUG_WITH_MEMSET */
 }
 
 static void *psDynBufGrow(psDynBuf_t *db, size_t head_sz, size_t tail_sz)
@@ -339,9 +341,11 @@ static void *psDynBufGrow(psDynBuf_t *db, size_t head_sz, size_t tail_sz)
             headroom, filled, tailroom, headroom + head_sz, filled, tailroom + tail_sz, offset, offset_tail);
         assert_subbuf(db);
 
+#ifdef PSBUF_DEBUG_WITH_MEMSET
         /* For debugging: */
         memset(db->buf.buf, '{', headroom);
         memset(db->buf.end, '}', tailroom);
+#endif /* PSBUF_DEBUG_WITH_MEMSET */
 
         loc = psDynBufGrow(db->master, 0, head_sz + tail_sz);
         if (loc)
@@ -371,9 +375,11 @@ static void *psDynBufGrow(psDynBuf_t *db, size_t head_sz, size_t tail_sz)
                 db->buf.size, db->buf.start - db->buf.buf,
                 db->buf.end - db->buf.start, db->buf.buf + db->buf.size - db->buf.end);
 
+#ifdef PSBUF_DEBUG_WITH_MEMSET
             /* For debugging: */
             memset(db->buf.buf, '<', head_sz + headroom);
             memset(db->buf.end, '>', tail_sz + tailroom);
+#endif /* PSBUF_DEBUG_WITH_MEMSET */
         }
         else
         {
@@ -523,7 +529,9 @@ void *psDynBufSubInit(psDynBuf_t *db, psDynBuf_t *sub, size_t capacity)
         sub->pool = NULL;
         sub->master = db;
         sub->err = 0;
+#ifdef PSBUF_DEBUG_WITH_MEMSET
         memset(sub->buf.buf, '#', capacity);
+#endif /* PSBUF_DEBUG_WITH_MEMSET */
         assert_subbuf(sub);
     }
     else
@@ -553,7 +561,9 @@ void *psDynBufSubInitAt(psDynBuf_t *db, psDynBuf_t *sub, size_t at,
         sub->pool = NULL;
         sub->master = db;
         sub->err = 0;
+#ifdef PSBUF_DEBUG_WITH_MEMSET
         memset(sub->buf.buf, '#', length);
+#endif /* PSBUF_DEBUG_WITH_MEMSET */
         assert_subbuf(sub);
     }
     else

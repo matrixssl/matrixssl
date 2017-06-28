@@ -2581,7 +2581,7 @@ int32 psSha224Test(void)
 
     int i;
     unsigned char tmp[28];
-    psDigestContext_t md;
+    psSha256_t md;
 
     for (i = 0; i < (int) (sizeof(tests) / sizeof(tests[0])); i++)
     {
@@ -5285,6 +5285,13 @@ static test_t tests[] = {
     { NULL
 #endif
       , "***** SHA1 TESTS *****" },
+
+#ifdef USE_SHA224
+    { psSha224Test
+#else
+    { NULL
+#endif
+      , "***** SHA224 TESTS *****" },
 
 #ifdef USE_SHA256
     { psSha256Test

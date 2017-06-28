@@ -120,9 +120,12 @@
 #  define USE_AES_CBC
 #  define USE_AES_GCM
 
-#  ifdef USE_LIBSODIUM
+/** If you want new ciphersuites specified in RFC 7539 enable this.
+    Currently CHACHA20-based cipher suites are only supported by the newest
+    TLS clients and servers. These cipher suites are not allowed in FIPS
+    mode of operation.
+*/
 /* #define USE_CHACHA20_POLY1305 */
-#  endif
 
 /** @security 3DES is still relatively secure, however is deprecated for TLS */
 #  define USE_3DES

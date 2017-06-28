@@ -41,6 +41,8 @@
 #                         non-FIPS Mode of operation.
 # make all-combined       Compile MatrixSSL FIPS Edition allowing run-time
 #                         selection of FIPS or non-FIPS mode.
+# make all-openssl-compat A configuration specially tailored for use
+#                         with the OpenSSL compatibility layer.
 # make all-combined-default-nonfips  The same than make all combined, but
 #                         non-FIPS mode is the default.
 #
@@ -164,6 +166,10 @@ all-combined-fulltest:
 	make combined-fulltest-config
 	make all
 
+all-openssl-compat:
+	make openssl-compat-config
+	make all
+
 ifneq (,$(findstring clean,$(MAKECMDGOALS)))
   SUBARGS:=clean
 endif
@@ -247,3 +253,6 @@ clean:
 
 clobber: clean clean-config
 
+# Always use common.mk for possible additional rules and processing.
+COMMON_MK_NO_TARGETS:=1
+include common.mk

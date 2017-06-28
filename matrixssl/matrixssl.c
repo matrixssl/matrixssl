@@ -531,6 +531,97 @@ int32 matrixSslLoadEcKeys(sslKeys_t *keys, const char *certFile,
 # endif /* USE_ECC */
 
 # if defined(USE_RSA) || defined(USE_ECC)
+int32_t matrixSslLoadKeysMem(sslKeys_t *keys,
+        const unsigned char *certBuf, int32 certLen,
+        const unsigned char *privBuf, int32 privLen,
+        const unsigned char *CAbuf, int32 CAlen,
+        matrixSslLoadKeysOpts_t *opts)
+{
+    psPubKey_t tmp_privkey;
+    int32_t keytype = 0;
+
+    if (opts)
+        keytype = opts->key_type;
+
+    if (privBuf == NULL)
+        keytype = 1;
+
+    if (privBuf != NULL && keytype == 0)
+    {
+        /*
+          Caller did not tell us the type of privkey to expect, so try
+          to find it out.*/
+        memset(&tmp_privkey, 0, sizeof(psPubKey_t));
+        keytype = psParseUnknownPrivKeyMem(NULL,
+                (unsigned char*)privBuf, privLen,
+                NULL, &tmp_privkey);
+        if (keytype < 0)
+        {
+            psTraceInfo("Could not load private key from file\n");
+            return keytype;
+        }
+        psClearPubKey(&tmp_privkey);
+    }
+
+    switch (keytype)
+    {
+    case 1: /* RSA */
+        return matrixSslLoadKeyMaterialMem(keys, certBuf, certLen,
+                privBuf, privLen, CAbuf, CAlen, PS_RSA);
+        break;
+    case 2: /* ECC */
+        return matrixSslLoadKeyMaterialMem(keys, certBuf, certLen,
+                privBuf, privLen, CAbuf, CAlen, PS_ECC);
+        break;
+    }
+
+    return PS_FAILURE;
+}
+
+int32_t matrixSslLoadKeys(sslKeys_t *keys, const char *certFile,
+        const char *privFile, const char *privPass, const char *CAfile,
+        matrixSslLoadKeysOpts_t *opts)
+{
+    psPubKey_t tmp_privkey;
+    int32_t keytype = 0;
+
+    if (opts)
+        keytype = opts->key_type;
+
+    if (privFile == NULL)
+        keytype = 1;
+
+    if (keytype == 0)
+    {
+        /*
+          Caller did not tell us the type of privkey to expect, so try
+          to find it out.*/
+        memset(&tmp_privkey, 0, sizeof(psPubKey_t));
+        keytype = psParseUnknownPrivKey(NULL, 1, privFile, privPass,
+                &tmp_privkey);
+        if (keytype < 0)
+        {
+            psTraceInfo("Could not load private key from file\n");
+            return keytype;
+        }
+        psClearPubKey(&tmp_privkey);
+    }
+
+    switch (keytype)
+    {
+    case 1: /* RSA */
+        return matrixSslLoadKeyMaterial(keys, certFile, privFile, privPass,
+                CAfile, PS_RSA);
+        break;
+    case 2: /* ECC */
+        return matrixSslLoadKeyMaterial(keys, certFile, privFile, privPass,
+                CAfile, PS_ECC);
+        break;
+    }
+
+    return PS_FAILURE;
+}
+
 static int32 matrixSslLoadKeyMaterial(sslKeys_t *keys, const char *certFile,
     const char *privFile, const char *privPass, const char *CAfile,
     int32 privKeyType)
@@ -662,9 +753,24 @@ static int32 matrixSslLoadKeyMaterial(sslKeys_t *keys, const char *certFile,
         {
             return PS_UNSUPPORTED_FAIL;
         }
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+        flags |= CERT_ALLOW_BUNDLE_PARTIAL_PARSE;
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
         err = psX509ParseCertFile(pool, (char *) CAfile, &keys->CAcerts, flags);
         if (err >= 0)
         {
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+            if (err == 0)
+            {
+                psTraceInfo("Failed to load any CA certs.\n");
+                err = PS_PARSE_FAIL;
+                goto ca_load_failed;
+            }
+            else
+            {
+                psTraceIntInfo("Loaded %d CA certs\n", err);
+            }
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
             if (keys->CAcerts->authFailFlags)
             {
                 /* This should be the only no err, FailFlags case currently */
@@ -677,6 +783,11 @@ static int32 matrixSslLoadKeyMaterial(sslKeys_t *keys, const char *certFile,
 #   endif
             }
         }
+
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+ca_load_failed:
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
+
         if (err < 0)
         {
 #   if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
@@ -819,6 +930,11 @@ static int32 matrixSslLoadKeyMaterialMem(sslKeys_t *keys,
     psPool_t *pool;
     int32 err, flags = 0;
 
+    if (certBuf == NULL && privBuf == NULL && CAbuf == NULL)
+    {
+        return PS_ARG_FAIL;
+    }
+
     if (keys == NULL)
     {
         return PS_ARG_FAIL;
@@ -933,21 +1049,45 @@ static int32 matrixSslLoadKeyMaterialMem(sslKeys_t *keys,
         {
             return PS_UNSUPPORTED_FAIL;
         }
-        if ((err = psX509ParseCert(pool, (unsigned char *) CAbuf, (uint32) CAlen,
-                 &keys->CAcerts, flags)) < 0)
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+        flags |= CERT_ALLOW_BUNDLE_PARTIAL_PARSE;
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
+        err = psX509ParseCert(pool, (unsigned char *) CAbuf, (uint32) CAlen,
+            &keys->CAcerts, flags);
+        if (err < 0)
         {
-#  if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
-            psClearPubKey(&keys->privKey);
-            psX509FreeCert(keys->cert);
-            psX509FreeCert(keys->CAcerts);
-            keys->cert = keys->CAcerts = NULL;
-#  endif
-            return err;
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+            if (err == 0)
+            {
+                psTraceInfo("Failed to load any CA certs.\n");
+                err = PS_PARSE_FAIL;
+                goto ca_load_failed;
+            }
+            else
+            {
+                psTraceIntInfo("Loaded %d CA certs\n", err);
+            }
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
         }
 # else
         psTraceInfo("Ignoring CAbuf in matrixSslReadKeysMem\n");
 # endif /* USE_CLIENT_SIDE_SSL || USE_CLIENT_AUTH */
     }
+
+#ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+ca_load_failed:
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
+
+# if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
+    if (err < 0)
+    {
+        psClearPubKey(&keys->privKey);
+        psX509FreeCert(keys->cert);
+        psX509FreeCert(keys->CAcerts);
+        keys->cert = keys->CAcerts = NULL;
+        return err;
+    }
+# endif
 
     return PS_SUCCESS;
 }
@@ -1323,6 +1463,9 @@ int32 matrixSslNewSession(ssl_t **ssl, const sslKeys_t *keys,
         lssl->validateCertsOpts.max_verify_depth =
             options->validateCertsOpts.max_verify_depth;
     }
+
+    if (options->userDataPtr != NULL)
+        lssl->userDataPtr = options->userDataPtr;
 
 #ifdef USE_ECC
     /* If user specified EC curves they support, let's check that against

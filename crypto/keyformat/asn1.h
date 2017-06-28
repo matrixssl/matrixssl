@@ -80,6 +80,8 @@ enum
 
 # define ASN_UNKNOWN_LEN 65533
 
+extern uint32_t getAsnTagLenUnsafe(const unsigned char *p);
+
 extern int32_t getAsnLength(const unsigned char **p, psSize_t size,
                             psSize_t *valLen);
 extern int32_t getAsnLength32(const unsigned char **p, uint32_t size,

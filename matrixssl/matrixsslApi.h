@@ -99,6 +99,20 @@ PSPUBLIC void   matrixSslClose(void);
  */
 PSPUBLIC int32  matrixSslNewKeys(sslKeys_t **keys, void *poolUserPtr);
 PSPUBLIC void   matrixSslDeleteKeys(sslKeys_t *keys);
+# if defined(USE_RSA) || defined(USE_ECC)
+typedef struct {
+    uint32_t flags;
+    int32_t key_type;
+} matrixSslLoadKeysOpts_t;
+int32_t matrixSslLoadKeys(sslKeys_t *keys, const char *certFile,
+        const char *privFile, const char *privPass, const char *CAfile,
+        matrixSslLoadKeysOpts_t *opts);
+int32_t matrixSslLoadKeysMem(sslKeys_t *keys,
+        const unsigned char *certBuf, int32 certLen,
+        const unsigned char *privBuf, int32 privLen,
+        const unsigned char *CAbuf, int32 CAlen,
+        matrixSslLoadKeysOpts_t *opts);
+# endif /* USE_RSA || USE_ECC */
 # ifdef USE_RSA
 PSPUBLIC int32  matrixSslLoadRsaKeys(sslKeys_t *keys, const char *certFile,
                                      const char *privFile, const char *privPass,

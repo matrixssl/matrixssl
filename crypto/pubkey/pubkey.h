@@ -165,7 +165,8 @@ enum PACKED
     PS_RSA,
     PS_DSA,
     PS_ECC,
-    PS_DH
+    PS_DH,
+    PS_CL_PK /* A public key for CL Library. May contain any key format. */
 };
 
 /** Signature types */

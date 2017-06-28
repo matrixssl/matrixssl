@@ -450,6 +450,7 @@ int32_t getEcPubKey(psPool_t *pool, const unsigned char **pp, psSize_t len,
         Standard form - SHA-1 hash of the value of the BIT STRING
         subjectPublicKey [excluding the tag, length, and number of unused
         bits] */
+    psSha1PreInit(&dc.sha1);
     psSha1Init(&dc.sha1);
     psSha1Update(&dc.sha1, p, arcLen);
     psSha1Final(&dc.sha1, sha1KeyHash);
@@ -464,7 +465,8 @@ int32_t getEcPubKey(psPool_t *pool, const unsigned char **pp, psSize_t len,
     p += arcLen;
 
     *pp = p;
-    return 0;
+
+    return PS_SUCCESS;
 }
 
 /**

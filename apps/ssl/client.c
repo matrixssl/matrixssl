@@ -62,9 +62,9 @@
     If supporting client authentication, pick ONE identity to auto select a
     certificate and private key that support desired algorithms.
  */
-/* #define ID_RSA / * RSA Certificate and Key * / */
-/* #define ID_ECDH_ECDSA / * EC Certificate and Key * / */
-/* #define ID_ECDH_RSA / * EC Key with RSA signed certificate * / */
+/* #define ID_RSA */ /* RSA Certificate and Key */
+/* #define ID_ECDH_ECDSA */ /* EC Certificate and Key */
+/* #define ID_ECDH_RSA */ /* EC Key with RSA signed certificate */
 
 # if !defined(ID_RSA) && !defined(ID_ECDH_ECDSA) && !defined(ID_ECDH_RSA)
 /* Choose a default identity based on which algorithms are supported. */
@@ -82,12 +82,28 @@
 # endif    /* !ID_RSA && !ID_ECDH_ECDSA && !ID_ECDH_RSA */
 
 # define USE_HEADER_KEYS
-# define ALLOW_ANON_CONNECTIONS  1
+# define ALLOW_ANON_CONNECTIONS  0
 # define CRL_MAX_LENGTH 1048576 /* Maximum length for CRL: 1 megabyte. */
 
 /*      If the algorithm type is supported, load a CA for it */
 # ifdef USE_ECC_CIPHER_SUITE
 
+/*
+  If ALLOW_CA_BUNDLE_PARTIAL_PARSE is defined, we can simply try to load
+  all EC CA certs, even if we are not able to parse all of them.
+*/
+# ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
+#   ifdef USE_HEADER_KEYS
+#    include "testkeys/EC/ALL_EC_CAS.h"
+#   else
+static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS.pem";
+#   endif /* USE_HEADER_KEYS */
+# else /* !(ALLOW_CA_BUNDLE_PARTIAL_PARSE) */
+/*
+  If ALLOW_CA_BUNDLE_PARTIAL_PARSE is not defined, we need the following,
+  ugly code to load only those CA bundles, where each cert is supported
+  by the present configuration.
+*/
 #  if defined(USE_SECP192R1) && defined(USE_SECP224R1) && defined(USE_SECP521R1)
 #   ifdef USE_HEADER_KEYS
 #    include "testkeys/EC/ALL_EC_CAS.h"
@@ -151,6 +167,8 @@ static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P224_AND_P521.pem"
 static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P192_P224_AND_P521.pem";
 #   endif /* USE_HEADER_KEYS */
 #  endif  /* !USE_SECP192R1 && USE_SECP224R1 && !USE_SECP521R1 */
+
+#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
 
 #  ifndef USE_HEADER_KEYS
 /*
@@ -237,6 +255,8 @@ static char *pEcdhRsaPrivkeyFile = ecdhRsaPrivkeyFile;
 #  ifdef REHANDSHAKE_TEST
 static int g_rehandshakeFlag = 0;
 #  endif
+
+static char *g_ca_file;
 # endif /* USE_HEADER_KEYS */
 
 /*
@@ -420,6 +440,13 @@ static int32 httpsClientConnection(sslKeys_t *keys, sslSessionId_t *sid,
 # endif
     if (g_max_verify_depth != 0)
         options.validateCertsOpts.max_verify_depth = g_max_verify_depth;
+
+    /*
+      Do not allow the server to pick different version than what
+      we select here. Break the connection attempt with a protocol_version
+      alert if ServerHello.server_version < ClientHello.client_version.
+    */
+    options.clientRejectVersionDowngrade = 1;
 
     matrixSslNewHelloExtension(&extension, NULL);
     matrixSslCreateSNIext(NULL, (unsigned char *) g_ip, (uint32) strlen(g_ip),
@@ -1017,7 +1044,7 @@ static int32 process_cmd_options(int32 argc, char **argv)
     g_keepalive          = 0;
 
     opterr = 0;
-    while ((optionChar = getopt(argc, argv, "ab:c:dhk:Km:n:p:r:s:u:V:e:")) != -1)
+    while ((optionChar = getopt(argc, argv, "ab:C:c:de:hk:Km:n:p:r:s:u:V:")) != -1)
     {
         switch (optionChar)
         {
@@ -1037,6 +1064,15 @@ static int32 process_cmd_options(int32 argc, char **argv)
             }
             g_bytes_requested = atoi(optarg);
             snprintf(g_path, sizeof(g_path), "/bytes?%u", g_bytes_requested);
+            break;
+
+        case 'C':
+#ifdef USE_HEADER_KEYS
+            printf("USE_HEADER_KEYS not compatible with CA file option\n");
+#else
+            g_ca_file = optarg;
+            printf("Using CA file: %s\n", g_ca_file);
+#endif
             break;
 
         case 'c':
@@ -1135,7 +1171,6 @@ int32 main(int32 argc, char **argv)
     sslSessionId_t *sid = NULL;
     struct g_sslstats stats;
     unsigned char *CAstream;
-
 # if defined(USE_HEADER_KEYS) && !defined(ID_RSA)
     const unsigned char *key_buf;
     int32 key_buf_len;
@@ -1143,6 +1178,7 @@ int32 main(int32 argc, char **argv)
 # ifndef USE_HEADER_KEYS
     unsigned char *tmp_buf;
     int32 tmp_buf_len;
+    char *pCA;
 # endif /* USE_HEADER_KEYS */
 # ifdef WIN32
     WSADATA wsaData;
@@ -1373,9 +1409,13 @@ int32 main(int32 argc, char **argv)
     {
         pRsaPrivkeyFile = NULL;
     }
+    if (g_ca_file != NULL)
+        pCA = g_ca_file;
+    else
+        pCA = (char*)CAstream;
 
-    if ((rc = matrixSslLoadRsaKeys(keys, pRsaCertFile, pRsaPrivkeyFile, NULL,
-             (char *) CAstream)) < 0)
+    if ((rc = matrixSslLoadRsaKeys(keys, pRsaCertFile, pRsaPrivkeyFile,
+                            NULL, pCA) < 0))
     {
         _psTrace("No certificate material loaded.  Exiting\n");
         if (CAstream)
@@ -1400,8 +1440,13 @@ int32 main(int32 argc, char **argv)
         pEcdhRsaPrivkeyFile = NULL;
     }
 
+    if (g_ca_file != NULL)
+        pCA = g_ca_file;
+    else
+        pCA = (char*)CAstream;
+
     if ((rc = matrixSslLoadEcKeys(keys, pEcdhRsaCertFile, pEcdhRsaPrivkeyFile,
-             NULL, (char *) CAstream)) < 0)
+             NULL, pCA)) < 0)
     {
         _psTrace("No certificate material loaded.  Exiting\n");
         if (CAstream)

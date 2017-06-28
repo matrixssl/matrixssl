@@ -64,6 +64,10 @@ enum
 /* Parsing flags */
 #  define CERT_STORE_UNPARSED_BUFFER  0x1
 #  define CERT_STORE_DN_BUFFER        0x2
+/** Allow parsing of a certificate bundle (a concatenated PEM file
+    or a DER stream) to succeed even when some certs could not be
+    supported by MatrixSSL. */
+#  define CERT_ALLOW_BUNDLE_PARTIAL_PARSE 0x4
 
 #  ifdef USE_CERT_PARSE
 

@@ -170,6 +170,22 @@ int32_t pkcs1Unpad(const unsigned char *in, psSize_t inlen,
 #ifdef USE_PRIVATE_KEY_PARSING
 
 # ifdef USE_PKCS8
+
+static int32 pkcs8parse_unknown(
+        psPool_t *pool,
+        unsigned char *buf,
+        int32 size,
+        psPubKey_t *key)
+{
+    /* When PKCS #8 header appears correct, but format is not
+       RSA or ECDSA this function is called.
+       The function may be extended to parse public key formats usually
+       not processed by MatrixSSL. */
+
+    psTraceCrypto("Unsupported public key type in PKCS#8 parse\n");
+    return PS_UNSUPPORTED_FAIL;
+}
+
 /******************************************************************************/
 /**
     Parse PKCS#8 format keys (from DER formatted binary)
@@ -190,7 +206,6 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
     const unsigned char *end, *p;
     int32 version, oi;
     psSize_t seqlen, len, plen;
-
 #  ifdef USE_ECC
     int32 coi;
     const psEccCurve_t *eccSet;
@@ -213,6 +228,8 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
 
     if (pass)
     {
+        psSize_t i;
+
 #  ifdef USE_PKCS5
 /*              An encrypted PKCS#8 key has quite a bit more information we must parse
         We actually parse a good bit of PKCS#5 structures here
@@ -324,6 +341,50 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
         /* @security SECURITY - we zero out des3 key when done with it */
         memset_s(&ctx, sizeof(psCipherContext_t), 0x0, sizeof(psCipherContext_t));
         memset_s(desKeyBin, DES3_KEYLEN, 0x0, DES3_KEYLEN);
+
+        /* Remove padding.
+           This implementation allows up-to 16 bytes padding, for
+           compatibility with 3DES and AES algorithms. */
+        /* Start by checking length. */
+        /* coverity[dead_error_condition] */
+        /* With the current value for MIN_ECC_BITS and MIN_RSA_BITS
+           this path can never be taken. This code path is ready in
+           case the values change in the future. */
+        if (len < 1)
+        {
+            /* coverity[dead_error_begin] */
+            psTraceCrypto("PKCS#8 padding error\n");
+            return PS_FAILURE;
+        }
+        plen = (unsigned char) p[len - 1];
+        if (plen < 1 || plen > 16)
+        {
+            psTraceCrypto("PKCS#8 padding error\n");
+            return PS_FAILURE;
+        }
+        /* coverity[dead_error_condition] */
+        /* With the current value for MIN_ECC_BITS and MIN_RSA_BITS
+           this path can never be taken. This code path is ready in
+           case the values change in the future. */
+        if (len < plen)
+        {
+            /* coverity[dead_error_begin] */
+            psTraceCrypto("PKCS#8 padding error\n");
+            return PS_FAILURE;
+        }
+        for(i = 0; i < plen; i++)
+        {
+            if (p[len - i - 1] != (unsigned char) plen)
+            {
+                psTraceCrypto("PKCS#8 padding error\n");
+                return PS_FAILURE;
+            }
+        }
+
+        /* The padding has been processed. */
+        size = len - plen;
+        end = p + size;
+        buf = (unsigned char *)p;
 #  else /* !USE_PKCS5 */
 /*
         The private key is encrypted, but PKCS5 support has been turned off
@@ -360,8 +421,7 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
 #  ifdef USE_ECC
     if (oi != OID_ECDSA_KEY_ALG && oi != OID_RSA_KEY_ALG)
     {
-        psTraceCrypto("Unsupported public key type in PKCS#8 parse\n");
-        return PS_UNSUPPORTED_FAIL;
+        return pkcs8parse_unknown(pool, buf, size, key);
     }
     if (oi == OID_ECDSA_KEY_ALG)
     {
@@ -392,8 +452,7 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
 #  else
     if (oi != OID_RSA_KEY_ALG || plen != 0)
     {
-        psTraceCrypto("Unsupported public key type in PKCS#8 parse\n");
-        return PS_UNSUPPORTED_FAIL;
+        return pkcs8parse_unknown(pool, buf, size, key);
     }
 #  endif
     /* PrivateKey Octet Stream */
@@ -456,14 +515,11 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
             p += len;
             plen = (int32) (end - p);
         }
-        /* Any remaining bytes should be non ASN.1 bytes that correspond
-            to the 3DES block padding */
-        while (p < end)
+
+        if (plen > 0)
         {
-            if (*p++ != (char) plen)
-            {
-                goto PKCS8_FAIL;
-            }
+            /* Unexpected extra data remains. Treat it as an error. */
+            goto PKCS8_FAIL;
         }
     }
 

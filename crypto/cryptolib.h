@@ -135,6 +135,9 @@ extern int32_t psGetPrngLocked(unsigned char *bytes, psSize_t size,
 # define OID_SHA1_ALG_STR                 "1.3.14.3.2.26"
 # define OID_SHA1_ALG                     88
 # define OID_SHA1_ALG_HEX                 "\x06\x05\x2B\x0E\x03\x02\x1A"
+# define OID_SHA224_ALG_STR               "2.16.840.1.101.3.4.2.4"
+# define OID_SHA224_ALG                   (417 + OID_COLLISION)
+# define OID_SHA224_ALG_HEX               "\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x04"
 # define OID_SHA256_ALG_STR               "2.16.840.1.101.3.4.2.1"
 # define OID_SHA256_ALG                   414
 # define OID_SHA256_ALG_HEX               "\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01"
@@ -170,6 +173,9 @@ extern int32_t psGetPrngLocked(unsigned char *bytes, psSize_t size,
 # define OID_RSASSA_PSS_STR               "1.2.840.113549.1.1.10"
 # define OID_RSASSA_PSS                   (654 + OID_COLLISION)
 # define OID_RSASSA_PSS_HEX               "\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0A"
+# define OID_SHA224_RSA_SIG_STR           "1.2.840.113549.1.1.14"
+# define OID_SHA224_RSA_SIG               (658 + OID_COLLISION)
+# define OID_SHA224_RSA_SIG_HEX           "\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0E"
 # define OID_SHA256_RSA_SIG_STR           "1.2.840.113549.1.1.11"
 # define OID_SHA256_RSA_SIG               (655 + OID_COLLISION)
 # define OID_SHA256_RSA_SIG_HEX           "\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0B"
@@ -338,6 +344,34 @@ extern int32_t psGetPrngLocked(unsigned char *bytes, psSize_t size,
 # define OID_BASIC_OCSP_RESPONSE          117
 # define OID_BASIC_OCSP_RESPONSE_HEX      "\x06\x09\x2B\x06\x01\x05\x05\x07\x30\x01\x01"
 
+/* These definitions are for MatrixCMS (optional component). */
+# define OID_ECKA_EG_X963KDF_SHA256_STR              "0.4.0.127.0.7.1.1.5.1.1.3"
+# define OID_ECKA_EG_X963KDF_SHA256                  150
+# define OID_ECKA_EG_X963KDF_SHA256_HEX              "\x06\x0B\x04\x00\x7F\x00\x07\x01\x01\x05\x01\x01\x03"
+# define OID_ECKA_EG_X963KDF_SHA384_STR              "0.4.0.127.0.7.1.1.5.1.1.4"
+# define OID_ECKA_EG_X963KDF_SHA384                  151
+# define OID_ECKA_EG_X963KDF_SHA384_HEX              "\x06\x0B\x04\x00\x7F\x00\x07\x01\x01\x05\x01\x01\x04"
+# define OID_ECKA_EG_X963KDF_SHA512_STR              "0.4.0.127.0.7.1.1.5.1.1.5"
+# define OID_ECKA_EG_X963KDF_SHA512                  152
+# define OID_ECKA_EG_X963KDF_SHA512_HEX              "\x06\x0B\x04\x00\x7F\x00\x07\x01\x01\x05\x01\x01\x05"
+# define OID_DHSINGLEPASS_STDDH_SHA1KDF_SCHEME_STR   "1.3.133.16.840.63.0.2"
+# define OID_DHSINGLEPASS_STDDH_SHA1KDF_SCHEME       464
+# define OID_DHSINGLEPASS_STDDH_SHA1KDF_SCHEME_HEX   "\x06\x09\x2B\x81\x05\x10\x86\x48\x3F\x00\x02"
+# define OID_DHSINGLEPASS_COFACTORDH_SHA1KDF_SCHEME_STR "1.3.133.16.840.63.0.3"
+# define OID_DHSINGLEPASS_COFACTORDH_SHA1KDF_SCHEME  465
+# define OID_DHSINGLEPASS_COFACTORDH_SHA1KDF_SCHEME_HEX "\x06\x09\x2B\x81\x05\x10\x86\x48\x3F\x00\x03"
+# define OID_MQVSINGLEPASS_SHA1KDF_SCHEME_STR        "1.3.133.16.840.63.0.16"
+# define OID_MQVSINGLEPASS_SHA1KDF_SCHEME            478
+# define OID_MQVSINGLEPASS_SHA1KDF_SCHEME_HEX        "\x06\x09\x2B\x81\x05\x10\x86\x48\x3F\x00\x10"
+# define OID_DHSINGLEPASS_STDDH_SHA256KDF_SCHEME_STR "1.3.132.1.11.1"
+# define OID_DHSINGLEPASS_STDDH_SHA256KDF_SCHEME     189
+# define OID_DHSINGLEPASS_STDDH_SHA256KDF_SCHEME_HEX "\x06\x06\x2B\x81\x04\x01\x0B\x01"
+# define OID_DHSINGLEPASS_STDDH_SHA384KDF_SCHEME_STR "1.3.132.1.11.2"
+# define OID_DHSINGLEPASS_STDDH_SHA384KDF_SCHEME     190
+# define OID_DHSINGLEPASS_STDDH_SHA384KDF_SCHEME_HEX "\x06\x06\x2B\x81\x04\x01\x0B\x02"
+# define OID_DHSINGLEPASS_STDDH_SHA512KDF_SCHEME_STR "1.3.132.1.11.3"
+# define OID_DHSINGLEPASS_STDDH_SHA512KDF_SCHEME     191
+# define OID_DHSINGLEPASS_STDDH_SHA512KDF_SCHEME_HEX "\x06\x06\x2B\x81\x04\x01\x0B\x03"
 
 # define PBE12                       1
 # define PBES2                       2
@@ -354,6 +388,7 @@ extern int32_t psGetPrngLocked(unsigned char *bytes, psSize_t size,
 #  define PKCS1_SHA256_ID 2
 #  define PKCS1_SHA384_ID 3
 #  define PKCS1_SHA512_ID 4
+#  define PKCS1_SHA224_ID 5
 # endif
 
 /******************************************************************************/

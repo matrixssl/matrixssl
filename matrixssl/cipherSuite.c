@@ -2883,6 +2883,12 @@ const sslCipherSpec_t *sslGetCipherSpec(const ssl_t *ssl, uint16_t id)
 #ifdef VALIDATE_KEY_MATERIAL
         if (ssl->keys != NULL)
         {
+            if ((ssl->flags & SSL_FLAGS_SERVER) == 0)
+            {
+                /* Client: Just accept the cipher suite, because we do not
+                   know of server public key yet. */
+                return &supportedCiphers[i];
+            }
             if (haveKeyMaterial(ssl, supportedCiphers[i].type, 0)
                 == PS_SUCCESS)
             {

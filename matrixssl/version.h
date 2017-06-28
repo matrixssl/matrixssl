@@ -8,10 +8,10 @@
 extern "C" {
 #endif
 
-#define MATRIXSSL_VERSION      "3.9.1-OPEN"
+#define MATRIXSSL_VERSION      "3.9.3-OPEN"
 #define MATRIXSSL_VERSION_MAJOR 3
 #define MATRIXSSL_VERSION_MINOR 9
-#define MATRIXSSL_VERSION_PATCH 1
+#define MATRIXSSL_VERSION_PATCH 3
 #define MATRIXSSL_VERSION_CODE "OPEN"
 
 #ifdef __cplusplus

@@ -469,34 +469,127 @@ void osdepTraceClose(void)
 {
 }
 
+FILE *_psGetTraceFile(void)
+{
+    static FILE *tracefile = NULL;
+#ifdef USE_MULTITHREADING
+    static pthread_mutex_t tracefile_mutex = PTHREAD_MUTEX_INITIALIZER;
+#endif /* USE_MULTITHREADING */
+
+    if (tracefile == NULL)
+    {
+        const char *str;
+
+#ifdef USE_MULTITHREADING
+        pthread_mutex_lock(&tracefile_mutex);
+#endif /* USE_MULTITHREADING */
+        
+        if (tracefile == NULL)
+        {
+            str = getenv("PSCORE_DEBUG_FILE");
+            if (str != NULL)
+            {
+                tracefile = fopen(str, "w");
+                if (!tracefile)
+                {
+                    fprintf(
+                            stderr,
+                            "%s: Unable to open file %s, %s.\n",
+                            __func__,
+                            str,
+                            "producing log to standard output");
+                    tracefile = stdout;
+                }
+            }
+            else
+            {
+                str = getenv("PSCORE_DEBUG_FILE_APPEND");
+            }
+
+            if (tracefile == NULL && str != NULL)
+            {
+                tracefile = fopen(str, "a");
+                if (!tracefile)
+                {
+                    fprintf(
+                            stderr,
+                            "%s: Unable to open file %s, %s.\n",
+                            __func__,
+                            str,
+                            "producing log to standard output");
+                    tracefile = stdout;
+                }
+            }
+
+            if (tracefile == NULL)
+            {
+                /* Default: output to standard output. */
+                tracefile = stdout;
+            }
+        }
+
+        if (tracefile)
+        {
+            setvbuf(tracefile, NULL, _IONBF, 0);
+        }
+
+#ifdef USE_MULTITHREADING
+        pthread_mutex_unlock(&tracefile_mutex);
+#endif /* USE_MULTITHREADING */
+    }
+    return tracefile;
+}
+
 void _psTrace(const char *msg)
 {
-    printf("%s", msg);
+    FILE *tracefile = _psGetTraceFile();
+
+    if (tracefile)
+    {
+        fprintf(tracefile, "%s", msg);
+    }
 }
 
 /* message should contain one %s, unless value is NULL */
 void _psTraceStr(const char *message, const char *value)
 {
+    FILE *tracefile = _psGetTraceFile();
     if (value)
     {
-        printf(message, value);
+        if (tracefile)
+        {
+            fprintf(tracefile, message, value);
+        }
     }
     else
     {
-        printf("%s", message);
+        if (tracefile)
+        {
+            fprintf(tracefile, "%s", message);
+        }
     }
 }
 
 /* message should contain one %d */
 void _psTraceInt(const char *message, int32 value)
 {
-    printf(message, value);
+    FILE *tracefile = _psGetTraceFile();
+
+    if (tracefile)
+    {
+        fprintf(tracefile, message, value);
+    }
 }
 
 /* message should contain one %p */
 void _psTracePtr(const char *message, const void *value)
 {
-    printf(message, value);
+    FILE *tracefile = _psGetTraceFile();
+
+    if (tracefile)
+    {
+        fprintf(tracefile, message, value);
+    }
 }
 
 /******************************************************************************/

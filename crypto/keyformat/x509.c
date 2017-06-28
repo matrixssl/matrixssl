@@ -191,6 +191,7 @@ int32 psX509ParseCertFile(psPool_t *pool, char *fileName,
     unsigned char *fileBuf;
     psList_t *fileList, *currentFile, *x509list, *frontX509;
     psX509Cert_t *currentCert, *firstCert, *prevCert;
+    int32 numParsed = 0;
 
     *outcert = NULL;
 /*
@@ -234,20 +235,33 @@ int32 psX509ParseCertFile(psPool_t *pool, char *fileName,
         frontX509 = x509list;
 /*
         Recurse each individual cert buffer from within the file
- */
+
+        If partial parse of cert bundles is not allowed, the failure
+        to load any of the certificates causes the whole function
+        call to fail. If partial parse of cert bundles is allowed,
+        parse as many as we can and return the number of parsed certs.
+*/
         while (x509list != NULL)
         {
-            if ((err = psX509ParseCert(pool, x509list->item, x509list->len,
-                     &currentCert, flags)) < PS_SUCCESS)
+            err = psX509ParseCert(pool, x509list->item, x509list->len,
+                    &currentCert, flags);
+            if (err < 0)
             {
-                psX509FreeCert(currentCert);
-                psFreeList(fileList, pool);
-                psFreeList(frontX509, pool);
-                if (firstCert)
+                if (!(flags & CERT_ALLOW_BUNDLE_PARTIAL_PARSE))
                 {
-                    psX509FreeCert(firstCert);
+                    psX509FreeCert(currentCert);
+                    psFreeList(fileList, pool);
+                    psFreeList(frontX509, pool);
+                    if (firstCert)
+                    {
+                        psX509FreeCert(firstCert);
+                    }
+                    return err;
                 }
-                return err;
+            }
+            else
+            {
+                numParsed++;
             }
 
             x509list = x509list->next;
@@ -269,7 +283,7 @@ int32 psX509ParseCertFile(psPool_t *pool, char *fileName,
 
     *outcert = firstCert;
 
-    return PS_SUCCESS;
+    return numParsed;
 }
 
 /******************************************************************************/
@@ -616,6 +630,704 @@ PSPUBLIC int32 psX509GetCertPublicKeyDer(psX509Cert_t *cert,
     return PS_SUCCESS;
 }
 
+/*
+  Parse a single, DER-encoded ASN.1 Certificate.
+
+  Preconditions:
+  - *pp points to the first octet of a DER-encoded Certificate.
+  - the length of the DER-encoded Certificate is size octets.
+  - cert points to an allocated and zeroized psX509Cert_t struct.
+
+  Postconditions:
+  - *pp == (pp_orig + size), where pp_orig is the original (input)
+    value of *pp.
+  - If return value is PS_SUCCESS, cert will contain a parsed
+    and usable certificate.
+  - If return value is < 0, cert->parseStatus will contain information
+    about the reason of the parse failure.
+
+  @param[in] Pointer to a memory pool
+  @param[in,out] pp Pointer to a pointer pointing to the first octet
+  of a DER-encoded Certificate. After parsing has completed, the underlying
+  pointer will be updated to point to the octet after the final octet
+  of the Certificate.
+  @param[in] size Size of the DER buffer in bytes.
+  @param[in] cert An allocated psX509Cert_t struct to be filled.
+  with the parsed Certificate data.
+  @param[in] flags
+*/
+static int parse_single_cert(psPool_t *pool, const unsigned char **pp,
+        uint32 size, const unsigned char *far_end,
+        psX509Cert_t *cert, int32 flags)
+{
+# ifdef USE_CERT_PARSE
+    const unsigned char *tbsCertStart;
+    unsigned char sha1KeyHash[SHA1_HASH_SIZE];
+    psDigestContext_t hashCtx;
+    psSize_t certLen;
+    const unsigned char *p_subject_pubkey_info;
+    size_t subject_pubkey_info_header_len;
+# endif  /* USE_CERT_PARSE */
+    const unsigned char *certStart, *certEnd, *end, *p;
+    int32_t rc, func_rc;
+    uint32_t oneCertLen;
+    psSize_t len, plen;
+
+    /*
+      Initialize the cert structure.*/
+    cert->pool = pool;
+    cert->parseStatus = PS_X509_PARSE_FAIL; /* Default to fail status */
+# ifdef USE_CERT_PARSE
+    cert->extensions.bc.cA = CA_UNDEFINED;
+# endif /* USE_CERT_PARSE */
+
+    p = *pp;
+    certStart = p;
+    end = p + size;
+
+    func_rc = PS_SUCCESS;
+
+    if ((rc = getAsnSequence32(&p, (uint32_t) (far_end - p), &oneCertLen, 0))
+            < 0)
+    {
+        psTraceCrypto("Initial cert parse error\n");
+        func_rc = rc;
+        goto out;
+    }
+    /* The whole list of certs could be > 64K bytes, but we still
+       restrict individual certs to 64KB */
+    if (oneCertLen > 0xFFFF)
+    {
+        psAssert(oneCertLen <= 0xFFFF);
+        func_rc = PS_FAILURE;
+        goto out;
+    }
+    end = p + oneCertLen;
+
+    /*
+      If the user has specified to keep the ASN.1 buffer in the X.509
+      structure, now is the time to account for it
+    */
+    if (flags & CERT_STORE_UNPARSED_BUFFER)
+    {
+        cert->binLen = oneCertLen + (int32) (p - certStart);
+        cert->unparsedBin = psMalloc(pool, cert->binLen);
+        if (cert->unparsedBin == NULL)
+        {
+            psError("Memory allocation error in psX509ParseCert\n");
+            func_rc = PS_MEM_FAIL;
+            goto out;
+        }
+        memcpy(cert->unparsedBin, certStart, cert->binLen);
+    }
+
+# ifdef ENABLE_CA_CERT_HASH
+    /* We use the cert_sha1_hash type for the Trusted CA Indication so
+       run a SHA1 has over the entire Certificate DER encoding. */
+    psSha1PreInit(&hashCtx.sha1);
+    psSha1Init(&hashCtx.sha1);
+    psSha1Update(&hashCtx.sha1, certStart,
+            oneCertLen + (int32) (p - certStart));
+    psSha1Final(&hashCtx.sha1, cert->sha1CertHash);
+# endif
+
+# ifdef USE_CERT_PARSE
+    tbsCertStart = p;
+# endif /* USE_CERT_PARSE */
+    /*
+      TBSCertificate  ::=  SEQUENCE  {
+      version                 [0]             EXPLICIT Version DEFAULT v1,
+      serialNumber                    CertificateSerialNumber,
+      signature                               AlgorithmIdentifier,
+      issuer                                  Name,
+      validity                                Validity,
+      subject                                 Name,
+      subjectPublicKeyInfo    SubjectPublicKeyInfo,
+      issuerUniqueID  [1]             IMPLICIT UniqueIdentifier OPTIONAL,
+      -- If present, version shall be v2 or v3
+      subjectUniqueID [2]     IMPLICIT UniqueIdentifier OPTIONAL,
+      -- If present, version shall be v2 or v3
+      extensions              [3]     EXPLICIT Extensions OPTIONAL
+      -- If present, version shall be v3  }
+    */
+    if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
+    {
+        psTraceCrypto("ASN sequence parse error\n");
+        func_rc = rc;
+        goto out;
+    }
+    certEnd = p + len;
+# ifdef USE_CERT_PARSE
+    /*
+      Start parsing TBSCertificate contents.
+    */
+    certLen = certEnd - tbsCertStart;
+    /*
+      Version  ::=  INTEGER  {  v1(0), v2(1), v3(2)  }
+    */
+    if ((rc = getExplicitVersion(&p, (uint32) (end - p), 0, &cert->version))
+            < 0)
+    {
+        psTraceCrypto("ASN version parse error\n");
+        func_rc = rc;
+        goto out;
+    }
+    switch (cert->version)
+    {
+    case 0:
+    case 1:
+#  ifndef ALLOW_VERSION_1_ROOT_CERT_PARSE
+        psTraceCrypto("ERROR: v1 and v2 certificate versions insecure\n");
+        cert->parseStatus = PS_X509_UNSUPPORTED_VERSION;
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+#  else
+        /* Allow locally stored, trusted version 1 and version 2 certificates
+           to be parsed. The SSL layer code will still reject non v3
+           certificates that arrive over-the-wire. */
+        /* Version 1 certificates do not have basic constraints to
+           specify a CA flag or path length. Here, the CA flag is implied
+           since v1 certs can only be loaded as root. We explicitly set
+           the pathLengthConstraint to allow up to 2 intermediate certs.
+           This can be adjusted to allow more or less intermediate certs. */
+        cert->extensions.bc.pathLenConstraint = 2;
+        break;
+#  endif    /* ALLOW_VERSION_1_ROOT_CERT_PARSE */
+    case 2:
+        /* Typical case of v3 cert */
+        break;
+    default:
+        psTraceIntCrypto("ERROR: unknown certificate version: %d\n",
+                cert->version);
+        cert->parseStatus = PS_X509_UNSUPPORTED_VERSION;
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+    }
+    /*
+      CertificateSerialNumber  ::=  INTEGER
+      There is a special return code for a missing serial number that
+      will get written to the parse warning flag
+    */
+    if ((rc = getSerialNum(pool, &p, (uint32) (end - p), &cert->serialNumber,
+                            &cert->serialNumberLen)) < 0)
+    {
+        psTraceCrypto("ASN serial number parse error\n");
+        func_rc = rc;
+        goto out;
+    }
+    /*
+      AlgorithmIdentifier  ::=  SEQUENCE  {
+      algorithm                               OBJECT IDENTIFIER,
+      parameters                              ANY DEFINED BY algorithm OPTIONAL }
+    */
+    if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
+                            &cert->certAlgorithm, &plen)) < 0)
+    {
+        psTraceCrypto("Couldn't parse algorithm identifier for certAlgorithm\n");
+        cert->parseStatus = PS_X509_ALG_ID;
+        func_rc = rc;
+        goto out;
+    }
+    if (plen != 0)
+    {
+#  ifdef USE_PKCS1_PSS
+        if (cert->certAlgorithm == OID_RSASSA_PSS)
+        {
+            /* RSASSA-PSS-params ::= SEQUENCE {
+               hashAlgorithm      [0] HashAlgorithm    DEFAULT sha1,
+               maskGenAlgorithm   [1] MaskGenAlgorithm DEFAULT mgf1SHA1,
+               saltLength         [2] INTEGER          DEFAULT 20,
+               trailerField       [3] TrailerField     DEFAULT trailerFieldBC
+               }
+            */
+            if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
+            {
+                psTraceCrypto("ASN sequence parse error\n");
+                func_rc = rc;
+                goto out;
+            }
+            /* Always set the defaults before parsing */
+            cert->pssHash = PKCS1_SHA1_ID;
+            cert->maskGen = OID_ID_MGF1;
+            cert->saltLen = SHA1_HASH_SIZE;
+            /* Something other than defaults to parse here? */
+            if (len > 0)
+            {
+                if ((rc = getRsaPssParams(&p, len, cert, 0)) < 0)
+                {
+                    func_rc = rc;
+                    goto out;
+                }
+            }
+        }
+        else
+        {
+            psTraceCrypto("Unsupported X.509 certAlgorithm\n");
+            func_rc = PS_UNSUPPORTED_FAIL;
+            goto out;
+        }
+#  else
+        psTraceCrypto("Unsupported X.509 certAlgorithm\n");
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+#  endif
+    }
+    /*
+      Name ::= CHOICE {
+      RDNSequence }
+
+      RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
+
+      RelativeDistinguishedName ::= SET OF AttributeTypeAndValue
+
+      AttributeTypeAndValue ::= SEQUENCE {
+      type    AttributeType,
+      value   AttributeValue }
+
+      AttributeType ::= OBJECT IDENTIFIER
+
+      AttributeValue ::= ANY DEFINED BY AttributeType
+    */
+    if ((rc = psX509GetDNAttributes(pool, &p, (uint32) (end - p),
+                            &cert->issuer, flags)) < 0)
+    {
+        psTraceCrypto("Couldn't parse issuer DN attributes\n");
+        cert->parseStatus = PS_X509_ISSUER_DN;
+        func_rc = rc;
+        goto out;
+    }
+    /*
+      Validity ::= SEQUENCE {
+      notBefore       Time,
+      notAfter        Time    }
+    */
+    if ((rc = getTimeValidity(pool, &p, (uint32) (end - p),
+                            &cert->notBeforeTimeType, &cert->notAfterTimeType,
+                            &cert->notBefore, &cert->notAfter)) < 0)
+    {
+        psTraceCrypto("Couldn't parse validity\n");
+        func_rc = rc;
+        goto out;
+    }
+
+    /* SECURITY - platforms without a date function will always succeed */
+    if ((rc = validateDateRange(cert)) < 0)
+    {
+        psTraceCrypto("Validity date check failed\n");
+        cert->parseStatus = PS_X509_DATE;
+        func_rc = rc;
+        goto out;
+    }
+    /*
+      Subject DN
+    */
+    cert->subjectKeyDerOffsetIntoUnparsedBin = (uint16_t) (p - certStart);
+    if ((rc = psX509GetDNAttributes(pool, &p, (uint32) (end - p),
+                            &cert->subject, flags)) < 0)
+    {
+        psTraceCrypto("Couldn't parse subject DN attributes\n");
+        cert->parseStatus = PS_X509_SUBJECT_DN;
+        func_rc = rc;
+        goto out;
+    }
+    /*
+      SubjectPublicKeyInfo  ::=  SEQUENCE  {
+      algorithm                       AlgorithmIdentifier,
+      subjectPublicKey        BIT STRING      }
+    */
+    p_subject_pubkey_info = p;
+
+    cert->publicKeyDerOffsetIntoUnparsedBin = (uint16_t) (p - certStart);
+
+    if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
+    {
+        psTraceCrypto("Couldn't get ASN sequence for pubKeyAlgorithm\n");
+        func_rc = rc;
+        goto out;
+    }
+    subject_pubkey_info_header_len = (p - p_subject_pubkey_info);
+    cert->publicKeyDerLen = len + subject_pubkey_info_header_len;
+
+    if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
+                            &cert->pubKeyAlgorithm, &plen)) < 0)
+    {
+        psTraceCrypto("Couldn't parse algorithm id for pubKeyAlgorithm\n");
+        func_rc = rc;
+        goto out;
+    }
+
+    /* Populate with correct type based on pubKeyAlgorithm OID */
+    switch (cert->pubKeyAlgorithm)
+    {
+#  ifdef USE_ECC
+    case OID_ECDSA_KEY_ALG:
+        if (plen == 0 || plen > (int32) (end - p))
+        {
+            psTraceCrypto("Bad params on EC OID\n");
+            func_rc = PS_PARSE_FAIL;
+            goto out;
+        }
+        psInitPubKey(pool, &cert->publicKey, PS_ECC);
+        if ((rc = getEcPubKey(pool, &p, (uint16_t) (end - p),
+                                &cert->publicKey.key.ecc, sha1KeyHash)) < 0)
+        {
+            if (rc == PS_UNSUPPORTED_FAIL)
+            {
+                cert->parseStatus = PS_X509_UNSUPPORTED_ECC_CURVE;
+            }
+            func_rc = PS_PARSE_FAIL;
+            goto out;
+        }
+        /* keysize will be the size of the public ecc key (2 * privateLen) */
+        cert->publicKey.keysize = psEccSize(&cert->publicKey.key.ecc);
+        if (cert->publicKey.keysize < (MIN_ECC_BITS / 8))
+        {
+            psTraceIntCrypto("ECC key size < %d\n", MIN_ECC_BITS);
+            psClearPubKey(&cert->publicKey);
+            cert->parseStatus = PS_X509_WEAK_KEY;
+            func_rc = PS_PARSE_FAIL;
+            goto out;
+        }
+        break;
+#  endif
+#  ifdef USE_RSA
+    case OID_RSA_KEY_ALG:
+        psAssert(plen == 0); /* No parameters on RSA pub key OID */
+        psInitPubKey(pool, &cert->publicKey, PS_RSA);
+        if ((rc = psRsaParseAsnPubKey(pool, &p, (uint16_t) (end - p),
+                                &cert->publicKey.key.rsa, sha1KeyHash)) < 0)
+        {
+            psTraceCrypto("Couldn't get RSA pub key from cert\n");
+            cert->parseStatus = PS_X509_MISSING_RSA;
+            func_rc = rc;
+            goto out;
+        }
+        cert->publicKey.keysize = psRsaSize(&cert->publicKey.key.rsa);
+
+        if (cert->publicKey.keysize < (MIN_RSA_BITS / 8))
+        {
+            psTraceIntCrypto("RSA key size < %d\n", MIN_RSA_BITS);
+            psClearPubKey(&cert->publicKey);
+            cert->parseStatus = PS_X509_WEAK_KEY;
+            func_rc = PS_UNSUPPORTED_FAIL;
+            goto out;
+        }
+
+        break;
+#  endif
+    default:
+        /* Note 645:RSA, 515:DSA, 518:ECDSA, 32969:GOST */
+        psTraceIntCrypto(
+                "Unsupported public key algorithm in cert parse: %d\n",
+                cert->pubKeyAlgorithm);
+        cert->parseStatus = PS_X509_UNSUPPORTED_KEY_ALG;
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+    }
+
+#  ifdef USE_OCSP
+    /* A sha1 hash of the public key is useful for OCSP */
+    memcpy(cert->sha1KeyHash, sha1KeyHash, SHA1_HASH_SIZE);
+#  endif
+
+    /* As the next three values are optional, we can do a specific test here */
+    if (*p != (ASN_SEQUENCE | ASN_CONSTRUCTED))
+    {
+        if (getImplicitBitString(pool, &p, (uint32) (end - p),
+                        IMPLICIT_ISSUER_ID, &cert->uniqueIssuerId,
+                        &cert->uniqueIssuerIdLen) < 0 ||
+                getImplicitBitString(pool, &p, (uint32) (end - p),
+                        IMPLICIT_SUBJECT_ID, &cert->uniqueSubjectId,
+                        &cert->uniqueSubjectIdLen) < 0 ||
+                getExplicitExtensions(pool, &p, (uint32) (end - p),
+                        EXPLICIT_EXTENSION, &cert->extensions, 0) < 0)
+        {
+            psTraceCrypto("There was an error parsing a certificate\n"
+                    "extension.  This is likely caused by an\n"
+                    "extension format that is not currently\n"
+                    "recognized.  Please email support\n"
+                    "to add support for the extension.\n");
+            cert->parseStatus = PS_X509_UNSUPPORTED_EXT;
+            func_rc = PS_PARSE_FAIL;
+            goto out;
+        }
+    }
+
+    /* This is the end of the cert.  Do a check here to be certain */
+    if (certEnd != p)
+    {
+        psTraceCrypto("Error. Expecting end of cert\n");
+        cert->parseStatus = PS_X509_EOF;
+        func_rc = PS_LIMIT_FAIL;
+        goto out;
+    }
+
+    /* Reject any cert without a distinguishedName or subjectAltName */
+    if (cert->subject.commonName == NULL &&
+            cert->subject.country == NULL &&
+            cert->subject.state == NULL &&
+            cert->subject.organization == NULL &&
+            cert->subject.orgUnit == NULL &&
+            cert->subject.domainComponent == NULL &&
+            cert->extensions.san == NULL)
+    {
+        psTraceCrypto("Error. Cert has no name information\n");
+        cert->parseStatus = PS_X509_MISSING_NAME;
+        func_rc = PS_PARSE_FAIL;
+        goto out;
+    }
+# else  /* No TBSCertificate parsing. */
+    p = certEnd;
+# endif /* USE_CERT_PARSE (end of TBSCertificate parsing) */
+
+        /* Certificate signature info */
+    if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
+                            &cert->sigAlgorithm, &plen)) < 0)
+    {
+        psTraceCrypto("Couldn't get algorithm identifier for sigAlgorithm\n");
+        func_rc = rc;
+        goto out;
+    }
+
+    if (plen != 0)
+    {
+# ifdef USE_PKCS1_PSS
+        if (cert->sigAlgorithm == OID_RSASSA_PSS)
+        {
+            /* RSASSA-PSS-params ::= SEQUENCE {
+               hashAlgorithm      [0] HashAlgorithm    DEFAULT sha1,
+               maskGenAlgorithm   [1] MaskGenAlgorithm DEFAULT mgf1SHA1,
+               saltLength         [2] INTEGER          DEFAULT 20,
+               trailerField       [3] TrailerField     DEFAULT trailerFieldBC
+               }
+            */
+            if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
+            {
+                psTraceCrypto("ASN sequence parse error\n");
+                func_rc = rc;
+                goto out;
+            }
+            /* Something other than defaults to parse here? */
+            if (len > 0)
+            {
+                if ((rc = getRsaPssParams(&p, len, cert, 1)) < 0)
+                {
+                    func_rc = rc;
+                    goto out;
+                }
+            }
+        }
+        else
+        {
+            psTraceCrypto("Unsupported X.509 sigAlgorithm\n");
+            func_rc = PS_UNSUPPORTED_FAIL;
+            goto out;
+        }
+# else
+        psTraceCrypto("Unsupported X.509 sigAlgorithm\n");
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+# endif     /* USE_PKCS1_PSS */
+    }
+# ifdef USE_CERT_PARSE
+    /*
+      https://tools.ietf.org/html/rfc5280#section-4.1.1.2
+      This field MUST contain the same algorithm identifier as the
+      signature field in the sequence tbsCertificate (Section 4.1.2.3).
+    */
+    if (cert->certAlgorithm != cert->sigAlgorithm)
+    {
+        psTraceIntCrypto("Parse error: mismatched sig alg (tbs = %d ",
+                cert->certAlgorithm);
+        psTraceIntCrypto("sig = %d)\n", cert->sigAlgorithm);
+        cert->parseStatus = PS_X509_SIG_MISMATCH;
+        func_rc = PS_PARSE_FAIL;
+        goto out;
+    }
+    /*
+      Compute the hash of the cert here for CA validation
+    */
+    switch (cert->certAlgorithm)
+    {
+#  ifdef ENABLE_MD5_SIGNED_CERTS
+#   ifdef USE_MD2
+    case OID_MD2_RSA_SIG:
+        psMd2Init(&hashCtx.md2);
+        psMd2Update(&hashCtx.md2, tbsCertStart, certLen);
+        psMd2Final(&hashCtx.md2, cert->sigHash);
+        break;
+#   endif   /* USE_MD2 */
+    case OID_MD5_RSA_SIG:
+        psMd5Init(&hashCtx.md5);
+        psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
+        psMd5Final(&hashCtx.md5, cert->sigHash);
+        break;
+#  endif
+#  ifdef ENABLE_SHA1_SIGNED_CERTS
+    case OID_SHA1_RSA_SIG:
+    case OID_SHA1_RSA_SIG2:
+#   ifdef USE_ECC
+    case OID_SHA1_ECDSA_SIG:
+#   endif
+        psSha1PreInit(&hashCtx.sha1);
+        psSha1Init(&hashCtx.sha1);
+        psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
+        psSha1Final(&hashCtx.sha1, cert->sigHash);
+        break;
+#  endif
+#  ifdef USE_SHA224
+    case OID_SHA224_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA224_ECDSA_SIG:
+#   endif
+        psSha224PreInit(&hashCtx.sha256);
+        psSha224Init(&hashCtx.sha256);
+        psSha224Update(&hashCtx.sha256, tbsCertStart, certLen);
+        psSha224Final(&hashCtx.sha256, cert->sigHash);
+        break;
+#  endif
+#  ifdef USE_SHA256
+    case OID_SHA256_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA256_ECDSA_SIG:
+#   endif
+        psSha256PreInit(&hashCtx.sha256);
+        psSha256Init(&hashCtx.sha256);
+        psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
+        psSha256Final(&hashCtx.sha256, cert->sigHash);
+        break;
+#  endif
+#  ifdef USE_SHA384
+    case OID_SHA384_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA384_ECDSA_SIG:
+#   endif
+        psSha384PreInit(&hashCtx.sha384);
+        psSha384Init(&hashCtx.sha384);
+        psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
+        psSha384Final(&hashCtx.sha384, cert->sigHash);
+        break;
+#  endif
+#  ifdef USE_SHA512
+    case OID_SHA512_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA512_ECDSA_SIG:
+#   endif
+        psSha512PreInit(&hashCtx.sha512);
+        psSha512Init(&hashCtx.sha512);
+        psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
+        psSha512Final(&hashCtx.sha512, cert->sigHash);
+        break;
+#  endif
+#  ifdef USE_PKCS1_PSS
+    case OID_RSASSA_PSS:
+        switch (cert->pssHash)
+        {
+#   ifdef ENABLE_MD5_SIGNED_CERTS
+        case PKCS1_MD5_ID:
+            psMd5Init(&hashCtx.md5);
+            psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
+            psMd5Final(&hashCtx.md5, cert->sigHash);
+            break;
+#   endif
+#   ifdef ENABLE_SHA1_SIGNED_CERTS
+        case PKCS1_SHA1_ID:
+            psSha1PreInit(&hashCtx.sha1);
+            psSha1Init(&hashCtx.sha1);
+            psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
+            psSha1Final(&hashCtx.sha1, cert->sigHash);
+            break;
+#   endif
+#   ifdef USE_SHA224
+        case PKCS1_SHA224_ID:
+            psSha224PreInit(&hashCtx.sha256);
+            psSha224Init(&hashCtx.sha256);
+            psSha224Update(&hashCtx.sha256, tbsCertStart, certLen);
+            psSha224Final(&hashCtx.sha256, cert->sigHash);
+            break;
+#   endif
+#   ifdef USE_SHA256
+        case PKCS1_SHA256_ID:
+            psSha256PreInit(&hashCtx.sha256);
+            psSha256Init(&hashCtx.sha256);
+            psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
+            psSha256Final(&hashCtx.sha256, cert->sigHash);
+            break;
+#   endif
+#   ifdef USE_SHA384
+        case PKCS1_SHA384_ID:
+            psSha384PreInit(&hashCtx.sha384);
+            psSha384Init(&hashCtx.sha384);
+            psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
+            psSha384Final(&hashCtx.sha384, cert->sigHash);
+            break;
+#   endif
+#   ifdef USE_SHA512
+        case PKCS1_SHA512_ID:
+            psSha512PreInit(&hashCtx.sha512);
+            psSha512Init(&hashCtx.sha512);
+            psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
+            psSha512Final(&hashCtx.sha512, cert->sigHash);
+            break;
+#   endif
+        default:
+            psTraceIntCrypto("Unsupported pssHash algorithm: %d\n",
+                    cert->pssHash);
+            cert->parseStatus = PS_X509_UNSUPPORTED_SIG_ALG;
+            func_rc = PS_UNSUPPORTED_FAIL;
+            goto out;
+        } /* switch pssHash */
+        break;
+#  endif /* USE_PKCS1_PSS */
+
+    default:
+        /* Note 1670:MD2 */
+        psTraceIntCrypto("Unsupported cert algorithm: %d\n",
+                cert->certAlgorithm);
+        cert->parseStatus = PS_X509_UNSUPPORTED_SIG_ALG;
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+
+    } /* switch certAlgorithm */
+
+    /* 6 empty bytes is plenty enough to know if sigHash didn't calculate */
+    if (memcmp(cert->sigHash, "\0\0\0\0\0\0", 6) == 0)
+    {
+        psTraceIntCrypto("No library signature alg support for cert: %d\n",
+                cert->certAlgorithm);
+        cert->parseStatus = PS_X509_UNSUPPORTED_SIG_ALG;
+        func_rc = PS_UNSUPPORTED_FAIL;
+        goto out;
+    }
+# endif /* USE_CERT_PARSE */
+
+    if ((rc = psX509GetSignature(pool, &p, (uint32) (end - p),
+                            &cert->signature, &cert->signatureLen)) < 0)
+    {
+        psTraceCrypto("Couldn't parse signature\n");
+        cert->parseStatus = PS_X509_SIGNATURE;
+        func_rc = rc;
+        goto out;
+    }
+
+# ifndef USE_CERT_PARSE
+    /* Some APIs need certAlgorithm.*/
+    cert->certAlgorithm = cert->sigAlgorithm;
+# endif /* !USE_CERT_PARSE */
+
+out:
+    if (func_rc == PS_SUCCESS)
+    {
+        cert->parseStatus = PS_X509_PARSE_SUCCESS;
+        psAssert(p == end); /* Must have parsed everything. */
+    }
+    psAssert(p <= end); /* Must not have parsed too much. */
+
+    *pp = end;
+
+    return func_rc;
+}
+
 /******************************************************************************/
 /*
     Parse an X509 v3 ASN.1 certificate stream
@@ -632,26 +1344,19 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
     psX509Cert_t **outcert, int32 flags)
 {
     psX509Cert_t *cert;
-    const unsigned char *p, *end, *far_end, *certStart;
-    psSize_t len;
-    uint32_t oneCertLen;
+    const unsigned char *p, *far_end;
     int32_t parsing, rc;
-    const unsigned char *certEnd;
-    psSize_t plen;
+    int32_t numCerts = 0;
+    int32_t numParsedCerts = 0;
 
-# ifdef USE_CERT_PARSE
-    const unsigned char *tbsCertStart;
-    unsigned char sha1KeyHash[SHA1_HASH_SIZE];
-    psDigestContext_t hashCtx;
-    psSize_t certLen;
-    const unsigned char *p_subject_pubkey_info;
-    size_t subject_pubkey_info_header_len;
-# endif  /* USE_CERT_PARSE */
 /*
     Allocate the cert structure right away.  User MUST always call
     psX509FreeCert regardless of whether this function succeeds.
     memset is important because the test for NULL is what is used
-    to determine what to free
+    to determine what to free.
+
+    If the input stream consists of multiple certs, the rest of
+    the psX509Cert_t structs will be allocated in parse_single_cert().
  */
     *outcert = cert = psMalloc(pool, sizeof(psX509Cert_t));
     if (cert == NULL)
@@ -660,11 +1365,6 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
         return PS_MEM_FAIL;
     }
     memset(cert, 0x0, sizeof(psX509Cert_t));
-    cert->pool = pool;
-    cert->parseStatus = PS_X509_PARSE_FAIL; /* Default to fail status */
-# ifdef USE_CERT_PARSE
-    cert->extensions.bc.cA = CA_UNDEFINED;
-# endif /* USE_CERT_PARSE */
 
 # ifdef ALWAYS_KEEP_CERT_DER
     flags |= CERT_STORE_UNPARSED_BUFFER;
@@ -672,591 +1372,44 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
 
     p = pp;
     far_end = p + size;
-/*
-    Certificate  ::=  SEQUENCE  {
-        tbsCertificate          TBSCertificate,
-        signatureAlgorithm      AlgorithmIdentifier,
-        signatureValue          BIT STRING }
- */
+
     parsing = 1;
     while (parsing)
     {
-        certStart = p;
-        if ((rc = getAsnSequence32(&p, (uint32_t) (far_end - p), &oneCertLen, 0))
-            < 0)
+        /*
+          Certificate  ::=  SEQUENCE  {
+          tbsCertificate          TBSCertificate,
+          signatureAlgorithm      AlgorithmIdentifier,
+          signatureValue          BIT STRING }
+        */
+        rc = parse_single_cert(pool, &p, size, far_end, cert, flags);
+        if (rc == PS_SUCCESS)
         {
-            psTraceCrypto("Initial cert parse error\n");
-            return rc;
+            numParsedCerts++;
         }
-        /* The whole list of certs could be > 64K bytes, but we still
-            restrict individual certs to 64KB */
-        if (oneCertLen > 0xFFFF)
+        else
         {
-            psAssert(oneCertLen <= 0xFFFF);
-            return PS_FAILURE;
-        }
-        end = p + oneCertLen;
-/*
-         If the user has specified to keep the ASN.1 buffer in the X.509
-         structure, now is the time to account for it
- */
-        if (flags & CERT_STORE_UNPARSED_BUFFER)
-        {
-            cert->binLen = oneCertLen + (int32) (p - certStart);
-            cert->unparsedBin = psMalloc(pool, cert->binLen);
-            if (cert->unparsedBin == NULL)
+            psAssert(cert->parseStatus != PS_X509_PARSE_SUCCESS);
+
+            if (!(flags & CERT_ALLOW_BUNDLE_PARTIAL_PARSE))
             {
-                psError("Memory allocation error in psX509ParseCert\n");
-                return PS_MEM_FAIL;
-            }
-            memcpy(cert->unparsedBin, certStart, cert->binLen);
-        }
-
-# ifdef ENABLE_CA_CERT_HASH
-        /* We use the cert_sha1_hash type for the Trusted CA Indication so
-            run a SHA1 has over the entire Certificate DER encoding. */
-        psSha1PreInit(&hashCtx.sha1);
-        psSha1Init(&hashCtx.sha1);
-        psSha1Update(&hashCtx.sha1, certStart,
-            oneCertLen + (int32) (p - certStart));
-        psSha1Final(&hashCtx.sha1, cert->sha1CertHash);
-# endif
-
-# ifdef USE_CERT_PARSE
-        tbsCertStart = p;
-# endif /* USE_CERT_PARSE */
-/*
-        TBSCertificate  ::=  SEQUENCE  {
-        version                 [0]             EXPLICIT Version DEFAULT v1,
-        serialNumber                    CertificateSerialNumber,
-        signature                               AlgorithmIdentifier,
-        issuer                                  Name,
-        validity                                Validity,
-        subject                                 Name,
-        subjectPublicKeyInfo    SubjectPublicKeyInfo,
-        issuerUniqueID  [1]             IMPLICIT UniqueIdentifier OPTIONAL,
-                            -- If present, version shall be v2 or v3
-        subjectUniqueID [2]     IMPLICIT UniqueIdentifier OPTIONAL,
-                            -- If present, version shall be v2 or v3
-        extensions              [3]     EXPLICIT Extensions OPTIONAL
-                            -- If present, version shall be v3  }
- */
-        if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
-        {
-            psTraceCrypto("ASN sequence parse error\n");
-            return rc;
-        }
-        certEnd = p + len;
-# ifdef USE_CERT_PARSE
-/*
-   Start parsing TBSCertificate contents.
- */
-        certLen = certEnd - tbsCertStart;
-/*
-        Version  ::=  INTEGER  {  v1(0), v2(1), v3(2)  }
- */
-        if ((rc = getExplicitVersion(&p, (uint32) (end - p), 0, &cert->version))
-            < 0)
-        {
-            psTraceCrypto("ASN version parse error\n");
-            return rc;
-        }
-        switch (cert->version)
-        {
-        case 0:
-        case 1:
-#  ifndef ALLOW_VERSION_1_ROOT_CERT_PARSE
-            psTraceCrypto("ERROR: v1 and v2 certificate versions insecure\n");
-            cert->parseStatus = PS_X509_UNSUPPORTED_VERSION;
-            return PS_PARSE_FAIL;
-#  else
-            /* Allow locally stored, trusted version 1 and version 2 certificates
-               to be parsed. The SSL layer code will still reject non v3
-               certificates that arrive over-the-wire. */
-            /* Version 1 certificates do not have basic constraints to
-               specify a CA flag or path length. Here, the CA flag is implied
-               since v1 certs can only be loaded as root. We explicitly set
-               the pathLengthConstraint to allow up to 2 intermediate certs.
-               This can be adjusted to allow more or less intermediate certs. */
-            cert->extensions.bc.pathLenConstraint = 2;
-            break;
-#  endif    /* ALLOW_VERSION_1_ROOT_CERT_PARSE */
-        case 2:
-            /* Typical case of v3 cert */
-            break;
-        default:
-            psTraceIntCrypto("ERROR: unknown certificate version: %d\n",
-                cert->version);
-            cert->parseStatus = PS_X509_UNSUPPORTED_VERSION;
-            return PS_PARSE_FAIL;
-        }
-/*
-        CertificateSerialNumber  ::=  INTEGER
-        There is a special return code for a missing serial number that
-        will get written to the parse warning flag
- */
-        if ((rc = getSerialNum(pool, &p, (uint32) (end - p), &cert->serialNumber,
-                 &cert->serialNumberLen)) < 0)
-        {
-            psTraceCrypto("ASN serial number parse error\n");
-            return rc;
-        }
-/*
-        AlgorithmIdentifier  ::=  SEQUENCE  {
-        algorithm                               OBJECT IDENTIFIER,
-        parameters                              ANY DEFINED BY algorithm OPTIONAL }
- */
-        if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
-                 &cert->certAlgorithm, &plen)) < 0)
-        {
-            psTraceCrypto("Couldn't parse algorithm identifier for certAlgorithm\n");
-            cert->parseStatus = PS_X509_ALG_ID;
-            return rc;
-        }
-        if (plen != 0)
-        {
-#  ifdef USE_PKCS1_PSS
-            if (cert->certAlgorithm == OID_RSASSA_PSS)
-            {
-                /* RSASSA-PSS-params ::= SEQUENCE {
-                    hashAlgorithm      [0] HashAlgorithm    DEFAULT sha1,
-                    maskGenAlgorithm   [1] MaskGenAlgorithm DEFAULT mgf1SHA1,
-                    saltLength         [2] INTEGER          DEFAULT 20,
-                    trailerField       [3] TrailerField     DEFAULT trailerFieldBC
-                    }
-                 */
-                if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
-                {
-                    psTraceCrypto("ASN sequence parse error\n");
-                    return rc;
-                }
-                /* Always set the defaults before parsing */
-                cert->pssHash = PKCS1_SHA1_ID;
-                cert->maskGen = OID_ID_MGF1;
-                cert->saltLen = SHA1_HASH_SIZE;
-                /* Something other than defaults to parse here? */
-                if (len > 0)
-                {
-                    if ((rc = getRsaPssParams(&p, len, cert, 0)) < 0)
-                    {
-                        return rc;
-                    }
-                }
-            }
-            else
-            {
-                psTraceCrypto("Unsupported X.509 certAlgorithm\n");
-                return PS_UNSUPPORTED_FAIL;
-            }
-#  else
-            psTraceCrypto("Unsupported X.509 certAlgorithm\n");
-            return PS_UNSUPPORTED_FAIL;
-#  endif
-        }
-/*
-        Name ::= CHOICE {
-        RDNSequence }
-
-        RDNSequence ::= SEQUENCE OF RelativeDistinguishedName
-
-        RelativeDistinguishedName ::= SET OF AttributeTypeAndValue
-
-        AttributeTypeAndValue ::= SEQUENCE {
-        type    AttributeType,
-        value   AttributeValue }
-
-        AttributeType ::= OBJECT IDENTIFIER
-
-        AttributeValue ::= ANY DEFINED BY AttributeType
- */
-        if ((rc = psX509GetDNAttributes(pool, &p, (uint32) (end - p),
-                 &cert->issuer, flags)) < 0)
-        {
-            psTraceCrypto("Couldn't parse issuer DN attributes\n");
-            cert->parseStatus = PS_X509_ISSUER_DN;
-            return rc;
-        }
-/*
-        Validity ::= SEQUENCE {
-        notBefore       Time,
-        notAfter        Time    }
- */
-        if ((rc = getTimeValidity(pool, &p, (uint32) (end - p),
-                 &cert->notBeforeTimeType, &cert->notAfterTimeType,
-                 &cert->notBefore, &cert->notAfter)) < 0)
-        {
-            psTraceCrypto("Couldn't parse validity\n");
-            return rc;
-        }
-
-        /* SECURITY - platforms without a date function will always succeed */
-        if ((rc = validateDateRange(cert)) < 0)
-        {
-            psTraceCrypto("Validity date check failed\n");
-            cert->parseStatus = PS_X509_DATE;
-            return rc;
-        }
-/*
-        Subject DN
- */
-        cert->subjectKeyDerOffsetIntoUnparsedBin = (uint16_t) (p - certStart);
-        if ((rc = psX509GetDNAttributes(pool, &p, (uint32) (end - p),
-                 &cert->subject, flags)) < 0)
-        {
-            psTraceCrypto("Couldn't parse subject DN attributes\n");
-            cert->parseStatus = PS_X509_SUBJECT_DN;
-            return rc;
-        }
-/*
-        SubjectPublicKeyInfo  ::=  SEQUENCE  {
-        algorithm                       AlgorithmIdentifier,
-        subjectPublicKey        BIT STRING      }
- */
-        p_subject_pubkey_info = p;
-
-        cert->publicKeyDerOffsetIntoUnparsedBin = (uint16_t) (p - certStart);
-
-        if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
-        {
-            psTraceCrypto("Couldn't get ASN sequence for pubKeyAlgorithm\n");
-            return rc;
-        }
-        subject_pubkey_info_header_len = (p - p_subject_pubkey_info);
-        cert->publicKeyDerLen = len + subject_pubkey_info_header_len;
-
-        if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
-                 &cert->pubKeyAlgorithm, &plen)) < 0)
-        {
-            psTraceCrypto("Couldn't parse algorithm id for pubKeyAlgorithm\n");
-            return rc;
-        }
-
-        /* Populate with correct type based on pubKeyAlgorithm OID */
-        switch (cert->pubKeyAlgorithm)
-        {
-#  ifdef USE_ECC
-        case OID_ECDSA_KEY_ALG:
-            if (plen == 0 || plen > (int32) (end - p))
-            {
-                psTraceCrypto("Bad params on EC OID\n");
-                return PS_PARSE_FAIL;
-            }
-            psInitPubKey(pool, &cert->publicKey, PS_ECC);
-            if ((rc = getEcPubKey(pool, &p, (uint16_t) (end - p),
-                     &cert->publicKey.key.ecc, sha1KeyHash)) < 0)
-            {
-                if (rc == PS_UNSUPPORTED_FAIL)
-                {
-                    cert->parseStatus = PS_X509_UNSUPPORTED_ECC_CURVE;
-                }
-                return PS_PARSE_FAIL;
-            }
-            /* keysize will be the size of the public ecc key (2 * privateLen) */
-            cert->publicKey.keysize = psEccSize(&cert->publicKey.key.ecc);
-            if (cert->publicKey.keysize < (MIN_ECC_BITS / 8))
-            {
-                psTraceIntCrypto("ECC key size < %d\n", MIN_ECC_BITS);
-                psClearPubKey(&cert->publicKey);
-                cert->parseStatus = PS_X509_WEAK_KEY;
-                return PS_PARSE_FAIL;
-            }
-            break;
-#  endif
-#  ifdef USE_RSA
-        case OID_RSA_KEY_ALG:
-            psAssert(plen == 0); /* No parameters on RSA pub key OID */
-            psInitPubKey(pool, &cert->publicKey, PS_RSA);
-            if ((rc = psRsaParseAsnPubKey(pool, &p, (uint16_t) (end - p),
-                     &cert->publicKey.key.rsa, sha1KeyHash)) < 0)
-            {
-                psTraceCrypto("Couldn't get RSA pub key from cert\n");
-                cert->parseStatus = PS_X509_MISSING_RSA;
                 return rc;
             }
-            cert->publicKey.keysize = psRsaSize(&cert->publicKey.key.rsa);
-
-            if (cert->publicKey.keysize < (MIN_RSA_BITS / 8))
-            {
-                psTraceIntCrypto("RSA key size < %d\n", MIN_RSA_BITS);
-                psClearPubKey(&cert->publicKey);
-                cert->parseStatus = PS_X509_WEAK_KEY;
-                return PS_PARSE_FAIL;
-            }
-
-            break;
-#  endif
-        default:
-            /* Note 645:RSA, 515:DSA, 518:ECDSA, 32969:GOST */
-            psTraceIntCrypto(
-                "Unsupported public key algorithm in cert parse: %d\n",
-                cert->pubKeyAlgorithm);
-            cert->parseStatus = PS_X509_UNSUPPORTED_KEY_ALG;
-            return PS_UNSUPPORTED_FAIL;
         }
 
-#  ifdef USE_OCSP
-        /* A sha1 hash of the public key is useful for OCSP */
-        memcpy(cert->sha1KeyHash, sha1KeyHash, SHA1_HASH_SIZE);
-#  endif
+        numCerts++;
 
-        /* As the next three values are optional, we can do a specific test here */
-        if (*p != (ASN_SEQUENCE | ASN_CONSTRUCTED))
-        {
-            if (getImplicitBitString(pool, &p, (uint32) (end - p),
-                    IMPLICIT_ISSUER_ID, &cert->uniqueIssuerId,
-                    &cert->uniqueIssuerIdLen) < 0 ||
-                getImplicitBitString(pool, &p, (uint32) (end - p),
-                    IMPLICIT_SUBJECT_ID, &cert->uniqueSubjectId,
-                    &cert->uniqueSubjectIdLen) < 0 ||
-                getExplicitExtensions(pool, &p, (uint32) (end - p),
-                    EXPLICIT_EXTENSION, &cert->extensions, 0) < 0)
-            {
-                psTraceCrypto("There was an error parsing a certificate\n"
-                    "extension.  This is likely caused by an\n"
-                    "extension format that is not currently\n"
-                    "recognized.  Please email support\n"
-                    "to add support for the extension.\n");
-                cert->parseStatus = PS_X509_UNSUPPORTED_EXT;
-                return PS_PARSE_FAIL;
-            }
-        }
+        /*
+          Check whether we reached the end of the input DER stream.
 
-        /* This is the end of the cert.  Do a check here to be certain */
-        if (certEnd != p)
-        {
-            psTraceCrypto("Error. Expecting end of cert\n");
-            cert->parseStatus = PS_X509_EOF;
-            return PS_LIMIT_FAIL;
-        }
-
-        /* Reject any cert without a distinguishedName or subjectAltName */
-        if (cert->subject.commonName == NULL &&
-            cert->subject.country == NULL &&
-            cert->subject.state == NULL &&
-            cert->subject.organization == NULL &&
-            cert->subject.orgUnit == NULL &&
-            cert->subject.domainComponent == NULL &&
-            cert->extensions.san == NULL)
-        {
-            psTraceCrypto("Error. Cert has no name information\n");
-            cert->parseStatus = PS_X509_MISSING_NAME;
-            return PS_PARSE_FAIL;
-        }
-# else  /* No TBSCertificate parsing. */
-        p = certEnd;
-# endif /* USE_CERT_PARSE (end of TBSCertificate parsing) */
-
-        /* Certificate signature info */
-        if ((rc = getAsnAlgorithmIdentifier(&p, (uint32) (end - p),
-                 &cert->sigAlgorithm, &plen)) < 0)
-        {
-            psTraceCrypto("Couldn't get algorithm identifier for sigAlgorithm\n");
-            return rc;
-        }
-
-        if (plen != 0)
-        {
-# ifdef USE_PKCS1_PSS
-            if (cert->sigAlgorithm == OID_RSASSA_PSS)
-            {
-                /* RSASSA-PSS-params ::= SEQUENCE {
-                    hashAlgorithm      [0] HashAlgorithm    DEFAULT sha1,
-                    maskGenAlgorithm   [1] MaskGenAlgorithm DEFAULT mgf1SHA1,
-                    saltLength         [2] INTEGER          DEFAULT 20,
-                    trailerField       [3] TrailerField     DEFAULT trailerFieldBC
-                    }
-                 */
-                if ((rc = getAsnSequence(&p, (uint32) (end - p), &len)) < 0)
-                {
-                    psTraceCrypto("ASN sequence parse error\n");
-                    return rc;
-                }
-                /* Something other than defaults to parse here? */
-                if (len > 0)
-                {
-                    if ((rc = getRsaPssParams(&p, len, cert, 1)) < 0)
-                    {
-                        return rc;
-                    }
-                }
-            }
-            else
-            {
-                psTraceCrypto("Unsupported X.509 sigAlgorithm\n");
-                return PS_UNSUPPORTED_FAIL;
-            }
-# else
-            psTraceCrypto("Unsupported X.509 sigAlgorithm\n");
-            return PS_UNSUPPORTED_FAIL;
-# endif     /* USE_PKCS1_PSS */
-        }
-# ifdef USE_CERT_PARSE
-/*
-        https://tools.ietf.org/html/rfc5280#section-4.1.1.2
-        This field MUST contain the same algorithm identifier as the
-        signature field in the sequence tbsCertificate (Section 4.1.2.3).
- */
-        if (cert->certAlgorithm != cert->sigAlgorithm)
-        {
-            psTraceIntCrypto("Parse error: mismatched sig alg (tbs = %d ",
-                cert->certAlgorithm);
-            psTraceIntCrypto("sig = %d)\n", cert->sigAlgorithm);
-            cert->parseStatus = PS_X509_SIG_MISMATCH;
-            return PS_CERT_AUTH_FAIL;
-        }
-/*
-        Compute the hash of the cert here for CA validation
- */
-        switch (cert->certAlgorithm)
-        {
-#  ifdef ENABLE_MD5_SIGNED_CERTS
-#   ifdef USE_MD2
-        case OID_MD2_RSA_SIG:
-            psMd2Init(&hashCtx.md2);
-            psMd2Update(&hashCtx.md2, tbsCertStart, certLen);
-            psMd2Final(&hashCtx.md2, cert->sigHash);
-            break;
-#   endif   /* USE_MD2 */
-        case OID_MD5_RSA_SIG:
-            psMd5Init(&hashCtx.md5);
-            psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
-            psMd5Final(&hashCtx.md5, cert->sigHash);
-            break;
-#  endif
-#  ifdef ENABLE_SHA1_SIGNED_CERTS
-        case OID_SHA1_RSA_SIG:
-        case OID_SHA1_RSA_SIG2:
-#   ifdef USE_ECC
-        case OID_SHA1_ECDSA_SIG:
-#   endif
-            psSha1PreInit(&hashCtx.sha1);
-            psSha1Init(&hashCtx.sha1);
-            psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
-            psSha1Final(&hashCtx.sha1, cert->sigHash);
-            break;
-#  endif
-#  ifdef USE_SHA256
-        case OID_SHA256_RSA_SIG:
-#   ifdef USE_ECC
-        case OID_SHA256_ECDSA_SIG:
-#   endif
-            psSha256PreInit(&hashCtx.sha256);
-            psSha256Init(&hashCtx.sha256);
-            psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
-            psSha256Final(&hashCtx.sha256, cert->sigHash);
-            break;
-#  endif
-#  ifdef USE_SHA384
-        case OID_SHA384_RSA_SIG:
-#   ifdef USE_ECC
-        case OID_SHA384_ECDSA_SIG:
-#   endif
-            psSha384PreInit(&hashCtx.sha384);
-            psSha384Init(&hashCtx.sha384);
-            psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
-            psSha384Final(&hashCtx.sha384, cert->sigHash);
-            break;
-#  endif
-#  ifdef USE_SHA512
-        case OID_SHA512_RSA_SIG:
-#   ifdef USE_ECC
-        case OID_SHA512_ECDSA_SIG:
-#   endif
-            psSha512PreInit(&hashCtx.sha512);
-            psSha512Init(&hashCtx.sha512);
-            psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
-            psSha512Final(&hashCtx.sha512, cert->sigHash);
-            break;
-#  endif
-#  ifdef USE_PKCS1_PSS
-        case OID_RSASSA_PSS:
-            switch (cert->pssHash)
-            {
-#   ifdef ENABLE_MD5_SIGNED_CERTS
-            case PKCS1_MD5_ID:
-                psMd5Init(&hashCtx.md5);
-                psMd5Update(&hashCtx.md5, tbsCertStart, certLen);
-                psMd5Final(&hashCtx.md5, cert->sigHash);
-                break;
-#   endif
-#   ifdef ENABLE_SHA1_SIGNED_CERTS
-            case PKCS1_SHA1_ID:
-                psSha1PreInit(&hashCtx.sha1);
-                psSha1Init(&hashCtx.sha1);
-                psSha1Update(&hashCtx.sha1, tbsCertStart, certLen);
-                psSha1Final(&hashCtx.sha1, cert->sigHash);
-                break;
-#   endif
-#   ifdef USE_SHA256
-            case PKCS1_SHA256_ID:
-                psSha256PreInit(&hashCtx.sha256);
-                psSha256Init(&hashCtx.sha256);
-                psSha256Update(&hashCtx.sha256, tbsCertStart, certLen);
-                psSha256Final(&hashCtx.sha256, cert->sigHash);
-                break;
-#   endif
-#   ifdef USE_SHA384
-            case PKCS1_SHA384_ID:
-                psSha384PreInit(&hashCtx.sha384);
-                psSha384Init(&hashCtx.sha384);
-                psSha384Update(&hashCtx.sha384, tbsCertStart, certLen);
-                psSha384Final(&hashCtx.sha384, cert->sigHash);
-                break;
-#   endif
-#   ifdef USE_SHA512
-            case PKCS1_SHA512_ID:
-                psSha512PreInit(&hashCtx.sha512);
-                psSha512Init(&hashCtx.sha512);
-                psSha512Update(&hashCtx.sha512, tbsCertStart, certLen);
-                psSha512Final(&hashCtx.sha512, cert->sigHash);
-                break;
-#   endif
-            default:
-                psTraceIntCrypto("Unsupported pssHash algorithm: %d\n",
-                    cert->pssHash);
-                cert->parseStatus = PS_X509_UNSUPPORTED_SIG_ALG;
-                return PS_UNSUPPORTED_FAIL;
-
-            } /* switch pssHash */
-            break;
-#  endif /* USE_PKCS1_PSS */
-
-        default:
-            /* Note 1670:MD2 */
-            psTraceIntCrypto("Unsupported cert algorithm: %d\n",
-                cert->certAlgorithm);
-            cert->parseStatus = PS_X509_UNSUPPORTED_SIG_ALG;
-            return PS_UNSUPPORTED_FAIL;
-
-        } /* switch certAlgorithm */
-
-        /* 6 empty bytes is plenty enough to know if sigHash didn't calculate */
-        if (memcmp(cert->sigHash, "\0\0\0\0\0\0", 6) == 0)
-        {
-            psTraceIntCrypto("No library signature alg support for cert: %d\n",
-                cert->certAlgorithm);
-            return PS_UNSUPPORTED_FAIL;
-        }
-# endif /* USE_CERT_PARSE */
-
-        if ((rc = psX509GetSignature(pool, &p, (uint32) (end - p),
-                 &cert->signature, &cert->signatureLen)) < 0)
-        {
-            psTraceCrypto("Couldn't parse signature\n");
-            cert->parseStatus = PS_X509_SIGNATURE;
-            return rc;
-        }
-
-# ifndef USE_CERT_PARSE
-        /* Some APIs need certAlgorithm.*/
-        cert->certAlgorithm = cert->sigAlgorithm;
-# endif /* !USE_CERT_PARSE */
-
-/*
-        The ability to parse additional chained certs is a PKI product
-        feature addition.  Chaining in MatrixSSL is handled internally.
- */
-        if ((p != far_end) && (p < (far_end + 1)))
+          An additional sanity check is to ensure that there are least
+          MIN_CERT_SIZE bytes left in the stream. We wish to avoid
+          having to call parse_single_cert for any residual garbage
+          in the stream.
+        */
+        #define MIN_CERT_SIZE 256
+        if ((p != far_end) && (p < (far_end + 1))
+                && (far_end - p) > MIN_CERT_SIZE)
         {
             if (*p == 0x0 && *(p + 1) == 0x0)
             {
@@ -1282,8 +1435,28 @@ int32 psX509ParseCert(psPool_t *pool, const unsigned char *pp, uint32 size,
             parsing = 0;
         }
     }
-    cert->parseStatus = PS_X509_PARSE_SUCCESS;
-    return (int32) (p - pp);
+
+    if (numParsedCerts == 0)
+        return PS_PARSE_FAIL;
+
+    if (flags & CERT_ALLOW_BUNDLE_PARTIAL_PARSE)
+    {
+        /*
+          Return number of successfully parsed certs.
+          Note: this flag is never set when called from the SSL layer.
+        */
+        psTraceIntCrypto("Parsed %d certs", numParsedCerts);
+        psTraceIntCrypto(" from a total of %d certs\n", numCerts);
+        return numParsedCerts;
+    }
+    else
+    {
+        /*
+          Return length of parsed DER stream.
+          Some functions in the SSL layer require this.
+        */
+        return (int32) (p - pp);
+    }
 }
 
 # ifdef USE_CERT_PARSE
@@ -2265,7 +2438,8 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
     p = *buf;
     end = p + len;
 
-    while (len > 0)
+#   define MIN_GENERALNAME_LEN 3 /* 1 tag, 1 length octet, 1 content octet.*/
+    while (len > MIN_GENERALNAME_LEN)
     {
         if (firstName == NULL)
         {
@@ -2354,7 +2528,15 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
             }
             /* TODO - validate *p == STRING type? */
             p++;     /* Jump over TYPE */
-            len -= (p - save);
+            if (len <= (p - save))
+            {
+                psTraceCrypto("ASN len error in parseGeneralNames\n");
+                return PS_PARSE_FAIL;
+            }
+            else
+            {
+                len -= (p - save);
+            }
             break;
         case GN_EMAIL:
             strncpy((char *) activeName->name, "email",
@@ -2402,7 +2584,15 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
             psTraceCrypto("ASN len error in parseGeneralNames\n");
             return PS_PARSE_FAIL;
         }
-        len -= (p - save);
+        if (len <= (p - save))
+        {
+            psTraceCrypto("ASN len error in parseGeneralNames\n");
+            return PS_PARSE_FAIL;
+        }
+        else
+        {
+            len -= (p - save);
+        }
         if (len < activeName->dataLen)
         {
             psTraceCrypto("ASN len error in parseGeneralNames\n");
@@ -3021,14 +3211,15 @@ int32_t parsePolicyMappings(psPool_t *pool,
         }
         p += len;
 
-        pol_map->issuerDomainPolicy = psMalloc(pool, len * sizeof(uint32_t));
-        memset(pol_map->issuerDomainPolicy, 0, len * sizeof(uint32_t));
+        pol_map->issuerDomainPolicy = psMalloc(pool,
+                oidlen * sizeof(uint32_t));
+        memset(pol_map->issuerDomainPolicy, 0, oidlen * sizeof(uint32_t));
 
         for (i = 0; i < oidlen; i++)
         {
             pol_map->issuerDomainPolicy[i] = oid[i];
         }
-        pol_map->issuerDomainPolicyLen = len;
+        pol_map->issuerDomainPolicyLen = oidlen;
 
         /* Parse subjectDomainPolicy OID. */
         if (*p++ != ASN_OID)
@@ -3051,14 +3242,15 @@ int32_t parsePolicyMappings(psPool_t *pool,
         }
         p += len;
 
-        pol_map->subjectDomainPolicy = psMalloc(pool, len * sizeof(uint32_t));
-        memset(pol_map->subjectDomainPolicy, 0, len * sizeof(uint32_t));
+        pol_map->subjectDomainPolicy = psMalloc(pool,
+                oidlen * sizeof(uint32_t));
+        memset(pol_map->subjectDomainPolicy, 0, oidlen * sizeof(uint32_t));
 
         for (i = 0; i < oidlen; i++)
         {
             pol_map->subjectDomainPolicy[i] = oid[i];
         }
-        pol_map->subjectDomainPolicyLen = len;
+        pol_map->subjectDomainPolicyLen = oidlen;
 
         ++num_mappings;
     }
@@ -4998,7 +5190,7 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
     psX509Cert_t *ic, *sc;
     int32 sigType, rc;
     uint32 sigLen;
-    void *rsaData;
+    void *rsaData = NULL;
 
 #  ifdef USE_ECC
     int32 sigStat;
@@ -5156,6 +5348,12 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
             sigType = RSA_TYPE_SIG;
             break;
 #   endif
+#   ifdef USE_SHA224
+        case OID_SHA224_RSA_SIG:
+            sigLen = 10 + SHA224_HASH_SIZE + 9;
+            sigType = RSA_TYPE_SIG;
+            break;
+#   endif
 #   ifdef USE_SHA256
         case OID_SHA256_RSA_SIG:
             sigLen = 10 + SHA256_HASH_SIZE + 9;
@@ -5179,6 +5377,12 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
 #   ifdef ENABLE_SHA1_SIGNED_CERTS
         case OID_SHA1_ECDSA_SIG:
             sigLen = SHA1_HASH_SIZE;
+            sigType = ECDSA_TYPE_SIG;
+            break;
+#   endif
+#   ifdef USE_SHA224
+        case OID_SHA224_ECDSA_SIG:
+            sigLen = SHA224_HASH_SIZE;
             sigType = ECDSA_TYPE_SIG;
             break;
 #   endif
@@ -5214,6 +5418,11 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
 #   ifdef ENABLE_SHA1_SIGNED_CERTS
             case PKCS1_SHA1_ID:
                 sigLen = SHA1_HASH_SIZE;
+                break;
+#   endif
+#   ifdef USE_SHA224
+            case PKCS1_SHA224_ID:
+                sigLen = SHA224_HASH_SIZE;
                 break;
 #   endif
 #   ifdef USE_SHA256
@@ -5269,8 +5478,6 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
             }
             memcpy(tempSig, sc->signature, sc->signatureLen);
 
-            rsaData = NULL;
-
             if ((rc = psRsaDecryptPub(pkiPool, &ic->publicKey.key.rsa,
                      tempSig, sc->signatureLen, sigOut, sigLen, rsaData)) < 0)
             {
@@ -5322,7 +5529,6 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
 #  ifdef USE_ECC
         if (sigType == ECDSA_TYPE_SIG)
         {
-            rsaData = NULL;
             if ((rc = psEccDsaVerify(pkiPool,
                      &ic->publicKey.key.ecc,
                      sc->sigHash, sigLen,
@@ -5531,6 +5737,15 @@ static int32_t x509ConfirmSignature(const unsigned char *sigHash,
         if (len != SHA1_HASH_SIZE)
         {
             psTraceCrypto("SHA1_HASH_SIZE error in x509ConfirmSignature\n");
+            return PS_LIMIT_FAIL;
+        }
+        break;
+#   endif
+#   ifdef USE_SHA224
+    case OID_SHA224_ALG:
+        if (len != SHA224_HASH_SIZE)
+        {
+            psTraceCrypto("SHA224_HASH_SIZE error in x509ConfirmSignature\n");
             return PS_LIMIT_FAIL;
         }
         break;
@@ -5841,6 +6056,9 @@ static int32_t ocspParseBasicResponse(psPool_t *pool, uint32_t len,
 #  ifdef USE_SHA384
     psSha384_t sha3;
 #  endif
+#  ifdef USE_SHA512
+    psSha512_t sha512;
+#  endif
     psSize_t glen, plen;
     uint32_t blen;
     int32_t version, oid;
@@ -6051,16 +6269,30 @@ static int32_t ocspParseBasicResponse(psPool_t *pool, uint32_t len,
     case OID_SHA1_ECDSA_SIG:
 #  endif
         res->hashLen = SHA1_HASH_SIZE;
+        psSha1PreInit(&sha);
         psSha1Init(&sha);
         psSha1Update(&sha, startRes, (int32) (endRes - startRes));
         psSha1Final(&sha, res->hashResult);
         break;
+#  ifdef USE_SHA224
+    case OID_SHA224_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA224_ECDSA_SIG:
+#   endif
+        res->hashLen = SHA224_HASH_SIZE;
+        psSha224PreInit(&sha2);
+        psSha224Init(&sha2);
+        psSha224Update(&sha2, startRes, (int32) (endRes - startRes));
+        psSha224Final(&sha2, res->hashResult);
+        break;
+#  endif
 #  ifdef USE_SHA256
     case OID_SHA256_RSA_SIG:
 #   ifdef USE_ECC
     case OID_SHA256_ECDSA_SIG:
 #   endif
         res->hashLen = SHA256_HASH_SIZE;
+        psSha256PreInit(&sha2);
         psSha256Init(&sha2);
         psSha256Update(&sha2, startRes, (int32) (endRes - startRes));
         psSha256Final(&sha2, res->hashResult);
@@ -6072,9 +6304,22 @@ static int32_t ocspParseBasicResponse(psPool_t *pool, uint32_t len,
     case OID_SHA384_ECDSA_SIG:
 #   endif
         res->hashLen = SHA384_HASH_SIZE;
+        psSha384PreInit(&sha3);
         psSha384Init(&sha3);
         psSha384Update(&sha3, startRes, (int32) (endRes - startRes));
         psSha384Final(&sha3, res->hashResult);
+        break;
+#  endif
+#  ifdef USE_SHA512
+    case OID_SHA512_RSA_SIG:
+#   ifdef USE_ECC
+    case OID_SHA512_ECDSA_SIG:
+#   endif
+        res->hashLen = SHA512_HASH_SIZE;
+        psSha512PreInit(&sha512);
+        psSha512Init(&sha512);
+        psSha512Update(&sha512, startRes, (int32) (endRes - startRes));
+        psSha512Final(&sha512, res->hashResult);
         break;
 #  endif
     default:
@@ -6514,6 +6759,8 @@ static int32_t parseOcspReq(const void *data, size_t datalen,
     return psParseBufFinish(&ocspRequest);
 }
 
+#define RESPONDER_NAME_MAX_LENGTH 1024
+
 static int32_t ocspMatchResponderCert(const psOcspResponse_t *response,
     const psX509Cert_t *curr)
 {
@@ -6529,12 +6776,15 @@ static int32_t ocspMatchResponderCert(const psOcspResponse_t *response,
     {
         uint32_t len;
         /* Obtain the length of name tag including header.
-           Note: responderName has already been validated during parsing. */
-        const unsigned char *p = response->responderName + 1;
-        if (getAsnLength32(&p, 4, &len, 0) < 0)
-            return PS_FAILURE; /* Should not happen. */
+           Note: responderName has already been validated during parsing,
+           so getAsnTagLenUnsafe is ok.
+        */
+        len = getAsnTagLenUnsafe(response->responderName);
 
-        len = (uint32_t) (p + len - response->responderName);
+        if (len < 2 || len > RESPONDER_NAME_MAX_LENGTH)
+        {
+            return PS_FAILURE;
+        }
 
         /* Match certificate using subject name. */
         if (curr->unparsedBin == NULL ||
@@ -6809,6 +7059,16 @@ int32_t psOcspResponseValidate(psPool_t *pool, psX509Cert_t *trustedOCSP,
     /* Finally do the sig validation */
     switch (response->sigAlg)
     {
+#  ifdef USE_SHA224
+    case OID_SHA224_RSA_SIG:
+        sigOutLen = SHA224_HASH_SIZE;
+        sigType = PS_RSA;
+        break;
+    case OID_SHA224_ECDSA_SIG:
+        sigOutLen = SHA224_HASH_SIZE;
+        sigType = PS_ECC;
+        break;
+#  endif
 #  ifdef USE_SHA256
     case OID_SHA256_RSA_SIG:
         sigOutLen = SHA256_HASH_SIZE;
@@ -6826,6 +7086,16 @@ int32_t psOcspResponseValidate(psPool_t *pool, psX509Cert_t *trustedOCSP,
         break;
     case OID_SHA384_ECDSA_SIG:
         sigOutLen = SHA384_HASH_SIZE;
+        sigType = PS_ECC;
+        break;
+#  endif
+#  ifdef USE_SHA512
+    case OID_SHA512_RSA_SIG:
+        sigOutLen = SHA512_HASH_SIZE;
+        sigType = PS_RSA;
+        break;
+    case OID_SHA512_ECDSA_SIG:
+        sigOutLen = SHA512_HASH_SIZE;
         sigType = PS_ECC;
         break;
 #  endif

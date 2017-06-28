@@ -163,6 +163,17 @@ static __inline void *psDynBufAppendBuf(psDynBuf_t *db, const psBuf_t *b)
     return psDynBufAppendOctets(db, b->start, b->end - b->start);
 }
 
+static __inline void *psDynBufAppendParseBuf(psDynBuf_t *db,
+                                             const psParseBuf_t *pb)
+{
+    if (!pb || pb->err)
+    {
+        db->err++;
+        return NULL;
+    }
+    return psDynBufAppendBuf(db, &(pb->buf));
+}
+    
 static __inline void *psDynBufIncorporateDynBuf(psDynBuf_t *db, psDynBuf_t *db2)
 {
     size_t len;
@@ -201,6 +212,30 @@ void *psDynBufSubFinish(psDynBuf_t *sub);
 /* Subset of ASN.1 via psDynBuf. */
 char *psDynBufAppendAsn1TagGen(psDynBuf_t *db, unsigned char tag,
                                const unsigned char *bytes, size_t len);
+
+static inline
+char *psDynBufAppendAsn1IntegerSmall(psDynBuf_t *db, signed char byte)
+{
+    unsigned char bytes[1];
+
+    bytes[0] = (unsigned char) byte;
+    return psDynBufAppendAsn1TagGen(db, 0x02, bytes, 1);
+}
+
+static inline
+char *psDynBufAppendAsn1OctetString(psDynBuf_t *db,
+                                    const unsigned char *bytes, size_t len)
+{
+    return psDynBufAppendAsn1TagGen(db, 0x04, bytes, len);
+}
+
+static inline
+char *psDynBufAppendAsn1Oid(psDynBuf_t *db,
+                            const unsigned char *oidbytes, size_t len)
+{
+    /* Note: oidbytes shall not include OID identifier (6) or length. */
+    return psDynBufAppendAsn1TagGen(db, 0x06, oidbytes, len);
+}
 
 char *psDynBufBeginConstructedTag(psDynBuf_t *db, psDynBuf_t *sub);
 char *psDynBufEndConstructedTag(psDynBuf_t *sub, unsigned char tag);

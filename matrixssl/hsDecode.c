@@ -1599,6 +1599,15 @@ int32 parseServerHello(ssl_t *ssl, int32 hsLen, unsigned char **cp,
     /* See if the protocol is being downgraded */
     if (ssl->reqMinVer != ssl->minVer)
     {
+        if (ssl->clientRejectVersionDowngrade)
+        {
+            ssl->err = SSL_ALERT_PROTOCOL_VERSION;
+            psTraceInfo("Error: version downgrade attempt by server ");
+            psTraceInfo(" rejected: ServerHello.server_version <");
+            psTraceInfo(" ClientHello.client_version\n");
+            return MATRIXSSL_ERROR;
+        }
+
         if (ssl->reqMinVer == SSL3_MIN_VER && ssl->minVer >= TLS_MIN_VER)
         {
 #  ifdef DISABLE_SSLV3

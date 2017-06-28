@@ -83,6 +83,8 @@ extern "C" {
 #   define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384/**< @security NIST_MAY */
 #   define USE_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256/**< @security NIST_SHOULD */
 #   define USE_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384/**< @security NIST_SHOULD */
+/** CHACHA20-POLY1305 cipher suites according to old draft.
+    Do not enable except for compatibility with obsolete software. */
 /* #define USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 */
 
 /** Ephemeral ECC DH keys, RSA certificates */
@@ -93,6 +95,8 @@ extern "C" {
 #   define USE_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384/**< @security NIST_MAY */
 #   define USE_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256/**< @security NIST_SHOULD */
 #   define USE_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384/**< @security NIST_SHOULD */
+/** CHACHA20-POLY1305 cipher suites according to old draft.
+    Do not enable except for compatibility with obsolete software. */
 /* #define USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 */
 
 /** Ephemeral Diffie-Hellman ciphersuites, with RSA certificates */
@@ -241,6 +245,18 @@ extern "C" {
     the handshake should continue in a non-client auth state.
  */
 /* #define SERVER_WILL_ACCEPT_EMPTY_CLIENT_CERT_MSG */
+
+/******************************************************************************/
+/**
+    Allow partial parsing of CA certificate bundles. By default, loading of
+    CA files via matrixSslLoadRsaKeys, etc. will fail if the bundle contains
+    a certificate not supported by MatrixSSL's current configuration. When
+    this define is enabled, the parsing of some CA certificates is allowed fail.
+    When parsing of a CA cert fails, a dummy psX509Cert_t with will be added
+    to the CAcerts list. Consult the parseStatus members for details on why
+    the parsing of a specific certificate failed.
+ */
+/* #define ALLOW_CA_BUNDLE_PARTIAL_PARSE */
 
 /******************************************************************************/
 /**

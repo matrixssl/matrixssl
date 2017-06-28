@@ -34,6 +34,44 @@
 
 #include "../cryptoImpl.h"
 
+/* Compute tag length when it is known that p points to valid ASN.1 DER
+   encoding, no larger than 16 megabytes. */
+uint32_t getAsnTagLenUnsafe(const unsigned char *p)
+{
+    uint32_t len;
+
+    /* Return 0 for uninitialized data or NULL. */
+    if (p == NULL || *p == 0)
+    {
+        return 0;
+    }
+    len = p[1];
+    if (len >= 0x80)
+    {
+        unsigned char lenbytes[3] = { 0, 0, 0 }; /* Size up-to 16 Mbytes. */
+        len -= 0x80; /* Compute number of bytes in encoding. */
+        if (len == 0 || len >= 4)
+        {
+            /* Although the function is "Unsafe", check for too long
+               length encoding, because in future some parser may accept
+               input > 4 gigabytes. */
+            return 0; /* Too large length. */
+        }
+        /* Note: */
+        memcpy(lenbytes + 3 - len, p + 2, len);
+        len =
+            len + 2 +
+            ((lenbytes[0] << 16) |
+             (lenbytes[1] << 8) |
+             (lenbytes[2] << 0));
+    }
+    else
+    {
+        len += 2; /* Tag and length byte. */
+    }
+    return len;
+}
+
 /******************************************************************************/
 /*
     On success, p will be updated to point to first character of value and
@@ -470,6 +508,7 @@ static void checkAsnOidDatabase(int32_t *oi,
         switch (*oi)
         {
         case OID_SHA1_ALG: oid_hex = OID_SHA1_ALG_HEX; break;
+        case OID_SHA224_ALG: oid_hex = OID_SHA224_ALG_HEX; break;
         case OID_SHA256_ALG: oid_hex = OID_SHA256_ALG_HEX; break;
         case OID_SHA384_ALG: oid_hex = OID_SHA384_ALG_HEX; break;
         case OID_SHA512_ALG: oid_hex = OID_SHA512_ALG_HEX; break;
@@ -481,6 +520,7 @@ static void checkAsnOidDatabase(int32_t *oi,
         case OID_SHA1_RSA_SIG2: oid_hex = OID_SHA1_RSA_SIG2_HEX; break;
         case OID_ID_MGF1: oid_hex = OID_ID_MGF1_HEX; break;
         case OID_RSASSA_PSS: oid_hex = OID_RSASSA_PSS_HEX; break;
+        case OID_SHA224_RSA_SIG: oid_hex = OID_SHA224_RSA_SIG_HEX; break;
         case OID_SHA256_RSA_SIG: oid_hex = OID_SHA256_RSA_SIG_HEX; break;
         case OID_SHA384_RSA_SIG: oid_hex = OID_SHA384_RSA_SIG_HEX; break;
         case OID_SHA512_RSA_SIG: oid_hex = OID_SHA512_RSA_SIG_HEX; break;
@@ -532,6 +572,15 @@ static void checkAsnOidDatabase(int32_t *oi,
         case OID_PKCS7_ENCRYPTED_DATA: oid_hex = OID_PKCS7_ENCRYPTED_DATA_HEX; break;
         case OID_OCSP: oid_hex = OID_OCSP_HEX; break;
         case OID_BASIC_OCSP_RESPONSE: oid_hex = OID_BASIC_OCSP_RESPONSE_HEX; break;
+        case OID_ECKA_EG_X963KDF_SHA256: oid_hex = OID_ECKA_EG_X963KDF_SHA256_HEX; break;
+        case OID_ECKA_EG_X963KDF_SHA384: oid_hex = OID_ECKA_EG_X963KDF_SHA384_HEX; break;
+        case OID_ECKA_EG_X963KDF_SHA512: oid_hex = OID_ECKA_EG_X963KDF_SHA512_HEX; break;
+        case OID_DHSINGLEPASS_STDDH_SHA1KDF_SCHEME: oid_hex = OID_DHSINGLEPASS_STDDH_SHA1KDF_SCHEME_HEX; break;
+        case OID_DHSINGLEPASS_COFACTORDH_SHA1KDF_SCHEME: oid_hex = OID_DHSINGLEPASS_COFACTORDH_SHA1KDF_SCHEME_HEX; break;
+        case OID_MQVSINGLEPASS_SHA1KDF_SCHEME: oid_hex = OID_MQVSINGLEPASS_SHA1KDF_SCHEME_HEX; break;
+        case OID_DHSINGLEPASS_STDDH_SHA256KDF_SCHEME: oid_hex = OID_DHSINGLEPASS_STDDH_SHA256KDF_SCHEME_HEX; break;
+        case OID_DHSINGLEPASS_STDDH_SHA384KDF_SCHEME: oid_hex = OID_DHSINGLEPASS_STDDH_SHA384KDF_SCHEME_HEX; break;
+        case OID_DHSINGLEPASS_STDDH_SHA512KDF_SCHEME: oid_hex = OID_DHSINGLEPASS_STDDH_SHA512KDF_SCHEME_HEX; break;   
         default:
             /* No possible matches: bitwise-add not found constant to OID. */
             *oi |= OID_NOT_FOUND;

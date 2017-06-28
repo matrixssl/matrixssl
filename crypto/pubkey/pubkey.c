@@ -119,6 +119,94 @@ void psDeletePubKey(psPubKey_t **key)
 # ifdef USE_PRIVATE_KEY_PARSING
 #  ifdef MATRIX_USE_FILE_SYSTEM
 #   if defined(USE_ECC) && defined(USE_RSA)
+/*
+  Trial and error private key parse for when ECC or RSA is unknown.
+  keyBuf must point to a buffer of length keyBufLen, containing
+  a DER-encoded key.
+
+  Return codes:
+  1 RSA key
+  2 ECC key
+  < 0 error
+ */
+int32_t psParseUnknownPrivKeyMem(psPool_t *pool,
+        unsigned char *keyBuf, int32 keyBufLen,
+        const char *password, psPubKey_t *privkey)
+{
+    psRsaKey_t *rsakey;
+    psEccKey_t *ecckey;
+    int32_t keytype = 1;
+    psBool_t notRsaKey;
+
+    if (keyBuf == NULL || keyBufLen <= 0)
+        return PS_ARG_FAIL;
+
+     privkey->keysize = 0;
+     rsakey = &privkey->key.rsa;
+     ecckey = &privkey->key.ecc;
+
+     /* Examine data to ensure parses which could not succeed are not tried. */
+     
+     /* Guess if this can be RSA key based on length of encoding and content.
+        Even the smallest (obsolete 512-bit modulus) RSA private keys are >
+        256 bytes.
+     */
+     notRsaKey = keyBufLen < 257 || keyBuf[0] != 0x30 || keyBuf[1] < 0x82;
+
+     /* A raw RSAPrivateKey? */
+     if (notRsaKey != PS_FALSE ||
+         psRsaParsePkcs1PrivKey(pool, keyBuf, keyBufLen, rsakey)
+             < PS_SUCCESS)
+     {
+         /* A raw ECPrivateKey? */
+         if (psEccParsePrivKey(pool, keyBuf, keyBufLen, ecckey, NULL)
+                 < PS_SUCCESS)
+         {
+#    ifdef USE_PKCS8
+             /* A PKCS #8 PrivateKeyInfo containing an ECPrivateKey? */
+             if (psPkcs8ParsePrivBin(pool, keyBuf, keyBufLen,
+                             (char*)password, privkey))
+             {
+#    endif      /* USE_PKCS8 */
+                /* Nothing worked. */
+                 psTraceCrypto("Unable to parse private key. " \
+                         "Supported formats are RSAPrivateKey, " \
+                         "ECPrivateKey and PKCS #8.\n");
+                 return PS_FAILURE;
+#    ifdef USE_PKCS8
+             }
+             if (privkey->type == PS_RSA)
+             {
+                 keytype = 1;
+             }
+             else if (privkey->type == PS_ECC)
+             {
+                 keytype = 2;
+             }
+             goto parsed;
+#    endif  /* USE_PKCS8 */
+         }
+         keytype = 2;
+     }
+
+# ifdef USE_PKCS8
+parsed:
+# endif /* USE_PKCS8 */
+     if (keytype == 1)
+     {
+         privkey->type = PS_RSA;
+         privkey->keysize = psRsaSize(&privkey->key.rsa);
+     }
+     else
+     {
+         privkey->type = PS_ECC;
+         privkey->keysize = psEccSize(&privkey->key.ecc);
+     }
+     privkey->pool = pool;
+
+     return keytype;
+}
+
 /* Trial and error private key parse for when ECC or RSA is unknown.
 
     pemOrDer should be 1 if PEM
@@ -126,16 +214,18 @@ void psDeletePubKey(psPubKey_t **key)
     Return codes:
         1 RSA key
         2 ECC key
-        -1 error
+        < 0 error
  */
-int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
-    char *password, psPubKey_t *privkey)
+int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer,
+        const char *keyfile, const char *password,
+        psPubKey_t *privkey)
 {
     psRsaKey_t *rsakey;
     psEccKey_t *ecckey;
     int keytype = 1;
     unsigned char *keyBuf;
     int32 keyBufLen;
+    int32_t rc;
 
     privkey->keysize = 0;
     rsakey = &privkey->key.rsa;
@@ -152,7 +242,7 @@ int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
             {
                 psTraceStrCrypto("Unable to parse private key file %s\n",
                     keyfile);
-                return -1;
+                return PS_FAILURE;
             }
             keytype = 2;
         }
@@ -169,61 +259,33 @@ int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer, char *keyfile,
             psTraceStrCrypto("Unable to open private key file %s\n", keyfile);
             return -1;
         }
-        /* A raw RSAPrivateKey? */
-        if (psRsaParsePkcs1PrivKey(pool, keyBuf, keyBufLen, rsakey)
-            < PS_SUCCESS)
+        rc = psParseUnknownPrivKeyMem(pool, keyBuf, keyBufLen, password,
+                privkey);
+        psFree(keyBuf, pool);
+
+        /* Continue examining result of private key parsing. */
+        if (rc < 0)
         {
-            /* A raw ECPrivateKey? */
-            if (psEccParsePrivKey(pool, keyBuf, keyBufLen, ecckey, NULL)
-                < PS_SUCCESS)
-            {
-#    ifdef USE_PKCS8
-                /* A PKCS #8 PrivateKeyInfo containing an ECPrivateKey? */
-                if (psPkcs8ParsePrivBin(pool, keyBuf, keyBufLen, password,
-                        privkey))
-                {
-#    endif      /* USE_PKCS8 */
-                /* Nothing worked. */
-                psTraceCrypto("Unable to parse private key. " \
-                    "Supported formats are RSAPrivateKey, " \
-                    "ECPrivateKey and PKCS #8.\n");
-                psFree(keyBuf, pool);
-                return -1;
-            }
-#    ifdef USE_PKCS8
-            if (privkey->type == PS_RSA)
-            {
-                keytype = 1;
-            }
-            else if (privkey->type == PS_ECC)
-            {
-                keytype = 2;
-            }
-            goto parsed;
-#    endif  /* USE_PKCS8 */
+            psTraceStrCrypto("Unable to parse private key file %s\n", keyfile);
+            return -1;
         }
-        keytype = 2;
+        keytype = rc;
+        goto out; /* psParseUnknownPrivKeyMem already set up everything. */
+    }
+
+    if (keytype == 1)
+    {
+        privkey->type = PS_RSA;
+        privkey->keysize = psRsaSize(&privkey->key.rsa);
     }
     else
     {
-        keytype = 1;
+        privkey->type = PS_ECC;
+        privkey->keysize = psEccSize(&privkey->key.ecc);
     }
-parsed:
-    psFree(keyBuf, pool);
-}
-
-if (keytype == 1)
-{
-    privkey->type = PS_RSA;
-    privkey->keysize = psRsaSize(&privkey->key.rsa);
-}
-else
-{
-    privkey->type = PS_ECC;
-    privkey->keysize = psEccSize(&privkey->key.ecc);
-}
-privkey->pool = pool;
-return keytype;
+    privkey->pool = pool;
+out:
+    return keytype;
 }
 
 /* Trial and error public key parse for when ECC or RSA is unknown.
@@ -426,6 +488,16 @@ psRes_t psComputeHashForSig(const unsigned char *dataBegin,
         psSha1Final(&hash.sha1, hashOut);
         *hashOutLen = SHA1_HASH_SIZE;
         break;
+#ifdef USE_SHA224
+    case OID_SHA224_RSA_SIG:
+    case OID_SHA224_ECDSA_SIG:
+        psSha224PreInit(&hash.sha256);
+        psSha224Init(&hash.sha256);
+        psSha224Update(&hash.sha256, dataBegin, dataLen);
+        psSha224Final(&hash.sha256, hashOut);
+        *hashOutLen = SHA224_HASH_SIZE;
+        break;
+#endif /* USE_SHA224 */
     case OID_SHA256_RSA_SIG:
     case OID_SHA256_ECDSA_SIG:
         psSha256PreInit(&hash.sha256);
@@ -437,7 +509,7 @@ psRes_t psComputeHashForSig(const unsigned char *dataBegin,
 # ifdef USE_SHA384
     case OID_SHA384_RSA_SIG:
     case OID_SHA384_ECDSA_SIG:
-        psSha512PreInit(&hash.sha512);
+        psSha384PreInit(&hash.sha384);
         psSha384Init(&hash.sha384);
         psSha384Update(&hash.sha384, dataBegin, dataLen);
         psSha384Final(&hash.sha384, hashOut);

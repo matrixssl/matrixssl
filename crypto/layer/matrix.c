@@ -46,34 +46,45 @@ static char g_config[32] = "N";
 int32_t psCryptoOpen(const char *config)
 {
     uint32_t clen;
-
+    
     if (*g_config == 'Y')
     {
         return PS_SUCCESS; /* Function has been called previously */
     }
+
     /* 'config' is cryptoconfig + coreconfig */
-    strncpy(g_config, PSCRYPTO_CONFIG, sizeof(g_config) - 1);
     clen = strlen(PSCRYPTO_CONFIG) - strlen(PSCORE_CONFIG);
-    if (strncmp(g_config, config, clen) != 0)
+    if (strncmp(PSCRYPTO_CONFIG, config, clen) != 0)
     {
         psErrorStr( "Crypto config mismatch.\n" \
             "Library: " PSCRYPTO_CONFIG \
             "\nCurrent: %s\n", config);
-        return -1;
+        return PS_FAILURE;
     }
     if (psCoreOpen(config + clen) < 0)
     {
         psError("pscore open failure\n");
         return PS_FAILURE;
     }
+
 #ifdef USE_FLPS_BINDING
     flps_binding();
+    /* Check if FIPS Library Open failed. */
+    if ((int)CLS_LibStatus(flps_getCLS()) < 0)
+    {
+        return PS_SELFTEST_FAILED;
+    }
 #endif /* USE_FLPS_BINDING */
+
     psOpenPrng();
 #ifdef USE_CRL
     psCrlOpen();
 #endif
-    return 0;
+
+    /* Everything successful, store configuration. */
+    strncpy(g_config, PSCRYPTO_CONFIG, sizeof(g_config) - 1);
+
+    return PS_SUCCESS;
 }
 
 void psCryptoClose(void)

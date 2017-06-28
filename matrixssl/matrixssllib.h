@@ -959,6 +959,12 @@ typedef struct
                                                        CertificateVerify externally. */
 # endif /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
     int32 versionFlag;                              /* The SSL_FLAGS_TLS_ version (+ DTLS flag here) */
+#ifdef USE_CLIENT_SIDE_SSL
+    uint8_t clientRejectVersionDowngrade;             /* Send SSL_ALERT_PROTOCOL_VERSION if server proposes
+                                                         a lower version than what the client sent in the
+                                                         ClientHello. Effectively, this ensures that only
+                                                         the version in versionFlag can be negotiated. */
+#endif /* USE_CLIENT_SIDE_SSL */
     void *userPtr;                                  /* Initial value of ssl->userPtr during NewSession */
     void *memAllocPtr;                              /* Will be passed to psOpenPool for each call
                                                        related to this session */
@@ -968,6 +974,7 @@ typedef struct
                                                        is deleted  */
     matrixValidateCertsOptions_t validateCertsOpts; /* Certificate validation
                                                        options. */
+    void *userDataPtr; /* Initial value of ssl->userDataPtr during NewSession. */
 } sslSessOpts_t;
 
 typedef struct
@@ -1347,6 +1354,9 @@ struct ssl
     uint8_t reqMinVer;
     uint8_t majVer;
     uint8_t minVer;
+#ifdef USE_CLIENT_SIDE_SSL
+    uint8_t clientRejectVersionDowngrade;
+#endif /* USE_CLIENT_SIDE_SSL */
     uint8_t outRecType;
 
 # ifdef ENABLE_SECURE_REHANDSHAKES
@@ -1488,6 +1498,7 @@ struct ssl
     void *memAllocPtr;   /* Will be passed to psOpenPool for each call
                               related to this session */
     void *userPtr;
+    void *userDataPtr;
 };
 
 typedef struct ssl ssl_t;

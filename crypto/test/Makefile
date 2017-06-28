@@ -17,6 +17,11 @@ VECTOR_EXE:=algorithmTest$(E)
 SPEED_EXE:=throughputTest$(E)
 EXE:=$(VECTOR_EXE) $(SPEED_EXE)
 
+CRYPTOOPEN_SRC:=cryptoOpen.c
+CRYPTOOPEN_EXE:=cryptoOpen$(E)
+SRC+=$(CRYPTOOPEN_SRC)
+EXE+=$(CRYPTOOPEN_EXE)
+
 include $(MATRIXSSL_ROOT)/common.mk
 
 # Linked files
@@ -37,6 +42,9 @@ $(SPEED_EXE): $(SPEED_SRC:.c=.o) $(STATICS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(VECTOR_EXE): $(VECTOR_SRC:.c=.o) $(STATICS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(CRYPTOOPEN_EXE): $(CRYPTOOPEN_SRC:.c=.o) $(STATICS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

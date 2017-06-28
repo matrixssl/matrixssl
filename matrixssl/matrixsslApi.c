@@ -140,6 +140,11 @@ int32_t matrixSslNewClientSession(ssl_t **ssl, const sslKeys_t *keys,
     }
     lssl->userPtr = options->userPtr;
 
+    if (options->clientRejectVersionDowngrade)
+    {
+        lssl->clientRejectVersionDowngrade = 1;
+    }
+
 # ifndef USE_ONLY_PSK_CIPHER_SUITE
     if (expectedName)
     {

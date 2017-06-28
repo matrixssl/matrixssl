@@ -81,6 +81,11 @@ extern "C" {
 # define PS_MESSAGE_UNSUPPORTED          -42 /* Request/Response format/type is unsupported. */
 # define PS_VERSION_UNSUPPORTED          -43 /* Request/Response version is unsupported. */
 
+# define PS_SELFTEST_FAILED              -44 /* Selftest, such as FIPS 140-2
+                                                Powerup selftest has failed.
+                                                Software initialization has
+                                                failed. */
+
 /** Public return value codes for OCSP.
 
     These are additional possible return values from OCSP parsing.
@@ -359,6 +364,28 @@ static __inline void psMd5Sha1Cpy(psMd5Sha1_t *d, const psMd5Sha1_t *s)
 }
 # endif  /* USE_MD5SHA1 */
 
+# ifdef USE_SHA224
+/******************************************************************************/
+/* Pre-init should be called for uninitialized, e.g. function local
+   digest contexts, before calling the initialization function. */
+static __inline void psSha224PreInit(psSha256_t *sha224)
+{
+    /* Nothing to pre-initialize for native crypto. */
+}
+PSPUBLIC void psSha224Init(psSha256_t *sha224);
+PSPUBLIC void psSha224Update(psSha256_t *sha224,
+                             const unsigned char *buf, uint32_t len);
+PSPUBLIC void psSha224Final(psSha256_t * sha224,
+                            unsigned char hash[SHA224_HASHLEN]);
+static __inline void psSha224Sync(psSha256_t *md, int sync_all)
+{
+}
+static __inline void psSha224Cpy(psSha256_t *d, const psSha256_t *s)
+{
+    memcpy(d, s, sizeof(psSha256_t));
+}
+# endif  /* USE_SHA224 */
+
 # ifdef USE_SHA256
 /******************************************************************************/
 /* Pre-init should be called for uninitialized, e.g. function local
@@ -558,9 +585,13 @@ PSPUBLIC void psClearPubKey(psPubKey_t *key);
 PSPUBLIC int32_t psNewPubKey(psPool_t *pool, uint8_t type, psPubKey_t **key);
 PSPUBLIC void psDeletePubKey(psPubKey_t **key);
 PSPUBLIC int32_t psParseUnknownPrivKey(psPool_t *pool, int pemOrDer,
-                                       char *keyfile, char *password, psPubKey_t *privkey);
+        const char *keyfile, const char *password,
+        psPubKey_t *privkey);
+PSPUBLIC int32_t psParseUnknownPrivKeyMem(psPool_t *pool,
+        unsigned char *keyBuf, int32 keyBufLen,
+        const char *password, psPubKey_t *privkey);
 PSPUBLIC int32_t psParseUnknownPubKey(psPool_t *pool, int pemOrDer,
-                                      char *keyfile, const char *password, psPubKey_t *pubkey);
+        char *keyfile, const char *password, psPubKey_t *pubkey);
 # endif
 
 # ifdef USE_RSA

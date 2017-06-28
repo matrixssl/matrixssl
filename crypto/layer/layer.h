@@ -155,11 +155,14 @@
 /* #undef USE_MATRIX_CHACHA20_POLY1305 / * @note, not defined in matrix crypto * / */
 #   define USE_LIBSODIUM_CHACHA20_POLY1305
 #  endif
-
+ 
+/* libsodium AES-GCM is not automatically enabled.
+   libsodium AES-GCM offers only 256-bit AES-GCM, where as TLS uses 128/256.
 #  ifdef USE_MATRIX_AES_GCM
 #   undef USE_MATRIX_AES_GCM
 #   define USE_LIBSODIUM_AES_GCM
 #  endif
+*/
 
 #  ifdef USE_MATRIX_SHA256
 #   undef USE_MATRIX_SHA256

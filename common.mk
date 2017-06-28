@@ -1,15 +1,17 @@
 ##
 # Common Makefile definitions.
 # @version $Format:%h%d$
-# Copyright (c) 2013-2016 INSIDE Secure Corporation. All Rights Reserved.
+# Copyright (c) 2013-2017 INSIDE Secure Corporation. All Rights Reserved.
 #
 #-------------------------------------------------------------------------------
 
+# Allow building inclusion paths relative to location of common.mk file.
+COMMON_MK_PATH:=$(dir $(lastword $(MAKEFILE_LIST)))
 
 # Allow extra CFLAGS, CPPFLAGS and LDFLAGS to be used.
-LDFLAGS += $(EXTRA_LDFLAGS)
-CFLAGS += $(CFLAGS_STANDARD) $(CFLAGS_PLATFORM) $(CFLAGS_ADDITIONAL) $(CFLAGS_WARNINGS) $(CFLAGS_CPU) $(CFLAGS_ASM) $(CFLAGS_PROFILE) $(DEBUGGABLE) $(EXTRA_CFLAGS)
-CPPFLAGS += $(CPPFLAGS_STANDARD) $(CPPFLAGS_PLATFORM) $(CPPFLAGS_ADDITIONAL) $(CPPFLAGS_WARNINGS) $(CPPFLAGS_CPPPU) $(CPPFLAGS_ASM) $(CPPFLAGS_PROFILE) $(DEBUGGABLE) $(EXTRA_CPPFLAGS)
+LDFLAGS += $(EXTRA_LDFLAGS) $(LDFLAGS_MAKEFILES)
+CFLAGS += $(CFLAGS_STANDARD) $(CFLAGS_PLATFORM) $(CFLAGS_ADDITIONAL) $(CFLAGS_WARNINGS) $(CFLAGS_CPU) $(CFLAGS_ASM) $(CFLAGS_PROFILE) $(CFLAGS_MAKEFILES) $(DEBUGGABLE) $(EXTRA_CFLAGS)
+CPPFLAGS += $(CPPFLAGS_STANDARD) $(CPPFLAGS_PLATFORM) $(CPPFLAGS_ADDITIONAL) $(CPPFLAGS_WARNINGS) $(CPPFLAGS_CPPPU) $(CPPFLAGS_ASM) $(CPPFLAGS_PROFILE) $(CPPFLAGS_MAKEFILES) $(DEBUGGABLE) $(EXTRA_CPPFLAGS)
 
 #-------------------------------------------------------------------------------
 ## Makefile variables that must be defined in this file
@@ -131,6 +133,7 @@ ifndef MATRIX_DEBUG
 endif
 CFLAGS+=$(OPT) $(C_STD)
 
+ifeq "$(COMMON_MK_NO_TARGETS)" ""
 default: $(BUILD)
 
 debug:
@@ -138,6 +141,7 @@ debug:
 
 release:
 	@$(MAKE) $(JOBS) compile
+endif
 
 ifeq ($(SSH_PACKAGE),1)
  CFLAGS+=-DSSH_PACKAGE
@@ -290,22 +294,8 @@ ifdef USE_OPENSSL_CRYPTO
 endif
 #endif
 
-#ifdef USE_LIBSODIUM_CRYPTO
-#USE_LIBSODIUM_CRYPTO:=1
-ifdef USE_LIBSODIUM_CRYPTO
- LIBSODIUM_ROOT:=/opt/libsodium-1.0.8/src/libsodium
- ifdef LIBSODIUM_ROOT
-  # Statically link against a given libsodium
-  CFLAGS+=-I$(LIBSODIUM_ROOT)/include
-  LDFLAGS+=$(LIBSODIUM_ROOT)/.libs/libsodium.a
- endif
- ifndef LIBSODIUM_ROOT
-  $(error Please define LIBSODIUM_ROOT)
- endif
- CFLAGS+=-DUSE_LIBSODIUM_CRYPTO
- STROPTS+=", USE_LIBSODIUM_CRYPTO"
-endif
-#endif
+# Include optional support for libsodium
+-include $(COMMON_MK_PATH)/makefiles/libsodium_support.mk
 
 # Linux Target
 ifneq (,$(findstring -linux,$(CCARCH)))
@@ -346,7 +336,30 @@ OBJS=$(SRC:.c=.o) $(SRC:.S:*.o)
 # Remove extra spaces in CFLAGS
 #CFLAGS=$(strip $(CFLAGS))
 
+ifneq (,$(filter defines,$(MAKECMDGOALS)))
 # Display the precompiler defines for the current build settings
+# The rule is only available if explicitly requested on command line.
+
 defines:
 	:| $(CC) $(CFLAGS) -dM -E -x c -
+endif
 
+# Introduce here paths to additional build files (services) available.
+use_prepkg_mk=$(MATRIXSSL_ROOT)/makefiles/prepkg.mk
+use_testsupp_mk=$(MATRIXSSL_ROOT)/makefiles/testsupp.mk
+use_rules_mk=$(MATRIXSSL_ROOT)/makefiles/rules.mk
+
+# Provide names of built packages for interpackage references
+# Note: Some of these may not be built in some cases.
+LIBCORE_S_A=$(MATRIXSSL_ROOT)/core/libcore_s$(A)
+LIBCRYPT_S_A=$(MATRIXSSL_ROOT)/crypto/libcrypt_s$(A)
+LIBCMS_S_A=$(MATRIXSSL_ROOT)/crypto/cms/libcms_s$(A)
+LIBSSL_S_A=$(MATRIXSSL_ROOT)/matrixssl/libssl_s$(A)
+
+# Optional external libraries
+LIBZ=-lz
+LIBDL=-ldl
+LIBTHREAD=-lpthread
+
+# When linking use default compiler front-end
+CC_LD=$(CC)

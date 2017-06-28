@@ -1,0 +1,5 @@
+This directory is for additional third party software which MatrixSSL may use.
+
+The packages which may be in this directory can be found from:
+ * https://download.libsodium.org/libsodium/releases/old/libsodium-1.0.8.tar.gz
+ * https://download.libsodium.org/libsodium/releases/libsodium-1.0.12.tar.gz
