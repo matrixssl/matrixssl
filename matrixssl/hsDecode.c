@@ -658,6 +658,11 @@ SKIP_STANDARD_RESUMPTION:
     }
     else
     {
+        /* Reset the session ID now. If the client specified one and we're
+            sending it back this means a session resumption, which is wrong */
+        memset(ssl->sessionId, 0, SSL_MAX_SESSION_ID_SIZE);
+        ssl->sessionIdLen = 0;
+
 # ifdef USE_DHE_CIPHER_SUITE
         /* If we are DH key exchange we need to generate some keys.  The
             FLAGS_DHE_KEY_EXCH will eventually drive the state matchine to

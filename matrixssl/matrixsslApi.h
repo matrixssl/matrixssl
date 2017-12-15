@@ -72,6 +72,7 @@ extern "C" {
 # define MATRIXSSL_HANDSHAKE_COMPLETE    5            /* Handshake completed */
 # define MATRIXSSL_RECEIVED_ALERT    6                /* An alert was received */
 # define MATRIXSSL_APP_DATA_COMPRESSED   7            /* App data must be inflated */
+# define MATRIXSSL_ZERO_BUFFER       8                /* matrixSslGetReadbuf returned a zero lengh buffer */
 
 /******************************************************************************/
 /*

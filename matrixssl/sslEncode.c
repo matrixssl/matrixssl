@@ -39,7 +39,9 @@
 # ifndef USE_ONLY_PSK_CIPHER_SUITE
 static int32 writeCertificate(ssl_t *ssl, sslBuf_t *out, int32 notEmpty);
 #  if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+static int32 writeCertificateStatusOrig(ssl_t *ssl, sslBuf_t *out);
 static int32 writeCertificateStatus(ssl_t *ssl, sslBuf_t *out);
+static int32 writeMultiRecordCertificateStatus(ssl_t *ssl, sslBuf_t *out);
 #  endif
 # endif
 static int32 writeChangeCipherSpec(ssl_t *ssl, sslBuf_t *out);
@@ -1672,6 +1674,11 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
         {
             extSize = 2;
             messageSize += 4; /* 2 type, 2 length, 0 value */
+
+            if (ssl->hshakeHeadLen + ssl->recordHeadLen + 4 + ssl->keys->OCSPResponseBufLen > ssl->maxPtFrag) {
+                messageSize += addCertFragOverhead(ssl, ssl->hshakeHeadLen + ssl->recordHeadLen + 4 +
+                                                   ssl->keys->OCSPResponseBufLen);
+            }
 
             /* And the handshake message oh.  1 type, 3 len, x OCSPResponse
                 The status_request flag will only have been set if a
@@ -5111,7 +5118,7 @@ static int32 writeMultiRecordCertificate(ssl_t *ssl, sslBuf_t *out,
 
 
 #  if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
-static int32 writeCertificateStatus(ssl_t *ssl, sslBuf_t *out)
+static int32 writeCertificateStatusOrig(ssl_t *ssl, sslBuf_t *out)
 {
     unsigned char *c, *end, *encryptStart;
     uint8_t padLen;
@@ -5163,6 +5170,221 @@ static int32 writeCertificateStatus(ssl_t *ssl, sslBuf_t *out)
     out->end = c;
     return MATRIXSSL_SUCCESS;
 
+}
+
+#define CERTIFICATE_STATUS_OCSP        1
+
+/*
+    A fragmented write of the CERTIFICATE_STATUS handhshake message.  This is one
+    of the handshake messages that supports fragmentation because it is one of the
+    messages where the 512byte plaintext max of the max_fragment extension can
+    be exceeded.
+*/
+static int32 writeMultiRecordCertificateStatus(ssl_t *ssl, sslBuf_t *out)
+{
+    unsigned char *DER;
+    unsigned char *c, *end, *encryptStart;
+    uint8_t padLen;
+    psSize_t messageSize, rc, DERLen;
+    int32 midWrite, midSizeWrite, countDown, firstOne = 1;
+    int32 lsize;
+
+    c = out->end;
+    end = out->buf + out->size;
+
+    midSizeWrite = midWrite = 0;
+    DER = ssl->keys->OCSPResponseBuf;
+    DERLen = ssl->keys->OCSPResponseBufLen;
+
+    lsize = 1 + 3; // 1 byte OCSP status type + 3 bytes DER length;
+
+    while (DERLen > 0) {
+        if (firstOne) {
+            firstOne = 0;
+            countDown = ssl->maxPtFrag;
+
+            messageSize = DERLen + lsize + ssl->recordHeadLen + ssl->hshakeHeadLen;
+            if ((rc = writeRecordHeader(ssl,
+                    SSL_RECORD_TYPE_HANDSHAKE_FIRST_FRAG, SSL_HS_CERTIFICATE_STATUS,
+                    &messageSize, &padLen, &encryptStart, end, &c)) < 0) {
+                return rc;
+            }
+
+            // Write the status type
+            *c = CERTIFICATE_STATUS_OCSP; c++;
+
+            // Account for what has been written so far
+            countDown -= ssl->hshakeHeadLen + 1;
+
+            midWrite = 0;
+            if (countDown < 3) {
+                /* Fragment falls right on DER len write.  Has
+                    to be at least one byte or countDown would have
+                    been 0 and got us out of here already*/
+                *c = (unsigned char)((DERLen & 0xFF0000) >> 16);
+                c++; countDown--;
+                midSizeWrite = 2;
+                if (countDown != 0) {
+                    *c = (DERLen & 0xFF00) >> 8; c++; countDown--;
+                    midSizeWrite = 1;
+                    if (countDown != 0) {
+                        *c = (DERLen & 0xFF); c++; countDown--;
+                        midSizeWrite = 0;
+                    }
+                }
+                goto postpone_and_next;
+            } else {
+                *c = (unsigned char)((DERLen & 0xFF0000) >> 16);
+                c++;
+                *c = (DERLen & 0xFF00) >> 8; c++;
+                *c = (DERLen & 0xFF); c++;
+                countDown -= 3;
+            }
+            midWrite = min(DERLen, countDown);
+            memcpy(c, DER, midWrite);
+            DERLen -= midWrite;
+            c += midWrite;
+            countDown -= midWrite;
+
+            postpone_and_next:
+            if ((rc = postponeEncryptRecord(ssl, SSL_RECORD_TYPE_HANDSHAKE,
+                    SSL_HS_CERTIFICATE_STATUS, messageSize, padLen, encryptStart, out,
+                    &c)) < 0) {
+                return rc;
+            }
+
+            out->end = c;
+        } else {
+ /*
+            Not-first fragments
+ */
+            if (midSizeWrite > 0) {
+                messageSize = midSizeWrite;
+            } else {
+                messageSize = 0;
+            }
+            if ((DERLen + messageSize) > ssl->maxPtFrag) {
+                messageSize += ssl->maxPtFrag;
+            } else {
+                messageSize += DERLen;
+            }
+
+            countDown = messageSize;
+            messageSize += ssl->recordHeadLen;
+            /* Second, etc... */
+            if ((rc = writeRecordHeader(ssl, SSL_RECORD_TYPE_HANDSHAKE_FRAG,
+                    SSL_HS_CERTIFICATE_STATUS, &messageSize, &padLen, &encryptStart,
+                    end, &c)) < 0) {
+                return rc;
+            }
+
+            if (midSizeWrite > 0) {
+                if (midSizeWrite == 2) {
+                    *c = (DERLen & 0xFF00) >> 8; c++;
+                    *c = (DERLen & 0xFF); c++;
+                    countDown -= 2;
+                } else {
+                    *c = (DERLen & 0xFF); c++;
+                    countDown -= 1;
+                }
+                midSizeWrite = 0;
+            }
+
+            if (countDown < DERLen) {
+                memcpy(c, DER + midWrite, countDown);
+                DERLen -= countDown;
+                c += countDown;
+                midWrite += countDown;
+                countDown = 0;
+            } else {
+                memcpy(c, DER + midWrite, DERLen);
+                c += DERLen;
+                countDown -= DERLen;
+                DERLen -= DERLen;
+            }
+
+            if ((rc = postponeEncryptRecord(ssl, SSL_RECORD_TYPE_HANDSHAKE,
+                    SSL_HS_CERTIFICATE_STATUS, messageSize, padLen, encryptStart, out,
+                    &c)) < 0) {
+                return rc;
+            }
+            out->end = c;
+        }
+    }
+
+    out->end = c;
+    return MATRIXSSL_SUCCESS;
+}
+
+/******************************************************************************/
+/*
+    Write a Certificate Status message.
+    The encoding of the message is as follows:
+        1 byte status type
+        3 byte length of DER data (network byte order)
+        x bytes DER data
+*/
+static int32 writeCertificateStatus(ssl_t *ssl, sslBuf_t *out)
+{
+    unsigned char *DER;
+    uint32 DERLen;
+
+    unsigned char *c, *end, *encryptStart;
+    uint8_t padLen;
+    psSize_t lsize, messageSize, rc;
+
+    /* Easier to exclude this message internally rather than futher muddy the
+        numerous #ifdef and ssl_t tests in the caller */
+    if (ssl->extFlags.status_request == 0)
+    {
+        return MATRIXSSL_SUCCESS;
+    }
+
+    psTraceHs("<<< server creating CERTIFICATE_STATUS  message\n");
+
+    c = out->end;
+    end = out->buf + out->size;
+
+    DERLen = ssl->keys->OCSPResponseBufLen;
+    lsize = 1 + 3;  // 1 byte status type + 3 bytes DER length
+
+    /* TODO DTLS: Make sure this maxPtFrag is consistent with the fragment
+        extension and is not interfering with DTLS notions of fragmentation */
+    if ((DERLen + lsize + ssl->hshakeHeadLen) > ssl->maxPtFrag) {
+        return writeMultiRecordCertificateStatus(ssl, out);
+    } else {
+        messageSize =
+            ssl->recordHeadLen +
+            ssl->hshakeHeadLen +
+            lsize + DERLen;
+
+        if ((rc = writeRecordHeader(ssl, SSL_RECORD_TYPE_HANDSHAKE,
+                SSL_HS_CERTIFICATE_STATUS, &messageSize, &padLen, &encryptStart,
+                end, &c)) < 0) {
+            return rc;
+        }
+
+        // Write out status type
+        *c = CERTIFICATE_STATUS_OCSP; c++;
+
+        // Write out DER length and DER
+        DER = ssl->keys->OCSPResponseBuf;
+        if (DERLen > 0) {
+            *c = (unsigned char)((DERLen & 0xFF0000) >> 16); c++;
+            *c = (DERLen & 0xFF00) >> 8; c++;
+            *c = (DERLen & 0xFF); c++;
+            memcpy(c, DER, DERLen);
+            c += DERLen;
+        }
+
+        if ((rc = postponeEncryptRecord(ssl, SSL_RECORD_TYPE_HANDSHAKE,
+                SSL_HS_CERTIFICATE_STATUS, messageSize, padLen, encryptStart, out,
+                &c)) < 0) {
+            return rc;
+        }
+        out->end = c;
+    }
+    return MATRIXSSL_SUCCESS;
 }
 #  endif /* OCSP && SERVER_SIDE_SSL */
 
