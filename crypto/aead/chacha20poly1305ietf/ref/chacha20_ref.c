@@ -5,7 +5,7 @@
  Public domain.
  */
 
-#include "ps_chacha20poly1305ietf_config.h"
+#include "../ps_chacha20poly1305ietf_config.h"
 #ifdef USE_MATRIX_CHACHA20_POLY1305_IETF
 # include <stdint.h>
 # include <stdlib.h>

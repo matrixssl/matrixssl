@@ -611,6 +611,7 @@ void psLogfEnable(const char *module_or_level)
 
     if (strlen(module_or_level) <= PS_LOGF_UNIT_MAX_LEN)
     {
+#ifndef WIN32
         /* use unsetenv/setenv to specify logging settings. */
         snprintf(buf, sizeof(buf), "PS_DISABLE_%.*s", (int)PS_LOGF_UNIT_MAX_LEN,
                  module_or_level);
@@ -618,6 +619,7 @@ void psLogfEnable(const char *module_or_level)
         snprintf(buf, sizeof(buf), "PS_ENABLE_%.*s", (int)PS_LOGF_UNIT_MAX_LEN,
                  module_or_level);
         setenv(buf, "1", 0);
+#endif
     }
     psLogfFlush();
 }
@@ -629,6 +631,7 @@ void psLogfDisable(const char *module_or_level)
 
     if (strlen(module_or_level) <= PS_LOGF_UNIT_MAX_LEN)
     {
+#ifndef WIN32
         /* use unsetenv/setenv to specify logging settings. */
         snprintf(buf, sizeof(buf), "PS_ENABLE_%.*s", (int)PS_LOGF_UNIT_MAX_LEN,
                  module_or_level);
@@ -636,6 +639,7 @@ void psLogfDisable(const char *module_or_level)
         snprintf(buf, sizeof(buf), "PS_DISABLE_%.*s", (int)PS_LOGF_UNIT_MAX_LEN,
                  module_or_level);
         setenv(buf, "1", 0);
+#endif
     }
     psLogfFlush();
 }

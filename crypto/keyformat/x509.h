@@ -1,6 +1,6 @@
 /**
  *      @file    x509.h
- *      @version $Format:%h%d$
+ *      @version $Format:%h%d$ 
  *
  *      X.509 header.
  */
@@ -757,7 +757,17 @@ extern int32_t psX509GetOnelineDN(const x509DNattributes_t *DN,
 
 #  ifdef USE_OCSP_RESPONSE
 #   include <time.h>
-#   include <stdbool.h>
+
+#   ifdef WIN32
+#    define false   0
+#    define true    1
+
+#    define bool int
+
+#    define timegm _mkgmtime
+#   else
+#    include <stdbool.h>
+#   endif 
 
 /* The default value of allowed mismatch in times in OCSP messages and the local
    clock. */

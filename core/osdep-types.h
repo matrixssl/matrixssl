@@ -45,12 +45,18 @@
 #  define POSIX
 #  define LINUX
 #  define MATRIX_USE_FILE_SYSTEM
+#  include <sys/types.h>
 # elif defined(__APPLE__) && defined(__MACH__) /* Mac OS X */
 #  define POSIX
 #  define OSX
 #  define HAVE_NATIVE_INT64
 #  define MATRIX_USE_FILE_SYSTEM
 # elif defined(_WIN32) /* Windows */
+#  define __attribute__(x)
+#  define __func__ __FUNCTION__
+#  if !defined(va_copy)
+#    define va_copy(dest, src) ((dest) = (src))
+#  endif
 #  ifndef WIN32
 #   define WIN32
 #  endif
@@ -89,7 +95,7 @@
 # endif /* GNUC/CLANG */
 
 /* Try to determine if the compiler/platform supports 64 bit integer ops */
-# if !defined(HAVE_NATIVE_INT64) && defined(__SIZEOF_LONG_LONG__)
+# if !defined(HAVE_NATIVE_INT64) && (defined(__SIZEOF_LONG_LONG__) || defined(__GLIBC_HAVE_LONG_LONG))
 #  define HAVE_NATIVE_INT64 /* Supported by compiler */
 # endif
 

@@ -1,6 +1,6 @@
 /**
  *      @file    x509dbg.c
- *      @version $Format:%h%d$
+ *      @version $Format:%h%d$ 
  *
  *      ASN.1 Parsing: convenience functions for formatting ASN.1.
  */
@@ -32,9 +32,9 @@
  */
 /******************************************************************************/
 
-#if !defined USE_X509 && !defined USE_OCSP_RESPONSE
+//#if !defined USE_X509 && !defined USE_OCSP_RESPONSE
 # include "../cryptoImpl.h" /* MatrixSSL API interface and configuration. */
-#endif
+//#endif
 
 #if (defined USE_X509 && defined USE_FULL_CERT_PARSE) || defined USE_OCSP_RESPONSE
 

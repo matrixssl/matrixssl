@@ -519,7 +519,8 @@ int32 psPkcs8ParsePrivBin(psPool_t *pool, unsigned char *buf, int32 size,
         if (plen > 0)
         {
             /* Unexpected extra data remains. Treat it as an error. */
-            goto PKCS8_FAIL;
+            psTraceIntCrypto("Unexpected extra data: %d\n", plen);
+            //goto PKCS8_FAIL;
         }
     }
 
