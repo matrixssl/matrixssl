@@ -1088,15 +1088,15 @@ PSPUBLIC int32 psToUtf32String(psPool_t *pool,
 
 /******************************************************************************/
 /*
-	Support for memory allocation in order to avoid applications that redefine
-	malloc/free (see Perl)
+    Support for memory allocation in order to avoid applications that redefine
+    malloc/free (see Perl)
 */
 void *psMallocNative(size_t size)
 {
-	return malloc(size);
+    return malloc(size);
 }
 
 void psFreeNative(void *ptr)
 {
-	free(ptr);
+    free(ptr);
 }

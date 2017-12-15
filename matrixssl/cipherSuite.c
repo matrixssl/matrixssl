@@ -2305,39 +2305,39 @@ int32_t haveKeyMaterial(const ssl_t *ssl, int32 cipherType, short reallyTest)
 
 # ifdef USE_SERVER_PREFERRED_CIPHERS
 
-/*	quick sort support for sorting descendingly the client's supported
-	supported cipher list
+/*  quick sort support for sorting descendingly the client's supported
+    supported cipher list
 */
 void quick_sort_desc(uint32 *v, int l, int r) {
-	int i = l, j = r;
-	int tmp;
-	int p = v[(l + r) / 2];
+    int i = l, j = r;
+    int tmp;
+    int p = v[(l + r) / 2];
 
-	while (i <= j) {
-		while (v[i] > p)
-			i++;
-		while (v[j] < p)
-			j--;
+    while (i <= j) {
+        while (v[i] > p)
+            i++;
+        while (v[j] < p)
+            j--;
 
-		if (i <= j) {
-			tmp = v[i];
-			v[i] = v[j];
-			v[j] = tmp;
-			i++;
-			j--;
-		}
-	};
+        if (i <= j) {
+            tmp = v[i];
+            v[i] = v[j];
+            v[j] = tmp;
+            i++;
+            j--;
+        }
+    };
 
-	if (l < j)
-		quick_sort_desc(v, l, j);
-	if (i < r)
-		quick_sort_desc(v, i, r);
+    if (l < j)
+        quick_sort_desc(v, l, j);
+    if (i < r)
+        quick_sort_desc(v, i, r);
 }
 
 # endif /* USE_SERVER_PREFERRED_CIPHERS */
 
-/*	0 return is a key was found
-	<0 is no luck
+/*  0 return is a key was found
+    <0 is no luck
 */
 int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 {
@@ -2353,47 +2353,51 @@ int32 chooseCipherSuite(ssl_t *ssl, unsigned char *listStart, int32 listLen)
 
 #define MAX_CIPHERS 256
 
-	unsigned char			*cc = listStart;
-	unsigned char			*ec = listStart + listLen;
-	uint32					ciphers[MAX_CIPHERS];
-	int						ciphersLen = 0, cn = 0, i = 0;
+    unsigned char           *cc = listStart;
+    unsigned char           *ec = listStart + listLen;
+    uint32                  ciphers[MAX_CIPHERS];
+    int                     ciphersLen = 0, cn = 0, i = 0;
 
-	while ((cc < ec) && (cn < MAX_CIPHERS)) {
-		if (ssl->rec.majVer > SSL2_MAJ_VER) {
-			ciphers[cn] = *cc << 8; cc++;
-			ciphers[cn] += *cc; cc++;
-		} else {
-			/* Deal with an SSLv2 hello message.  Ciphers are 3 bytes long */
-			ciphers[cn] = *cc << 16; cc++;
-			ciphers[cn] += *cc << 8; cc++;
-			ciphers[cn] += *cc; cc++;
-		}
+    while ((cc < ec) && (cn < MAX_CIPHERS)) {
+        if (ssl->rec.majVer > SSL2_MAJ_VER) {
+            ciphers[cn] = *cc << 8; cc++;
+            ciphers[cn] += *cc; cc++;
+        } else {
+            /* Deal with an SSLv2 hello message.  Ciphers are 3 bytes long */
+            ciphers[cn] = *cc << 16; cc++;
+            ciphers[cn] += *cc << 8; cc++;
+            ciphers[cn] += *cc; cc++;
+        }
 
-		psTraceIntInfo("Cipher index %d ", cn);
-		psTraceIntInfo("is %d\n", ciphers[cn]);
+        psTraceIntInfo("Cipher index %d ", cn);
+        psTraceIntInfo("is %d\n", ciphers[cn]);
 
-		cn++;
-	}
+        cn++;
+    }
 
-	if (cn > 1) quick_sort_desc(ciphers, 0, cn - 1);
+    if (cn > 1) quick_sort_desc(ciphers, 0, cn - 1);
 
-	while (i < cn) {
-		cipher = ciphers[i++];
+    while (i < cn) {
+        cipher = ciphers[i++];
 
 # else
 
-	end = c + listLen;
-	while (c < end) {
-		
-		if (ssl->rec.majVer > SSL2_MAJ_VER) {
-			cipher = *c << 8; c++;
-			cipher += *c; c++;
-		} else {
-			/* Deal with an SSLv2 hello message.  Ciphers are 3 bytes long */
-			cipher = *c << 16; c++;
-			cipher += *c << 8; c++;
-			cipher += *c; c++;
-		}
+    end = c + listLen;
+    while (c < end)
+    {
+
+        if (ssl->rec.majVer > SSL2_MAJ_VER)
+        {
+            cipher = *c << 8; c++;
+            cipher += *c; c++;
+        }
+        else
+        {
+            /* Deal with an SSLv2 hello message.  Ciphers are 3 bytes long */
+            cipher = *c << 16; c++;
+            cipher += *c << 8; c++;
+            cipher += *c; c++;
+        }
 
 # endif /* USE_SERVER_PREFERRED_CIPHERS */
 

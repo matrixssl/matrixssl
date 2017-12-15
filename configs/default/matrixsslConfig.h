@@ -291,21 +291,15 @@ extern "C" {
     protocol that will be tunneled over TLS.
     @see ALPN section in the developer's guide for information.
  */
-//#define USE_ALPN
+/* #define USE_ALPN */
 
 /******************************************************************************/
 /**
-	Enable the Certificate Transparecy TLS extension
+    Enable the Trusted CA Indication CLIENT_HELLO extension.  Will send the
+    sha1 hash of each CA file to the server for help in server selection.
+    This extra level of define is to help isolate the SHA1 requirement
  */
-//#define USE_SCT
-
-/******************************************************************************/
-/**
-	Enable the Trusted CA Indication CLIENT_HELLO extension.  Will send the
-	sha1 hash of each CA file to the server for help in server selection.
-	This extra level of define is to help isolate the SHA1 requirement
-*/
-//#define USE_TRUSTED_CA_INDICATION /**< @security NIST_SHOULD */
+/* #define USE_TRUSTED_CA_INDICATION  *//**< @security NIST_SHOULD */
 
 /******************************************************************************/
 /**
@@ -332,7 +326,7 @@ extern "C" {
 
     @security Looking towards TLS 1.3, which removes re-handshaking, this
     feature is disabled by default.
-*/
+ */
 /* #define USE_REHANDSHAKING */
 
 /******************************************************************************//**
@@ -349,13 +343,6 @@ extern "C" {
     is often recommendable to enable for maximal browser compatibility.
  */
 #   define USE_SERVER_SIDE_FALSE_START_SUPPORT
-
-/******************************************************************************/
-/**
-    Only available server side. Allows matrixSSL to chose the strongest cipher
-    from the client's supported list.
-*/
-/* #define USE_SERVER_PREFERRED_CIPHERS */
 
 /******************************************************************************/
 /**

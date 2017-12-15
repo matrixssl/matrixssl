@@ -246,8 +246,6 @@
 #    define USE_OCSP_RESPONSE /**< @pre USE_SHA1 */
 #endif /* USE_OCSP */
 
-//#define USE_SCT
-
 /******************************************************************************/
 /**
     Various PKCS standards support

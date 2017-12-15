@@ -372,13 +372,6 @@ extern "C" {
 
 /******************************************************************************/
 /**
-    Only available server side. Allows matrixSSL to chose the strongest cipher
-    from the client's supported list.
-*/
-/* #define USE_SERVER_PREFERRED_CIPHERS */
-
-/******************************************************************************/
-/**
     The initial buffer sizes for send and receive buffers in each ssl_t session.
     Buffers are internally grown if more incoming or outgoing data storage is
     needed, up to a maximum of SSL_MAX_BUF_SIZE. Once the memory used by the

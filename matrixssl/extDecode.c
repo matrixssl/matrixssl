@@ -677,22 +677,22 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         break;
 # endif /* USE_OCSP_RESPONSE */
 
-	/**************************************************************************/
+    /**************************************************************************/
 #ifdef USE_SCT
-	case EXT_SIGNED_CERTIFICATE_TIMESTAMP:
-		/* TODO: add client extension parsing */
+    case EXT_SIGNED_CERTIFICATE_TIMESTAMP:
+        /* TODO: add client extension parsing */
 
-		/* Currently, the SCTResponse must be loaded into the key material
-			so we check if that exists to determine if we will reply with
-			the extension */
-		if (ssl->keys->SCTResponseBufLen > 0 &&
-				ssl->keys->SCTResponseBuf != NULL) {
-			ssl->extFlags.signed_certificate_timestamp = 1;
-		} else {
-			psTraceInfo("Client requesting SCT but we have no response\n");
-		}
+        /* Currently, the SCTResponse must be loaded into the key material
+            so we check if that exists to determine if we will reply with
+            the extension */
+        if (ssl->keys->SCTResponseBufLen > 0 &&
+                ssl->keys->SCTResponseBuf != NULL) {
+            ssl->extFlags.signed_certificate_timestamp = 1;
+        } else {
+            psTraceInfo("Client requesting SCT but we have no response\n");
+        }
 
-		break;
+        break;
 #endif
 
     /**************************************************************************/

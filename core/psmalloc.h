@@ -71,8 +71,8 @@
 #   define psFreeNoPool        free
 
 /*
-	Support for memory allocation in order to avoid applications that redefine
-	malloc/free (see Perl)
+    Support for memory allocation in order to avoid applications that redefine
+    malloc/free (see Perl)
 */
 
 void *psMallocNative(size_t size);
