@@ -114,6 +114,15 @@ extern uint8_t asnParseOid(const unsigned char *der, psSize_t derlen,
 extern char *asnFormatOid(psPool_t *pool,
                           const unsigned char *oid, size_t oidlen);
 
+/* Format octet string representing ASN.1 in Der encoded format. */
+extern char *asnFormatDer(psPool_t *pool,
+                          const unsigned char *Der_p,
+                          size_t DerLen,
+                          size_t MaxElements,
+                          size_t MaxDepth,
+                          size_t MaxElementOutput,
+                          unsigned char Flags);
+
 /******************************************************************************/
 
 #endif  /* _h_PS_ASN1 */

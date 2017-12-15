@@ -110,6 +110,8 @@ static __inline void *psDynBufAppendChar(psDynBuf_t *db, char ch)
 }
 
 void *psDynBufAppendUtf8(psDynBuf_t *db, int chr);
+void *psDynBufAppendUtf16(psDynBuf_t *db, int chr);
+void *psDynBufAppendUtf32(psDynBuf_t *db, int chr);
 
 static __inline void *psDynBufPrependChar(psDynBuf_t *db, char ch)
 {
@@ -287,6 +289,12 @@ static __inline int psParseCanRead(const psParseBuf_t *pb, size_t nbytes)
     bytes_readable = pb->buf.end - pb->buf.start;
     return bytes_readable >= nbytes;
 }
+
+/* Check if there is sufficient data to parse left. */
+PSPUBLIC int psParseBufCanReadUtf8(const psParseBuf_t *pb);
+
+/* Check if there is sufficient data to parse left. */
+PSPUBLIC unsigned int psParseBufReadUtf8(psParseBuf_t *pb);
 
 /* Get length of following ASN.1 tag
    (specify tag as unsigned char or 0 for ANY).

@@ -66,6 +66,12 @@ const static char g_defaultCAFile[] = "testkeys/RSA/2048_RSA_CA.pem";
 const static char g_defaultDHParamFile[] = "testkeys/DH/1024_DH_PARAMS.pem";
 #  endif
 
+#  ifdef USE_REHANDSHAKING
+static int g_doSelfInitiatedRehandshakeTest;
+static int g_numRehandshakes;
+static int g_maxRehandshakes;
+#  endif
+
 /********************************** Defines ***********************************/
 
 #  define SSL_TIMEOUT         45000 /* In milliseconds */
@@ -86,7 +92,8 @@ const static char g_defaultDHParamFile[] = "testkeys/DH/1024_DH_PARAMS.pem";
 static DLListEntry g_conns;
 static int32 g_exitFlag;
 static int g_port;
-static int g_version;
+static int g_min_version;
+static int g_max_version;
 static int g_disabledCiphers;
 static uint16_t g_disabledCipher[SSL_MAX_DISABLED_CIPHERS];
 
@@ -166,6 +173,13 @@ void SNIcallback(void *ssl, char *hostname, int32 hostnameLen,
     ssl_t *lssl = ssl;
 
     *newKeys = lssl->keys;
+}
+
+int32 setProtocolVersions(sslSessOpts_t *options)
+{
+    return matrixSslSessOptsSetServerTlsVersionRange(options,
+            g_min_version,
+            g_max_version);
 }
 
 /******************************************************************************/
@@ -312,6 +326,11 @@ static int32 selectLoop(sslKeys_t *keys, SOCKET lfd)
             memset(&options, 0x0, sizeof(sslSessOpts_t));
             options.userPtr = keys;
             /* options.extendedMasterSecret = 1; / * Require * / */
+            if (setProtocolVersions(&options) < 0)
+            {
+                close(fd);
+                return PS_ARG_FAIL;
+            }
 
             if ((rc = matrixSslNewServerSession(&cp->ssl, keys, NULL,
                      &options)) < 0)
@@ -320,7 +339,6 @@ static int32 selectLoop(sslKeys_t *keys, SOCKET lfd)
                 continue;
             }
             matrixSslRegisterSNICallback(cp->ssl, SNIcallback);
-
             cp->fd = fd;
             cp->timeout = SSL_TIMEOUT;
             psGetTime(&cp->time, NULL);
@@ -383,6 +401,26 @@ WRITE_MORE:
                 {
                     /* If the protocol is server initiated, send data here */
                     g_handshakes++;
+# ifdef USE_REHANDSHAKING
+                    if (g_doSelfInitiatedRehandshakeTest &&
+                            g_numRehandshakes < g_maxRehandshakes)
+                    {
+                        /* Full rehandshake */
+                        printf("Server initiating re-handshake\n");
+                        if (matrixSslEncodeRehandshake(cp->ssl, NULL,
+# ifdef USE_CLIENT_AUTH
+                                        certCb,
+# else
+                                        NULL,
+# endif /* USE_CLIENT_AUTH */
+                                        SSL_OPTION_FULL_HANDSHAKE, NULL, 0) < 0)
+                        {
+                            printf("matrixSslEncodeRehandshake failed\n");
+                            exit(1);
+                        }
+                        g_numRehandshakes++;
+                    }
+#endif /* USE_REHANDSHAKING */
 #  ifdef ENABLE_FALSE_START
                     /* OR this could be a Chrome browser using
                         FALSE_START and the application data is already
@@ -750,6 +788,7 @@ static void usage(void)
         "                        - '1' TLS 1.0\n"
         "                        - '2' TLS 1.1\n"
         "                        - '3' TLS 1.2 (default)\n"
+        "-V <min>,<max>      - SSL/TLS version range to use, e.g. '-V 2,3'\n"
         "\n");
 
 }
@@ -799,7 +838,7 @@ static int32_t parse_cipher_list(char *cipherListString,
 static int32 process_cmd_options(int32 argc, char **argv)
 {
     int optionChar, str_len, version, numCiphers;
-    char *cipherListString;
+    char *cipherListString, *versionRangeStr;
 
     /* Start with all options zeroized. */
     memset(g_keyfilePath, 0, MAX_KEYFILE_PATH);
@@ -809,12 +848,12 @@ static int32 process_cmd_options(int32 argc, char **argv)
     memset(g_caFile, 0, MAX_KEYFILE_PATH);
     memset(g_password, 0, MAX_PASSWORD_LEN);
 
-    g_port              = HTTPS_PORT;
-    g_version           = 3;
-    g_disabledCiphers   = 0;
+    g_port = HTTPS_PORT;
+    g_min_version = g_max_version = 3;
+    g_disabledCiphers = 0;
 
     opterr = 0;
-    while ((optionChar = getopt(argc, argv, "c:d:a:D:hk:p:P:v:x:")) != -1)
+    while ((optionChar = getopt(argc, argv, "c:d:a:D:hk:p:P:v:V:x:r:")) != -1)
     {
         switch (optionChar)
         {
@@ -899,14 +938,44 @@ static int32 process_cmd_options(int32 argc, char **argv)
             g_port = atoi(optarg);
             break;
 
+        case 'r':
+#ifdef USE_REHANDSHAKING
+            g_doSelfInitiatedRehandshakeTest = 1;
+            g_maxRehandshakes = atoi(optarg);
+#else
+            printf("Need USE_REHANDSHAKING for re-handshake test\n");
+            exit(EXIT_FAILURE);
+#endif
+            break;
+
         case 'v':
+            /* Single version. */
             version = atoi(optarg);
-            if (version < 0 || version > 3)
+            if (!matrixSslTlsVersionRangeSupported(version,
+                            version))
             {
                 printf("Invalid version: %d\n", version);
                 return -1;
             }
-            g_version = version;
+            g_min_version = g_max_version = version;
+            break;
+
+        case 'V':
+            /* Version range. */
+            versionRangeStr = optarg;
+            if (strlen(versionRangeStr) != 3)
+            {
+                printf("Invalid version range string: %s\n", versionRangeStr);
+                return -1;
+            }
+            g_min_version = atoi(&versionRangeStr[0]);
+            g_max_version = atoi(&versionRangeStr[2]);
+            if (!matrixSslTlsVersionRangeSupported(g_min_version,
+                            g_max_version))
+            {
+                printf("Unsupported version range: %s\n", versionRangeStr);
+                return -1;
+            }
             break;
         }
     }

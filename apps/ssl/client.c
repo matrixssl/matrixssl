@@ -39,7 +39,12 @@
 #include <ctype.h>
 #include "app.h"
 #ifndef WIN32
-# include <unistd.h>
+# define USE_GETOPT_LONG
+# ifdef USE_GETOPT_LONG
+#  include <getopt.h>
+# else
+#  include <unistd.h>
+# endif
 #else
 # include "XGetopt.h"
 #endif
@@ -47,6 +52,7 @@
 /* Currently this example uses _psTrace for tracing, so osdep.h is needed: */
 #include "core/osdep.h"
 #include "core/psUtil.h"
+# include "../common/client_common.h"
 
 #ifdef USE_CLIENT_SIDE_SSL
 
@@ -58,218 +64,17 @@
 #  endif
 # endif
 
-/*
-    If supporting client authentication, pick ONE identity to auto select a
-    certificate and private key that support desired algorithms.
- */
-/* #define ID_RSA */ /* RSA Certificate and Key */
-/* #define ID_ECDH_ECDSA */ /* EC Certificate and Key */
-/* #define ID_ECDH_RSA */ /* EC Key with RSA signed certificate */
-
-# if !defined(ID_RSA) && !defined(ID_ECDH_ECDSA) && !defined(ID_ECDH_RSA)
-/* Choose a default identity based on which algorithms are supported. */
-#  ifdef USE_RSA_CIPHER_SUITE
-#   define ID_RSA
-#  else
-#   ifdef USE_ECC_CIPHER_SUITE
-#    define ID_ECDH_ECDSA
-#   else
-#    ifndef USE_PSK_CIPHER_SUITE
-#     error "Please enable either RSA or ECC for client when not using PSK"
-#    endif /* !USE_PSK_CIPHER_SUITE */
-#   endif  /* USE_ECC_CIPHER_SUITE */
-#  endif   /* USE_RSA_CIPHER_SUITE */
-# endif    /* !ID_RSA && !ID_ECDH_ECDSA && !ID_ECDH_RSA */
-
-# define USE_HEADER_KEYS
 # define ALLOW_ANON_CONNECTIONS  0
 # define CRL_MAX_LENGTH 1048576 /* Maximum length for CRL: 1 megabyte. */
-
-/*      If the algorithm type is supported, load a CA for it */
-# ifdef USE_ECC_CIPHER_SUITE
-
-/*
-  If ALLOW_CA_BUNDLE_PARTIAL_PARSE is defined, we can simply try to load
-  all EC CA certs, even if we are not able to parse all of them.
-*/
-# ifdef ALLOW_CA_BUNDLE_PARTIAL_PARSE
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS.pem";
-#   endif /* USE_HEADER_KEYS */
-# else /* !(ALLOW_CA_BUNDLE_PARTIAL_PARSE) */
-/*
-  If ALLOW_CA_BUNDLE_PARTIAL_PARSE is not defined, we need the following,
-  ugly code to load only those CA bundles, where each cert is supported
-  by the present configuration.
-*/
-#  if defined(USE_SECP192R1) && defined(USE_SECP224R1) && defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* USE_SECP192R1 && USE_SECP224R1 && USE_SECP521R1 */
-
-#  if !defined(USE_SECP192R1) && defined(USE_SECP224R1) && defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P192.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P192.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* !USE_SECP192R1 && USE_SECP224R1 && USE_SECP521R1 */
-
-#  if defined(USE_SECP192R1) && !defined(USE_SECP224R1) && defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P224.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P224.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* USE_SECP192R1 && !USE_SECP224R1 && USE_SECP521R1 */
-
-#  if defined(USE_SECP192R1) && defined(USE_SECP224R1) && !defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P521.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P521.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* USE_SECP192R1 && USE_SECP224R1 && !USE_SECP521R1 */
-
-#  if !defined(USE_SECP192R1) && !defined(USE_SECP224R1) && defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P192_AND_P224.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P192_AND_P224.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* !USE_SECP192R1 && !USE_SECP224R1 && USE_SECP521R1 */
-
-#  if !defined(USE_SECP192R1) && defined(USE_SECP224R1) && !defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P192_AND_P521.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P192_AND_P521.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* !USE_SECP192R1 && USE_SECP224R1 && !USE_SECP521R1 */
-
-#  if defined(USE_SECP192R1) && !defined(USE_SECP224R1) && !defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P224_AND_P521.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P224_AND_P521.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* USE_SECP192R1 && USE_SECP224R1 && !USE_SECP521R1 */
-
-#  if !defined(USE_SECP192R1) && !defined(USE_SECP224R1) && !defined(USE_SECP521R1)
-#   ifdef USE_HEADER_KEYS
-#    include "testkeys/EC/ALL_EC_CAS_EXCEPT_P192_P224_AND_P521.h"
-#   else
-static char ecCAFile[] = "../../testkeys/EC/ALL_EC_CAS_EXCEPT_P192_P224_AND_P521.pem";
-#   endif /* USE_HEADER_KEYS */
-#  endif  /* !USE_SECP192R1 && USE_SECP224R1 && !USE_SECP521R1 */
-
-#endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
-
-#  ifndef USE_HEADER_KEYS
-/*
-   Pointer to filename. We shall increment this when we need to
-   skip over the ../../ prefix.
- */
-static char *pEcCAFile = ecCAFile;
-#  endif /* !USE_HEADER_KEYS */
-
-# endif  /* USE_ECC_CIPHER_SUITE */
-
-# ifdef USE_HEADER_KEYS
-/* CAs */
-#  ifdef USE_RSA_CIPHER_SUITE
-#   include "testkeys/RSA/ALL_RSA_CAS.h"
-#   ifdef USE_ECC_CIPHER_SUITE
-#    include "testkeys/ECDH_RSA/ALL_ECDH-RSA_CAS.h"
-#   endif
-#  endif
-
-/* Identity Certs and Keys for use with Client Authentication */
-#  ifdef ID_RSA
-#   define EXAMPLE_RSA_KEYS
-#   include "testkeys/RSA/1024_RSA.h"
-#   include "testkeys/RSA/1024_RSA_KEY.h"
-#   include "testkeys/RSA/2048_RSA.h"
-#   include "testkeys/RSA/2048_RSA_KEY.h"
-#   include "testkeys/RSA/3072_RSA.h"
-#   include "testkeys/RSA/3072_RSA_KEY.h"
-#   include "testkeys/RSA/4096_RSA.h"
-#   include "testkeys/RSA/4096_RSA_KEY.h"
-#  endif
-
-#  ifdef ID_ECDH_ECDSA
-#   define EXAMPLE_EC_KEYS
-#   include "testkeys/EC/384_EC.h"
-#   include "testkeys/EC/384_EC_KEY.h"
-#  endif
-
-#  ifdef ID_ECDH_RSA
-#   define EXAMPLE_ECDH_RSA_KEYS
-#   include "testkeys/ECDH_RSA/521_ECDH-RSA.h"
-#   include "testkeys/ECDH_RSA/521_ECDH-RSA_KEY.h"
-#  endif
-
-/* File-based keys */
-# else /* USE_HEADER_KEYS */
-/* CAs */
-#  ifdef USE_RSA_CIPHER_SUITE
-static char rsaCAFile[] = "../../testkeys/RSA/ALL_RSA_CAS.pem";
-static char *pRsaCAFile = rsaCAFile;
-#   ifdef USE_ECC_CIPHER_SUITE
-static char ecdhRsaCAFile[] = "../../testkeys/ECDH_RSA/ALL_ECDH-RSA_CAS.pem";
-static char *pEcdhRsaCAFile = ecdhRsaCAFile;
-#   endif
-#  endif
-
-/* Identity Certs and Keys for use with Client Authentication */
-#  ifdef ID_RSA
-#   define EXAMPLE_RSA_KEYS
-static char rsaCertFile[] = "../../testkeys/RSA/2048_RSA.pem";
-static char rsaPrivkeyFile[] = "../../testkeys/RSA/2048_RSA_KEY.pem";
-static char *pRsaCertFile = rsaCertFile;
-static char *pRsaPrivkeyFile = rsaPrivkeyFile;
-#  endif
-
-#  ifdef ID_ECDH_ECDSA
-#   define EXAMPLE_EC_KEYS
-static char ecCertFile[] = "../../testkeys/EC/384_EC.pem";
-static char ecPrivkeyFile[] = "../../testkeys/EC/384_EC_KEY.pem";
-static char *pEcCertFile = ecCertFile;
-static char *pEcPrivkeyFile = ecPrivkeyFile;
-#  endif
-
-#  ifdef ID_ECDH_RSA
-#   define EXAMPLE_ECDH_RSA_KEYS
-static char ecdhRsaCertFile[] = "../../testkeys/ECDH_RSA/521_ECDH-RSA.pem";
-static char ecdhRsaPrivkeyFile[] = "../../testkeys/ECDH_RSA/521_ECDH-RSA_KEY.pem";
-static char *pEcdhRsaCertFile = ecdhRsaCertFile;
-static char *pEcdhRsaPrivkeyFile = ecdhRsaPrivkeyFile;
-#  endif
 
 /* #define REHANDSHAKE_TEST */
 #  ifdef REHANDSHAKE_TEST
 static int g_rehandshakeFlag = 0;
 #  endif
 
-static char *g_ca_file;
-# endif /* USE_HEADER_KEYS */
-
-/*
-   No file-based keys for PSK.
-   Include psk.h even when USE_HEADER_KEYS is not defined.
- */
-# ifdef USE_PSK_CIPHER_SUITE
-/* Defines PSK_HEADER_TABLE and PSK_HEADER_TABLE_COUNT */
-#  include "../../testkeys/PSK/psk.h"
-# endif
-
 /********************************** Globals ***********************************/
 static unsigned char g_httpRequestHdr[] = "GET %s HTTP/1.0\r\n"
+                                          "Host: %s\r\n"
                                           "User-Agent: MatrixSSL/" MATRIXSSL_VERSION "\r\n"
                                           "Accept: */*\r\n"
                                           "Content-Length: 0\r\n"
@@ -284,7 +89,8 @@ extern int opterr;
 static char g_ip[16];
 static char g_path[256];
 static int g_port, g_new, g_resumed, g_ciphers, g_version, g_closeServer;
-static int g_key_len, g_disableCertNameChk;
+static int g_min_version, g_max_version, g_version_range_set;
+static int g_disableCertNameChk;
 static int g_max_verify_depth;
 static uint16_t g_cipher[16];
 static int g_trace;
@@ -292,6 +98,12 @@ static int g_keepalive;
 
 static uint32_t g_bytes_requested;
 static uint8_t g_send_closure_alert;
+static int g_print_http_response;
+
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+static const char *g_on_demand_cert_file = "testkeys/RSA/3072_RSA.pem";
+static const char *g_on_demand_key_file  = "testkeys/RSA/3072_RSA_KEY.pem";
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
 
 struct g_sslstats
 {
@@ -299,16 +111,6 @@ struct g_sslstats
     int64 hstime;
     int64 datatime;
 };
-
-# ifndef USE_HEADER_KEYS
-/*
-   Are we in MatrixSSL root dir? If yes, we shall to skip
-   the "../.." prefix in the key and cert filenames.
- */
-static int g_at_matrixssl_root = 0;
-# endif /* USE_HEADER_KEYS */
-
-static int g_enable_ext_cv_sig_op = 0;
 
 /********************************** Defines ***********************************/
 
@@ -349,6 +151,9 @@ static void fetchSavedCRL(psX509Cert_t *potentialIssuers);
 
 # ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
 # endif  /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
+
+static void sslstatsPrintTime(const struct g_sslstats* stats, int conn_count);
+static void addTimeDiff(int64 *t, psTime_t t1, psTime_t t2);
 
 /******************************************************************************/
 /*
@@ -396,42 +201,48 @@ static int32 httpsClientConnection(sslKeys_t *keys, sslSessionId_t *sid,
         return PS_PLATFORM_FAIL;
     }
 
-# ifdef SSL_FLAGS_SSLV3
-    /* Corresponds to version 3.g_version */
-    switch (g_version)
-    {
-    case 0:
-        sessionFlag = SSL_FLAGS_SSLV3;
-        break;
-    case 1:
-        sessionFlag = SSL_FLAGS_TLS_1_0;
-        break;
-    case 2:
-        sessionFlag = SSL_FLAGS_TLS_1_1;
-        break;
-    case 3:
-        sessionFlag = SSL_FLAGS_TLS_1_2;
-        break;
-    default:
-        sessionFlag = SSL_FLAGS_TLS_1_0;
-        break;
-    }
-# else
-    /* MatrixSSL <= 3.4.2 don't support setting version on request */
-    sessionFlag = 0;
-# endif
-
     memset(&options, 0x0, sizeof(sslSessOpts_t));
-    options.versionFlag = sessionFlag;
+
+    if (g_version_range_set)
+    {
+        rc = matrixSslSessOptsSetClientTlsVersionRange(&options,
+                g_min_version,
+                g_max_version);
+        if (rc < 0)
+        {
+            return rc;
+        }
+    }
+    else
+    {
+# ifdef SSL_FLAGS_SSLV3
+        /* Corresponds to version 3.g_version */
+        switch (g_version)
+        {
+        case 0:
+            sessionFlag = SSL_FLAGS_SSLV3;
+            break;
+        case 1:
+            sessionFlag = SSL_FLAGS_TLS_1_0;
+            break;
+        case 2:
+            sessionFlag = SSL_FLAGS_TLS_1_1;
+            break;
+        case 3:
+            sessionFlag = SSL_FLAGS_TLS_1_2;
+            break;
+        default:
+            sessionFlag = SSL_FLAGS_TLS_1_0;
+            break;
+        }
+# else
+        /* MatrixSSL <= 3.4.2 don't support setting version on request */
+        sessionFlag = 0;
+# endif
+        options.versionFlag = sessionFlag;
+    }
+
     options.userPtr = keys;
-    /* options.maxFragLen = 512; */
-    /* options.truncHmac = PS_TRUE; */
-    /* options.ticketResumption = PS_TRUE; */
-    /* options.ecFlags |= SSL_OPT_SECP521R1; */
-    /* options.ecFlags |= SSL_OPT_SECP384R1; */
-    /* options.ecFlags |= SSL_OPT_SECP256R1; */
-    /* options.ecFlags |= SSL_OPT_SECP224R1; */
-    /* options.ecFlags |= SSL_OPT_SECP192R1; */
 # ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
 # endif  /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
 # ifdef TEST_KEEP_PEER_CERTS
@@ -440,13 +251,6 @@ static int32 httpsClientConnection(sslKeys_t *keys, sslSessionId_t *sid,
 # endif
     if (g_max_verify_depth != 0)
         options.validateCertsOpts.max_verify_depth = g_max_verify_depth;
-
-    /*
-      Do not allow the server to pick different version than what
-      we select here. Break the connection attempt with a protocol_version
-      alert if ServerHello.server_version < ClientHello.client_version.
-    */
-    options.clientRejectVersionDowngrade = 1;
 
     matrixSslNewHelloExtension(&extension, NULL);
     matrixSslCreateSNIext(NULL, (unsigned char *) g_ip, (uint32) strlen(g_ip),
@@ -561,42 +365,60 @@ READ_MORE:
              (uint32 *) &len)) < 0)
     {
         psGetTime(&t2, NULL);
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+        if (rc == PS_PENDING && matrixSslNeedClientCert(ssl))
+        {
+            _psTrace("Loading client cert and key in response to " \
+                    "CertificateRequest\n");
+            if (ssl->keys->cert)
+            {
+                psX509FreeCert(ssl->keys->cert);
+                ssl->keys->cert = NULL;
+            }
+            if (ssl->keys->privKey.keysize > 0)
+            {
+                psClearPubKey(&ssl->keys->privKey);
+            }
+            if (matrixSslLoadKeys(ssl->keys,
+                            g_on_demand_cert_file,
+                            g_on_demand_key_file,
+                            NULL, NULL, NULL) < 0)
+            {
+                _psTrace("matrixSslLoadKeys failed\n");
+                exit(EXIT_FAILURE);
+            }
+            (void)matrixSslClientCertUpdated(ssl);
+
+            /* Retry now that we have the cert and the priv key. */
+            rc = matrixSslReceivedData(ssl, (int32) transferred, &buf,
+                    (uint32 *) &len);
+            if (rc < 0)
+            {
+                _psTrace("Retry failed\n");
+            }
+            goto WRITE_MORE;
+        }
+# endif
 # ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
 # endif  /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
         if (ssl->hsState == SSL_HS_DONE)
         {
-# ifdef USE_HIGHRES_TIME
-            stats->datatime += psDiffUsecs(t1, t2);
-# else
-            stats->datatime += psDiffMsecs(t1, t2, NULL);
-# endif
+            addTimeDiff(&stats->datatime, t1, t2);
         }
         else
         {
-# ifdef USE_HIGHRES_TIME
-            stats->hstime += psDiffUsecs(t1, t2);
-# else
-            stats->hstime += psDiffMsecs(t1, t2, NULL);
-# endif
+            addTimeDiff(&stats->hstime, t1, t2);
         }
         goto L_CLOSE_ERR;
     }
     psGetTime(&t2, NULL);
     if (ssl->hsState == SSL_HS_DONE)
     {
-# ifdef USE_HIGHRES_TIME
-        stats->datatime += psDiffUsecs(t1, t2);
-# else
-        stats->datatime += psDiffMsecs(t1, t2, NULL);
-# endif
+        addTimeDiff(&stats->datatime, t1, t2);
     }
     else
     {
-# ifdef USE_HIGHRES_TIME
-        stats->hstime += psDiffUsecs(t1, t2);
-# else
-        stats->hstime += psDiffMsecs(t1, t2, NULL);
-# endif
+        addTimeDiff(&stats->hstime, t1, t2);
     }
 
 PROCESS_MORE:
@@ -712,6 +534,15 @@ PROCESS_MORE:
         if (g_trace)
         {
             psTraceBytes("HTTP DATA", buf, len);
+            if (g_print_http_response)
+            {
+                char *resp_str = psMalloc(NULL, len+1);
+
+                psMem2Str(resp_str, buf, len);
+                resp_str[len] = '\0';
+                _psTraceStr("%s", resp_str);
+                free(resp_str);
+            }
         }
         rc = matrixSslProcessedData(ssl, &buf, (uint32 *) &len);
         if (rc < 0)
@@ -781,14 +612,6 @@ L_CLOSE_ERR:
     {
         _psTrace("FAIL: No HTTP Response\n");
     }
-    else
-    {
-/*
-        printf("Received %d bytes %d usecs, state %d\n",
-            stats->rbytes, (int)stats->hstime, (int)stats->datatime,
-            ssl->hsState);
- */
-    }
     matrixSslDeleteSession(ssl);
     if (g_keepalive == 0)
     {
@@ -841,14 +664,13 @@ static int32 httpWriteRequest(ssl_t *ssl)
         return MATRIXSSL_REQUEST_SEND;
     }
 
-    requested = strlen((char *) g_httpRequestHdr) + strlen(g_path) + 1;
+    requested = strlen((char *) g_httpRequestHdr) + strlen(g_path) + strlen(g_ip) + 1;
     if ((available = matrixSslGetWritebuf(ssl, &buf, requested)) < 0)
     {
         return PS_MEM_FAIL;
     }
     requested = min(requested, available);
-    snprintf((char *) buf, requested, (char *) g_httpRequestHdr, g_path);
-
+    snprintf((char *) buf, requested, (char *) g_httpRequestHdr, g_path, g_ip);
 
     if (g_trace)
     {
@@ -861,80 +683,6 @@ static int32 httpWriteRequest(ssl_t *ssl)
     return MATRIXSSL_REQUEST_SEND;
 }
 
-# ifdef ID_RSA
-#  ifdef USE_HEADER_KEYS
-static int32 loadRsaKeys(uint32 key_len, sslKeys_t *keys,
-    unsigned char *CAstream, int32 CAstreamLen)
-{
-    int32 rc;
-    const unsigned char *key_buf = NULL;
-    const unsigned char *cert_buf = NULL;
-    int32 key_buf_len = 0;
-    int32 cert_buf_len = 0;
-
-    if (key_len == 1024)
-    {
-        _psTrace("Using 1024 bit RSA private key\n");
-        cert_buf = RSA1024;
-        cert_buf_len = sizeof(RSA1024);
-        key_buf = RSA1024KEY;
-        key_buf_len = sizeof(RSA1024KEY);
-    }
-    else if (key_len == 2048)
-    {
-        _psTrace("Using 2048 bit RSA private key\n");
-        cert_buf = RSA2048;
-        cert_buf_len = sizeof(RSA2048);
-        key_buf = RSA2048KEY;
-        key_buf_len = sizeof(RSA2048KEY);
-    }
-    else if (key_len == 3072)
-    {
-        _psTrace("Using 3072 bit RSA private key\n");
-        cert_buf = RSA3072;
-        cert_buf_len = sizeof(RSA3072);
-        key_buf = RSA3072KEY;
-        key_buf_len = sizeof(RSA3072KEY);
-    }
-    else if (key_len == 4096)
-    {
-        _psTrace("Using 4096 bit RSA private key\n");
-        cert_buf = RSA4096;
-        cert_buf_len = sizeof(RSA4096);
-        key_buf = RSA4096KEY;
-        key_buf_len = sizeof(RSA4096KEY);
-    }
-    else
-    {
-        _psTraceInt("Unsupported RSA private key size: %u\n", key_len);
-        return PS_FAILURE;
-    }
-
-    if (g_enable_ext_cv_sig_op)
-    {
-        key_buf = NULL;
-        key_buf_len = 0;
-    }
-
-    rc = matrixSslLoadRsaKeysMem(keys, cert_buf, cert_buf_len,
-        key_buf, key_buf_len, CAstream, CAstreamLen);
-
-    if (rc < 0)
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-    }
-
-    return rc;
-}
-#  endif /* USE_HEADER_KEYS */
-# endif  /* ID_RSA */
-
 static void usage(void)
 {
     printf(
@@ -943,38 +691,74 @@ static void usage(void)
         "Options can be one or more of the following:\n"
         "\n"
         "-a                      - Disable sending closure alerts\n"
+        "--no-alerts\n"
         "-b <numBytesPerRequest> - Client request size\n"
+        "--request-bytes <numBytesPerRequest>\n"
         "                          Generates an HTTPS request after TLS negotiation\n"
         "                          Uses URL path of '/bytes?<numBytesPerRequest>'\n"
         "                          Mutually exclusive with '-u' flag\n"
         "-c <cipherList>         - Comma separated list of ciphers numbers\n"
+        "--ciphers <cipherList\n"
         "                        - Example cipher numbers:\n"
         "                        - '53' TLS_RSA_WITH_AES_256_CBC_SHA\n"
         "                        - '47' TLS_RSA_WITH_AES_128_CBC_SHA\n"
         "                        - '10' SSL_RSA_WITH_3DES_EDE_CBC_SHA\n"
         "                        - '5'  SSL_RSA_WITH_RC4_128_SHA\n"
         "                        - '4'  SSL_RSA_WITH_RC4_128_MD5\n"
+        "-C <caFile>             - Path to certificate authority file\n"
+        "--ca <caFile>\n"
         "-d                      - Disable server certicate name/addr chk\n"
+        "--no-name-check\n"
+        "-e <useExternalVerify>  - Enable/disable external certificate verification\n"
+        "--external-verify <useExternalVerify\n"
+        "                          0 (turn it OFF, default)\n"
+        "                          1 (turn it ON)\n"
         "-h                      - Help, print usage and exit\n"
-        "-k <keyLen>             - RSA keyLen\n"
+        "--help\n"
+        "-k <keyLen>             - RSA keyLen (if using client auth)\n"
+        "--rsa-key-len\n"
         "                        - Must be one of 1024, 2048 or 4096\n"
         "-K                      - Keepalive (Re-use socket after TLS session close)\n"
+        "--keep-alive\n"
         "-n <numNewSessions>     - Num of new (full handshake) sessions\n"
+        "--handshakes <numNewSessions>\n"
         "                        - Default 1\n"
+        "-m <maxVerifyDepth>     - Maximum depth for certificate verification\n"
+        "--depth  <maxVerifyDepth>\n"
         "-p <serverPortNum>      - Port number for SSL/TLS server\n"
+        "--port <serverPortNum>\n"
         "                        - Default 4433 (HTTPS is 443)\n"
         "-r <numResumedSessions> - Num of resumed SSL/TLS sesssions\n"
+        "--resumed <numResumedSessions>\n"
         "                        - Default 0\n"
         "-s <serverIpAddress>    - IP address of server machine/interface\n"
+        "--server <serverIpAddress>\n"
         "                        - Default 127.0.0.1 (localhost)\n"
+        "-t                      - Enable printing of HTTP response\n"
+        "--response\n"
         "-u <url path>           - URL path, eg. '/index.html'\n"
+        "--url <url path>\n"
         "                          Generates an HTTPS request after TLS negotiation\n"
         "                          Mutually exclusive with '-b' flag\n"
         "-V <tlsVersion>         - SSL/TLS version to use\n"
+        "--tls <tlsVersion>\n"
         "                        - '0' SSL 3.0\n"
         "                        - '1' TLS 1.0\n"
         "                        - '2' TLS 1.1\n"
         "                        - '3' TLS 1.2 (default)\n"
+        "--tls-version-range <minVersion>,<maxVersion>\n"
+        "                          Set TLS version range, e.g.\n"
+        "                          2,3 for TLS 1.1 - TLS 1.2\n"
+        "--no-cert               - Unset client certificate\n"
+        "--cert <certificateFile>\n"
+        "                        - Path to client certificate file\n"
+        "--key <privateKeyFile>  - Path to client private key file\n"
+        "--keytype <loadKeyMethod>\n"
+        "                        - Specify format of client certificate:\n"
+        "                          any (detect key and signature type)\n"
+        "                          rsa (for RSA keys)\n"
+        "                          ec (for EC keys ECDSA signature)\n"
+        "                          ecrsa (for EC keys with RSA signature)\n"
         "\n");
 }
 
@@ -1036,7 +820,7 @@ static int32 process_cmd_options(int32 argc, char **argv)
     g_ciphers            = 0;
     g_cipher[0]          = 0;
     g_disableCertNameChk = 0;
-    g_key_len            = 1024;
+    g_key_len            = 2048;
     g_new                = 1;
     g_port               = 4433;
     g_resumed            = 0;
@@ -1044,7 +828,53 @@ static int32 process_cmd_options(int32 argc, char **argv)
     g_keepalive          = 0;
 
     opterr = 0;
-    while ((optionChar = getopt(argc, argv, "ab:C:c:de:hk:Km:n:p:r:s:u:V:")) != -1)
+
+    const char *optstring = "ab:C:c:de:hk:Km:n:p:r:s:tu:V:";
+
+#ifdef USE_GETOPT_LONG
+#define ARG_NO_CERT 1
+#define ARG_CERT 2
+#define ARG_KEY 3
+#define ARG_KEYTYPE 4
+#define ARG_ON_DEMAND_CERT 5
+#define ARG_ON_DEMAND_KEY 6
+#define ARG_TLS_VERSION_RANGE 7
+
+    static struct option long_options[] =
+    {
+        {"no-alerts", no_argument, NULL, 'a'},
+        {"request-bytes", required_argument, NULL, 'b'},
+        {"ciphers", required_argument, NULL, 'c'},
+        {"ca", required_argument, NULL, 'C'},
+        {"no-name-check", no_argument, NULL, 'd'},
+        {"external-verify", required_argument, NULL, 'e'},
+        {"help", no_argument, NULL, 'h'},
+        {"rsa-key-len", required_argument, NULL, 'k'},
+        {"keep-alive", no_argument, NULL, 'K'},
+        {"handshakes", required_argument, NULL, 'n'},
+        {"depth", required_argument, NULL, 'm'},
+        {"port", required_argument, NULL, 'p'},
+        {"resumed", required_argument, NULL, 'r'},
+        {"server", required_argument, NULL, 's'},
+        {"response", no_argument, NULL, 't'},
+        {"url", required_argument, NULL, 'u'},
+        {"tls", required_argument, NULL, 'V'},
+        {"tls-version-range", required_argument, NULL, ARG_TLS_VERSION_RANGE},
+        {"no-cert", no_argument, NULL, ARG_NO_CERT},
+        {"cert", required_argument, NULL, ARG_CERT},
+        {"key", required_argument, NULL, ARG_KEY},
+        {"on-demand-cert", required_argument, NULL, ARG_ON_DEMAND_CERT},
+        {"on-demand-key", required_argument, NULL, ARG_ON_DEMAND_KEY},
+        {"keytype", required_argument, NULL, ARG_KEYTYPE},
+        {0, 0, 0, 0}
+    };
+
+    int opt_index = 0;
+
+    while ((optionChar = getopt_long(argc, argv, optstring, long_options, &opt_index)) != -1)
+#else
+    while ((optionChar = getopt(argc, argv, optstring)) != -1)
+#endif
     {
         switch (optionChar)
         {
@@ -1067,12 +897,8 @@ static int32 process_cmd_options(int32 argc, char **argv)
             break;
 
         case 'C':
-#ifdef USE_HEADER_KEYS
-            printf("USE_HEADER_KEYS not compatible with CA file option\n");
-#else
-            g_ca_file = optarg;
-            printf("Using CA file: %s\n", g_ca_file);
-#endif
+            g_clientconfig.ca_file = optarg;
+            clientconfigUseFileKeys();
             break;
 
         case 'c':
@@ -1124,6 +950,10 @@ static int32 process_cmd_options(int32 argc, char **argv)
             g_port = atoi(optarg);
             break;
 
+        case 't':
+            g_print_http_response = 1;
+            break;
+
         case 'r':
             g_resumed = atoi(optarg);
             break;
@@ -1151,11 +981,116 @@ static int32 process_cmd_options(int32 argc, char **argv)
             }
             g_version = version;
             break;
+
+#ifdef USE_GETOPT_LONG
+/* Additional options not supported through short arguments */
+
+        case ARG_CERT:
+            g_clientconfig.cert_file = optarg;
+            clientconfigUseFileKeys();
+            break;
+
+        case ARG_NO_CERT:
+            g_clientconfig.cert_file = NULL;
+            g_clientconfig.privkey_file = optarg;
+            clientconfigUseFileKeys();
+            break;
+
+        case ARG_KEY:
+            g_clientconfig.privkey_file = optarg;
+            clientconfigUseFileKeys();
+            break;
+
+        case ARG_KEYTYPE:
+            if (strcmp("any", optarg) == 0) {
+                g_clientconfig.load_key = &loadKeysFromFile;
+            } else if (strcmp("rsa", optarg) == 0) {
+                g_clientconfig.load_key = &loadRsaKeysFromFile;
+            } else if (strcmp("ec", optarg) == 0) {
+                g_clientconfig.load_key = &loadECDH_ECDSAKeysFromFile;
+            } else if (strcmp("ecrsa", optarg) == 0) {
+                g_clientconfig.load_key = &loadECDHRsaKeysFromFile;
+            } else {
+                printf("Invalid option: %s\n", optarg);
+                return -1;
+            }
+
+            g_clientconfig.loadKeysFromMemory = 0;
+            break;
+
+        case ARG_TLS_VERSION_RANGE:
+            {
+                const char *versionRangeStr;
+
+                versionRangeStr = optarg;
+                if (strlen(versionRangeStr) != 3)
+                {
+                    printf("Invalid version range string: %s\n",
+                            versionRangeStr);
+                    return -1;
+                }
+                g_min_version = atoi(&versionRangeStr[0]);
+                g_max_version = atoi(&versionRangeStr[2]);
+                if (!matrixSslTlsVersionRangeSupported(g_min_version,
+                                g_max_version))
+                {
+                    printf("Unsupported version range: %s\n",
+                            versionRangeStr);
+                    return -1;
+                }
+                g_version_range_set = 1;
+            }
+            break;
+
+        case ARG_ON_DEMAND_CERT:
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+            g_on_demand_cert_file = optarg;
+# else
+            printf("Please enable USE_EXT_CLIENT_CERT_KEY_LOADING " \
+                    "in matrixsslConfig.h for --on-demand-cert\n");
+# endif
+            break;
+
+        case ARG_ON_DEMAND_KEY:
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+            g_on_demand_key_file = optarg;
+# else
+            printf("Please enable USE_EXT_CLIENT_CERT_KEY_LOADING " \
+                    "in matrixsslConfig.h for --on-demand-key\n");
+# endif
+            break;
+#endif /* USE_GETOPT_LONG */
         }
+
     }
 
     return 0;
 }
+
+static void sslstatsPrintTime(const struct g_sslstats* stats, int conn_count)
+{
+# ifdef USE_HIGHRES_TIME
+    printf("%d usec (%d avg usec/conn SSL handshake overhead)\n",
+        (int) stats->hstime, (int) (stats->hstime / conn_count));
+    printf("%d usec (%d avg usec/conn SSL data overhead)\n",
+        (int) stats->datatime, (int) (stats->datatime / conn_count));
+# else
+    printf("%d msec (%d avg msec/conn SSL handshake overhead)\n",
+        (int) stats->hstime, (int) (stats->hstime / conn_count));
+    printf("%d msec (%d avg msec/conn SSL data overhead)\n",
+        (int) stats->datatime, (int) (stats->datatime / conn_count));
+# endif
+}
+
+static void addTimeDiff(int64 *t, psTime_t t1, psTime_t t2)
+{
+# ifdef USE_HIGHRES_TIME
+    *t += psDiffUsecs(t1, t2);
+# else
+    *t += psDiffMsecs(t1, t2, NULL);
+# endif
+}
+
 
 /******************************************************************************/
 /*
@@ -1166,26 +1101,22 @@ static int32 process_cmd_options(int32 argc, char **argv)
  */
 int32 main(int32 argc, char **argv)
 {
-    int32 rc, CAstreamLen, i, exit_code;
+    int32 rc, i, exit_code;
     sslKeys_t *keys;
     sslSessionId_t *sid = NULL;
     struct g_sslstats stats;
-    unsigned char *CAstream;
 # if defined(USE_HEADER_KEYS) && !defined(ID_RSA)
     const unsigned char *key_buf;
     int32 key_buf_len;
 # endif /* USE_HEADER_KEYS && !ID_RSA */
-# ifndef USE_HEADER_KEYS
-    unsigned char *tmp_buf;
-    int32 tmp_buf_len;
-    char *pCA;
-# endif /* USE_HEADER_KEYS */
 # ifdef WIN32
     WSADATA wsaData;
     WSAStartup(MAKEWORD(1, 1), &wsaData);
 # endif
 
     exit_code = 0;
+
+    clientconfigInitialize();
 
     if ((rc = matrixSslOpen()) < 0)
     {
@@ -1202,6 +1133,7 @@ int32 main(int32 argc, char **argv)
     if (0 != process_cmd_options(argc, argv))
     {
         usage();
+        clientconfigFree();
         return 0;
     }
 
@@ -1229,277 +1161,10 @@ int32 main(int32 argc, char **argv)
             g_ciphers, g_strver[g_version]);
     }
 
-# ifndef USE_ONLY_PSK_CIPHER_SUITE
-#  ifdef USE_HEADER_KEYS
-/*
-    In-memory based keys
-    Build the CA list first for potential client auth usage
- */
-    CAstreamLen = 0;
-#   ifdef USE_RSA_CIPHER_SUITE
-    CAstreamLen += sizeof(RSACAS);
-#    ifdef USE_ECC_CIPHER_SUITE
-    CAstreamLen += sizeof(ECDHRSACAS);
-#    endif
-#   endif
-#   ifdef USE_ECC_CIPHER_SUITE
-    CAstreamLen += sizeof(ECCAS);
-#   endif
-#   if defined(USE_RSA_CIPHER_SUITE) || defined(USE_ECC_CIPHER_SUITE)
-    CAstream = psMalloc(NULL, CAstreamLen);
-#   else
-    CAstream = NULL;
-#   endif
-
-    CAstreamLen = 0;
-#   ifdef USE_RSA_CIPHER_SUITE
-    memcpy(CAstream, RSACAS, sizeof(RSACAS));
-    CAstreamLen += sizeof(RSACAS);
-#    ifdef USE_ECC_CIPHER_SUITE
-    memcpy(CAstream + CAstreamLen, ECDHRSACAS, sizeof(ECDHRSACAS));
-    CAstreamLen += sizeof(ECDHRSACAS);
-#    endif
-#   endif
-#   ifdef USE_ECC_CIPHER_SUITE
-    memcpy(CAstream + CAstreamLen, ECCAS, sizeof(ECCAS));
-    CAstreamLen += sizeof(ECCAS);
-#   endif
-
-
-#   ifdef ID_RSA
-    rc = loadRsaKeys(g_key_len, keys, CAstream, CAstreamLen);
-    if (rc < 0)
+    if (!clientconfigLoadKeys(keys))
     {
         return EXIT_FAILURE;
     }
-#   endif
-
-#   ifdef ID_ECDH_RSA
-    if (g_enable_ext_cv_sig_op)
-    {
-        key_buf = NULL;
-        key_buf_len = 0;
-    }
-    else
-    {
-        key_buf = ECDHRSA521KEY;
-        key_buf_len = sizeof(ECDHRSA521KEY);
-    }
-
-    if ((rc = matrixSslLoadEcKeysMem(keys, ECDHRSA521, sizeof(ECDHRSA521),
-             key_buf, key_buf_len, (unsigned char *) CAstream,
-             CAstreamLen)) < 0)
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-        return EXIT_FAILURE;
-    }
-#   endif
-
-#   ifdef ID_ECDH_ECDSA
-    if (g_enable_ext_cv_sig_op)
-    {
-        key_buf = NULL;
-        key_buf_len = 0;
-    }
-    else
-    {
-        key_buf = EC384KEY;
-        key_buf_len = sizeof(EC384KEY);
-    }
-
-    if ((rc = matrixSslLoadEcKeysMem(keys, EC384, sizeof(EC384),
-             key_buf, key_buf_len, (unsigned char *) CAstream,
-             CAstreamLen)) < 0)
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-        return EXIT_FAILURE;
-    }
-#   endif
-
-    if (CAstream)
-    {
-        psFree(CAstream, NULL);
-    }
-
-#  else
-/*
-    File based keys
- */
-    rc = psGetFileBuf(NULL, "testkeys/RSA/2048_RSA.pem", &tmp_buf, &tmp_buf_len);
-    if (rc >= 0)
-    {
-        g_at_matrixssl_root = 1;
-    }
-    else
-    {
-        g_at_matrixssl_root = 0;
-    }
-    psFree(tmp_buf, NULL);
-
-    CAstreamLen = 0;
-#   ifdef USE_RSA_CIPHER_SUITE
-    if (g_at_matrixssl_root)
-    {
-        pRsaCAFile += 6;
-    }
-    CAstreamLen += (int32) strlen(pRsaCAFile) + 1;
-#    ifdef USE_ECC_CIPHER_SUITE
-    if (g_at_matrixssl_root)
-    {
-        pEcdhRsaCAFile += 6;
-    }
-    CAstreamLen += (int32) strlen(pEcdhRsaCAFile) + 1;
-#    endif
-#   endif
-#   ifdef USE_ECC_CIPHER_SUITE
-    if (g_at_matrixssl_root)
-    {
-        pEcCAFile += 6;
-    }
-    CAstreamLen += (int32) strlen(pEcCAFile) + 1;
-#   endif
-    if (CAstreamLen > 0)
-    {
-        CAstream = psMalloc(NULL, CAstreamLen);
-        memset(CAstream, 0x0, CAstreamLen);
-    }
-    else
-    {
-        CAstream = NULL;
-    }
-
-    CAstreamLen = 0;
-#   ifdef USE_RSA_CIPHER_SUITE
-    memcpy(CAstream, pRsaCAFile, strlen(pRsaCAFile));
-    CAstreamLen += strlen(pRsaCAFile);
-#    ifdef USE_ECC_CIPHER_SUITE
-    memcpy(CAstream + CAstreamLen, ";", 1); CAstreamLen++;
-    memcpy(CAstream + CAstreamLen, pEcdhRsaCAFile,  strlen(pEcdhRsaCAFile));
-    CAstreamLen += strlen(pEcdhRsaCAFile);
-#    endif
-#   endif
-#   ifdef USE_ECC_CIPHER_SUITE
-    if (CAstreamLen > 0)
-    {
-        memcpy(CAstream + CAstreamLen, ";", 1); CAstreamLen++;
-    }
-    memcpy(CAstream + CAstreamLen, pEcCAFile,  strlen(pEcCAFile));
-#   endif
-
-/* Load Identity */
-#   ifdef EXAMPLE_RSA_KEYS
-    if (g_at_matrixssl_root)
-    {
-        pRsaCertFile += 6;
-        pRsaPrivkeyFile += 6;
-    }
-    if (g_enable_ext_cv_sig_op)
-    {
-        pRsaPrivkeyFile = NULL;
-    }
-    if (g_ca_file != NULL)
-        pCA = g_ca_file;
-    else
-        pCA = (char*)CAstream;
-
-    if ((rc = matrixSslLoadRsaKeys(keys, pRsaCertFile, pRsaPrivkeyFile,
-                            NULL, pCA) < 0))
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-        return EXIT_FAILURE;
-    }
-#   endif /* EXAMPLE_RSA_KEYS */
-
-#   ifdef EXAMPLE_ECDH_RSA_KEYS
-    if (g_at_matrixssl_root)
-    {
-        pEcdhRsaCertFile += 6;
-        pEcdhRsaPrivkeyFile += 6;
-    }
-
-    if (g_enable_ext_cv_sig_op)
-    {
-        pEcdhRsaPrivkeyFile = NULL;
-    }
-
-    if (g_ca_file != NULL)
-        pCA = g_ca_file;
-    else
-        pCA = (char*)CAstream;
-
-    if ((rc = matrixSslLoadEcKeys(keys, pEcdhRsaCertFile, pEcdhRsaPrivkeyFile,
-             NULL, pCA)) < 0)
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-        return EXIT_FAILURE;
-    }
-#   endif /* EXAMPLE_ECDH_RSA_KEYS */
-
-#   ifdef EXAMPLE_EC_KEYS
-    if (g_at_matrixssl_root)
-    {
-        pEcCertFile += 6;
-        pEcPrivkeyFile += 6;
-    }
-
-    if (g_enable_ext_cv_sig_op)
-    {
-        pEcPrivkeyFile = NULL;
-    }
-
-    if ((rc = matrixSslLoadEcKeys(keys, pEcCertFile, pEcPrivkeyFile, NULL,
-             (char *) CAstream)) < 0)
-    {
-        _psTrace("No certificate material loaded.  Exiting\n");
-        if (CAstream)
-        {
-            psFree(CAstream, NULL);
-        }
-        matrixSslDeleteKeys(keys);
-        matrixSslClose();
-        return EXIT_FAILURE;
-    }
-#   endif /* EXAMPLE_EC_KEYS */
-
-    if (CAstream)
-    {
-        psFree(CAstream, NULL);
-    }
-#  endif /* USE_HEADER_KEYS */
-# endif  /* USE_ONLY_PSK_CIPHER_SUITE */
-
-# ifdef USE_PSK_CIPHER_SUITE
-    for (rc = 0; rc < PSK_HEADER_TABLE_COUNT; rc++)
-    {
-        matrixSslLoadPsk(keys,
-            PSK_HEADER_TABLE[rc].key, sizeof(PSK_HEADER_TABLE[rc].key),
-            PSK_HEADER_TABLE[rc].id, sizeof(PSK_HEADER_TABLE[rc].id));
-    }
-# endif /* USE_PSK_CIPHER_SUITE */
 
 # ifdef USE_CRL
     /* One initialization step that can be taken is to run through the CA
@@ -1560,17 +1225,7 @@ int32 main(int32 argc, char **argv)
         psAssert(g_bytes_requested * g_new == stats.rbytes);
     }
     printf("%d bytes received\n", stats.rbytes);
-# ifdef USE_HIGHRES_TIME
-    printf("%d usec (%d avg usec/conn SSL handshake overhead)\n",
-        (int) stats.hstime, (int) (stats.hstime / g_new));
-    printf("%d usec (%d avg usec/conn SSL data overhead)\n",
-        (int) stats.datatime, (int) (stats.datatime / g_new));
-# else
-    printf("%d msec (%d avg msec/conn SSL handshake overhead)\n",
-        (int) stats.hstime, (int) (stats.hstime / g_new));
-    printf("%d msec (%d avg msec/conn SSL data overhead)\n",
-        (int) stats.datatime, (int) (stats.datatime / g_new));
-# endif
+    sslstatsPrintTime(&stats, g_new);
 
     memset(&stats, 0x0, sizeof(struct g_sslstats));
     printf("=== %d resumed connections ===\n", g_resumed);
@@ -1601,17 +1256,7 @@ int32 main(int32 argc, char **argv)
             psAssert(g_bytes_requested * g_resumed == stats.rbytes);
         }
         printf("\n%d bytes received\n", stats.rbytes);
-# ifdef USE_HIGHRES_TIME
-        printf("%d usec (%d avg usec/conn SSL handshake overhead)\n",
-            (int) stats.hstime, (int) (stats.hstime / g_resumed));
-        printf("%d usec (%d avg usec/conn SSL data overhead)\n",
-            (int) stats.datatime, (int) (stats.datatime / g_resumed));
-# else
-        printf("%d msec (%d avg msec/conn SSL handshake overhead)\n",
-            (int) stats.hstime, (int) (stats.hstime / g_resumed));
-        printf("%d msec (%d avg msec/conn SSL data overhead)\n",
-            (int) stats.datatime, (int) (stats.datatime / g_resumed));
-# endif
+        sslstatsPrintTime(&stats, g_resumed);
     }
 
 out:
@@ -1619,6 +1264,8 @@ out:
 
     matrixSslDeleteKeys(keys);
     matrixSslClose();
+
+    clientconfigFree();
 
     if (rc == MATRIXSSL_SUCCESS)
     {
@@ -1672,7 +1319,6 @@ static void closeConn(ssl_t *ssl, SOCKET fd)
 
     if (fd != INVALID_SOCKET && g_keepalive == 0)
     {
-        /* printf("Closing socket from closeConn\n"); */
         close(fd);
     }
 }
@@ -1906,9 +1552,6 @@ RETRY_CRL_TEST_ONCE:
                 goto RETRY_CRL_TEST_ONCE;
 #   else        /* MIDHANSHAKE_CRL_FETCH */
 
-                /* if (next->extensions.ak.keyId) { */
-                /*      psTraceBytes("cert ak", next->extensions.ak.keyId, 20); */
-                /* } */
                 _psTrace("Cert expects CRL. Failing handshake to go fetch it\n");
                 /* A more typical case if CRL testing is expected to be done is
                     to halt the handshake now, go out and fetch the CRLs and
@@ -2507,14 +2150,6 @@ static SOCKET lsocketConnect(char *ip, int32 port, int32 *err)
         getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rc, &len);
         printf("SO_RCVBUF: %d\n", rc);
     }
-# endif
-# ifdef POSIX
-/*      rc = 1; */
-/*      setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&rc, sizeof(rc)); */
-/*      fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK); */
-# elif defined(WIN32)
-/*      rc = 1;     / * 1 for non-block, 0 for block * / */
-/*      ioctlsocket(fd, FIONBIO, &rc); */
 # endif
 # ifdef __APPLE__ /* MAC OS X */
     rc = 1;

@@ -1,6 +1,6 @@
 /**
  *      @file    3072_RSA_CA.h
- *
+ *      @version :%h%d$
  * Binary file for including certificate to MatrixSSL.
  */
 static const unsigned char RSA3072CA[] = {

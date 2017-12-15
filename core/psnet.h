@@ -111,6 +111,7 @@ typedef struct psSocketFunctions
                          struct addrinfo **res);
     void (*psFreeaddrinfo)(struct addrinfo *res);
     int (*psFd)(const psSocket_t *sock);
+    ssize_t (*psPeek)(psSocket_t *sock, void *buf, size_t len);
 } psSocketFunctions_t;
 
 /*
@@ -187,6 +188,10 @@ PSPUBLIC void psSocketShutdown(psSocket_t *sock,
 PSPUBLIC int32 psSocketReadAppendBuf(psSocket_t *sock, psBuf_t *in,
                                      psSocketOptions_t opts);
 PSPUBLIC ssize_t psSocketReadData(psSocket_t *sock, void *data,
+                                  size_t len, psSocketOptions_t opts);
+PSPUBLIC int32 psSocketPeekAppendBuf(psSocket_t *sock, psBuf_t *in,
+                                     psSocketOptions_t opts);
+PSPUBLIC ssize_t psSocketPeekData(psSocket_t *sock, void *data,
                                   size_t len, psSocketOptions_t opts);
 PSPUBLIC int32 psSocketReadBufferSequence(psSocket_t *sock,
                                           void *response,

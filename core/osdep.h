@@ -34,6 +34,7 @@
 
 /* This file depends on osdependent type definitions for osdep-types.h */
 #include "osdep-types.h"
+#include "psLog.h"
 
 #ifndef _h_PS_PLATFORM
 # define _h_PS_PLATFORM
@@ -108,57 +109,112 @@ PSPUBLIC void _psError(const char *msg);
 PSPUBLIC void _psErrorInt(const char *msg, int32 val);
 PSPUBLIC void _psErrorStr(const char *msg, const char *val);
 
-/* Generic trace and debug macros. */
-#  define psTrace(x) _psTrace(x)
-#  define psTraceInt(x, i) _psTraceInt(x, i)
-#  define psTraceStr(x, s) _psTraceStr(x, s)
-#  define psTracePtr(x, p) _psTracePtr(x, p)
+PSPUBLIC void psMem2Str(char *s, const unsigned char *b, uint32 len);
 
+#  include "psLog.h"
+
+/* Generic trace and debug macros. */
+#  ifdef USE_PS_LOGF_COMMON
+#   define psTrace(x) PS_LOGF_COMMON(Log_Trace, PS_UNKNOWN, PS_LOGF_FMT, \
+                                     PS_LOGF_FILELINE, "%s", x)
+#   define psTraceInt(x, i) PS_LOGF_COMMON(Log_Trace, PS_UNKNOWN, PS_LOGF_FMT, \
+                                           PS_LOGF_FILELINE, x, i)
+#   define psTraceStr(x, s) PS_LOGF_COMMON(Log_Trace, PS_UNKNOWN, PS_LOGF_FMT, \
+                                           PS_LOGF_FILELINE, x, s)
+#   define psTracePtr(x, p) PS_LOGF_COMMON(Log_Trace, PS_UNKNOWN, PS_LOGF_FMT, \
+                                           PS_LOGF_FILELINE, x, p)
+#  else
+#   define psTrace(x) _psTrace(x)
+#   define psTraceInt(x, i) _psTraceInt(x, i)
+#   define psTraceStr(x, s) _psTraceStr(x, s)
+#   define psTracePtr(x, p) _psTracePtr(x, p)
+#  endif
 /******************************************************************************/
 /*
     Core trace
  */
-#  ifndef USE_CORE_TRACE
-#   define psTraceCore(x)
-#   define psTraceStrCore(x, y)
-#   define psTraceIntCore(x, y)
-#   define psTracePtrCore(x, y)
+#  ifdef USE_PS_LOGF_COMMON
+#   define psTraceCore(x) PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT, \
+                                         PS_LOGF_FILELINE, "%s", x)
+#   define psTraceIntCore(x, i) PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT,\
+                                               PS_LOGF_FILELINE, x, i)
+#   define psTraceStrCore(x, s) PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT,\
+                                               PS_LOGF_FILELINE, x, s)
+#   define psTracePtrCore(x, p) PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT,\
+                                               PS_LOGF_FILELINE, x, p)
 #  else
-#   define psTraceCore(x) _psTrace(x)
-#   define psTraceStrCore(x, y) _psTraceStr(x, y)
-#   define psTraceIntCore(x, y) _psTraceInt(x, y)
-#   define psTracePtrCore(x, y) _psTracePtr(x, y)
-#  endif /* USE_CORE_TRACE */
+#   ifndef USE_CORE_TRACE
+#    define psTraceCore(x)
+#    define psTraceStrCore(x, y)
+#    define psTraceIntCore(x, y)
+#    define psTracePtrCore(x, y)
+#   else
+#    define psTraceCore(x) _psTrace(x)
+#    define psTraceStrCore(x, y) _psTraceStr(x, y)
+#    define psTraceIntCore(x, y) _psTraceInt(x, y)
+#    define psTracePtrCore(x, y) _psTracePtr(x, y)
+#   endif /* USE_CORE_TRACE */
+#  endif /* USE_PS_LOGF_COMMON */
 
 /******************************************************************************/
 /*
     HALT_ON_PS_ERROR define at compile-time determines whether to halt on
     psAssert and psError calls
  */
-#  ifdef USE_CORE_ASSERT
-#   define psAssert(C)  if (C) {; } else \
+#  ifdef USE_PS_LOGF_COMMON
+#   ifdef HALT_ON_PS_ERROR
+#    define PS_OSDEP_BREAK() osdepBreak()
+#   else
+#    define PS_OSDEP_BREAK() do { } while(0)
+#   endif
+extern void osdepBreak(void);
+#   ifdef USE_CORE_ASSERT
+#    define psAssert(C)  do { if (C) {; } else                          \
+        { halAlert(); PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT, PS_LOGF_FILELINE, "%s", #C); PS_OSDEP_BREAK(); } } while(0)
+#   else
+#    define psAssert(C)  if (C) {; } else do { /* assert ignored. */ } while (0)
+#   endif
+#  else
+#   ifdef USE_CORE_ASSERT
+#    define psAssert(C)  if (C) {; } else \
     { halAlert(); _psTraceStr("psAssert %s", __FILE__); _psTraceInt(":%d ", __LINE__); \
       _psError(#C); }
-#  else
-#   define psAssert(C)  if (C) {; } else do { /* assert ignored. */ } while (0)
+#   else
+#    define psAssert(C)  if (C) {; } else do { /* assert ignored. */ } while (0)
+#   endif
 #  endif
 
-#  ifdef USE_CORE_ERROR
-#   define psError(a) \
+#  ifdef USE_PS_LOGF_COMMON
+#   ifdef USE_CORE_ERROR
+#    define psError(a) \
+    do { halAlert(); PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT, PS_LOGF_FILELINE, "%s", a); PS_OSDEP_BREAK(); } while(0)
+#    define psErrorStr(a, s)                                              \
+    do { halAlert(); PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT, PS_LOGF_FILELINE, a, s); PS_OSDEP_BREAK(); } while(0)
+#    define psErrorInt(a, i)                                              \
+    do { halAlert(); PS_LOGF_COMMON(Log_Trace, PS_CORE, PS_LOGF_FMT, PS_LOGF_FILELINE, a, i); PS_OSDEP_BREAK(); } while(0)
+#   else
+#    define psError(a) do { /* error ignored. */ } while (0)
+#    define psErrorStr(a, b) do { /* error ignored. */ } while (0)
+#    define psErrorInt(a, b) do { /* error ignored. */ } while (0)
+#   endif
+#  else
+#   ifdef USE_CORE_ERROR
+#    define psError(a) \
     halAlert(); _psTraceStr("psError %s", __FILE__); _psTraceInt(":%d ", __LINE__); \
     _psError(a);
 
-#   define psErrorStr(a, b) \
+#    define psErrorStr(a, b) \
     halAlert(); _psTraceStr("psError %s", __FILE__); _psTraceInt(":%d ", __LINE__); \
     _psErrorStr(a, b)
 
-#   define psErrorInt(a, b) \
+#    define psErrorInt(a, b) \
     halAlert(); _psTraceStr("psError %s", __FILE__); _psTraceInt(":%d ", __LINE__); \
     _psErrorInt(a, b)
-#  else
-#   define psError(a) do { /* error ignored. */ } while (0)
-#   define psErrorStr(a, b) do { /* error ignored. */ } while (0)
-#   define psErrorInt(a, b) do { /* error ignored. */ } while (0)
+#   else
+#    define psError(a) do { /* error ignored. */ } while (0)
+#    define psErrorStr(a, b) do { /* error ignored. */ } while (0)
+#    define psErrorInt(a, b) do { /* error ignored. */ } while (0)
+#   endif
 #  endif
 
 /******************************************************************************/

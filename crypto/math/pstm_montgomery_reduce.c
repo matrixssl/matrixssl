@@ -205,6 +205,11 @@
 /******************************************************************************/
 # elif defined(PSTM_ARM)
 
+# if defined __arm__ && defined __thumb__ && !defined __thumb2__
+#  error "Platform not supported: Thumb1 mode on ARMv4-v6."
+#  error "Please, turn off thumb mode or enable thumb2."
+# endif
+
 #  define MONT_START
 #  define MONT_FINI
 #  define LOOP_END

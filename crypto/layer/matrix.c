@@ -75,12 +75,26 @@ int32_t psCryptoOpen(const char *config)
         return PS_SELFTEST_FAILED;
     }
 #endif /* USE_FLPS_BINDING */
+#ifdef USE_LIBSODIUM_CRYPTO
+    if (sodium_init() == -1)
+    {
+        return PS_FAILURE;
+    }
+#endif /* USE_LIBSODIUM_CRYPTO */
+#ifdef USE_MATRIX_CHACHA20_POLY1305_IETF
+    /* Pick chacha20-poly1305 implementation. */
+    {
+        psChacha20Poly1305Ietf_t tmp;
+        (void) psChacha20Poly1305IetfInit(
+                &tmp,
+                (const unsigned char *)g_config /* at least 32 bytes */);
+    }
+#endif
 
     psOpenPrng();
 #ifdef USE_CRL
     psCrlOpen();
 #endif
-
     /* Everything successful, store configuration. */
     strncpy(g_config, PSCRYPTO_CONFIG, sizeof(g_config) - 1);
 

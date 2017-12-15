@@ -52,15 +52,16 @@ typedef struct __attribute__((aligned(16)))
 } psAesGcm_t;
 # endif
 
-# ifdef USE_LIBSODIUM_CHACHA20_POLY1305
+# ifdef USE_LIBSODIUM_CHACHA20_POLY1305_IETF
 typedef struct
 {
-    unsigned char key[crypto_aead_chacha20poly1305_KEYBYTES];
+    unsigned char key[crypto_aead_chacha20poly1305_ietf_KEYBYTES];
     unsigned char IV[crypto_aead_chacha20poly1305_IETF_NPUBBYTES];
-    unsigned char Tag[crypto_aead_chacha20poly1305_ABYTES];
+    unsigned char Tag[crypto_aead_chacha20poly1305_ietf_ABYTES];
     unsigned char Aad[16];
     uint32_t AadLen;
-} psChacha20Poly1305_t;
+} psChacha20Poly1305Ietf_t;
+# define PS_CHACHA20POLY1305IETF_DEFINED 1
 # endif
 
 /******************************************************************************/

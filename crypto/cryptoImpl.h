@@ -36,8 +36,19 @@
 # define _h_PS_CRYPTOIMPL
 
 # define PS_CRYPTO_IMPLEMENTATION 1
-# include "cryptoApi.h"
-# include "../core/osdep.h"
-# include "../core/psUtil.h"
+# ifndef PS_LOGF_WITH_PRNF
+#  include "cryptoApi.h"
+#  include "../core/osdep.h"
+#  include "../core/psUtil.h"
+# else
+/* Note: The inclusion order of headers is very important when
+   PS_LOGF_WITH_PRNF is defined. */
+#  include "../core/coreApi.h"
+#  include "../core/osdep.h"
+#  include "../core/psPrnf.h"
+#  include "../core/psLog.h"
+#  include "cryptoApi.h"
+#  include "cryptolib.h"
+# endif
 
 #endif /* _h_PS_CRYPTOIMPL */

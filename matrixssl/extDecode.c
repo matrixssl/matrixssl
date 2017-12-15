@@ -64,21 +64,22 @@ int32 parseClientHelloExtensions(ssl_t *ssl, unsigned char **cp, unsigned short 
     unsigned short renegotiationExtSent = 0;
 # endif
 
-	c = *cp;
-	end = c + len;
-	
-	/* Clear extFlags in case of rehandshakes */
-	ssl->extFlags.truncated_hmac = 0;
-	ssl->extFlags.sni = 0;
-	ssl->extFlags.session_id = 0;
-	ssl->extFlags.session_ticket = 0;
-	ssl->extFlags.extended_master_secret = 0;
-	ssl->extFlags.status_request = 0;
-	ssl->extFlags.signed_certificate_timestamp = 0;
-	
-	/*	There could be extension data to parse here:
-		Two byte length and extension info.
-		http://www.faqs.org/rfcs/rfc3546.html
+    c = *cp;
+    end = c + len;
+
+    /* Clear extFlags in case of rehandshakes */
+    ssl->extFlags.truncated_hmac = 0;
+    ssl->extFlags.sni = 0;
+    ssl->extFlags.sni_in_last_client_hello = 0;
+    ssl->extFlags.session_id = 0;
+    ssl->extFlags.session_ticket = 0;
+    ssl->extFlags.extended_master_secret = 0;
+    ssl->extFlags.status_request = 0;
+    ssl->extFlags.signed_certificate_timestamp = 0;
+
+    /*  There could be extension data to parse here:
+        Two byte length and extension info.
+        http://www.faqs.org/rfcs/rfc3546.html
 
         NOTE:  This c != end test is only safe because ClientHello is the
         only record/message in the flight of supported handshake protocols.     */
@@ -234,9 +235,9 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
 # ifdef USE_ECC_CIPHER_SUITE
     unsigned short dataLen, curveId;
     uint32 ecFlags;
-# elif defined USE_OCSP
+# elif defined USE_OCSP_RESPONSE
     unsigned short dataLen;
-# endif /* USE_ECC_CIPHER_SUITE || USE_OCSP */
+# endif /* USE_ECC_CIPHER_SUITE || USE_OCSP_RESPONSE */
 # ifdef USE_TLS_1_2
     unsigned short tmpLen;
 # endif
@@ -352,6 +353,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         }
         memcpy(ssl->expectedName, c, i);
         ssl->expectedName[i] = '\0';
+        ssl->extFlags.sni_in_last_client_hello = 1;
         break;
 
 # ifdef USE_ALPN
@@ -420,6 +422,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
                 ssl->err = SSL_ALERT_HANDSHAKE_FAILURE;
                 return MATRIXSSL_ERROR;
             }
+            ssl->secureRenegotiationInProgress = PS_TRUE;
         }
         else
         {
@@ -628,7 +631,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         break;
 # endif /* USE_ECC_CIPHER_SUITE */
 
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
     case EXT_STATUS_REQUEST:
         /*  Validation of minimum size and status_type of 1 (ocsp) */
         if (extLen < 5 || *c != 0x1)
@@ -643,7 +646,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         dataLen += *c; c++; extLen--;
         if (dataLen + 2 > extLen)
         {
-            psTraceIntInfo("Bad cert_status_request extension: \n", extType);
+            psTraceIntInfo("Bad cert_status_request extension: %d\n", extType);
             ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
             return MATRIXSSL_ERROR;
         }
@@ -653,7 +656,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         dataLen += *c; c++; extLen--;
         if (dataLen > extLen)
         {
-            psTraceIntInfo("Bad cert_status_request extension: \n", extType);
+            psTraceIntInfo("Bad cert_status_request extension: %d\n", extType);
             ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
             return MATRIXSSL_ERROR;
         }
@@ -672,7 +675,7 @@ static int ClientHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
         }
 
         break;
-# endif
+# endif /* USE_OCSP_RESPONSE */
 
 	/**************************************************************************/
 #ifdef USE_SCT
@@ -1186,6 +1189,7 @@ static int ServerHelloExt(ssl_t *ssl, unsigned short extType, unsigned short ext
                 psTraceInfo("Srv had bad peer renegotiationInfo\n");
                 return MATRIXSSL_ERROR;
             }
+            ssl->secureRenegotiationInProgress = PS_TRUE;
         }
         else
         {

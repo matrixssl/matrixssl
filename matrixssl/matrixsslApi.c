@@ -327,6 +327,86 @@ int32_t matrixSslGetEapFastSKS(const ssl_t *ssl,
 }
 #  endif /* USE_EAP_FAST */
 
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+int32_t matrixSslNeedClientCert(ssl_t *ssl)
+{
+    if (ssl->extClientCertKeyStateFlags ==
+            EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE)
+    {
+        return PS_TRUE;
+    }
+    else
+    {
+        return PS_FALSE;
+    }
+}
+int32_t matrixSslNeedClientPrivKey(ssl_t *ssl)
+{
+    if (ssl->extClientCertKeyStateFlags ==
+            EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE)
+    {
+#  ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
+        /*
+          Not going to need priv key loading when we are signing
+          the CertificateVerify message externally - we won't need
+          direct access to the priv key in that case.
+        */
+        if (matrixSslNeedCvSignature(ssl))
+        {
+            return PS_FALSE;
+        }
+#  endif /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
+        return PS_TRUE;
+    }
+    else
+    {
+        return PS_FALSE;
+    }
+}
+int32_t matrixSslClientCertUpdated(ssl_t *ssl)
+{
+    if (ssl->extClientCertKeyStateFlags !=
+            EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE)
+    {
+        psTraceInfo("Error: wrong state for client cert update\n");
+        return PS_FALSE;
+    }
+    else
+    {
+        ssl->extClientCertKeyStateFlags =
+            EXT_CLIENT_CERT_KEY_STATE_GOT_CERT_KEY_UPDATE;
+        /*
+          We will assume the client has loaded a cert that is
+          compatible with the server's expectations.
+          By-pass MatrixSSL checks.
+        */
+        /**/
+        if (ssl->keys && ssl->keys->cert)
+        {
+            ssl->sec.certMatch = 1;
+        }
+
+        return PS_TRUE;
+    }
+}
+
+int32_t matrixSslClientPrivKeyUpdated(ssl_t *ssl)
+{
+    if (ssl->extClientCertKeyStateFlags !=
+            EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE)
+    {
+        psTraceInfo("Error: wrong state for client key update\n");
+        return PS_FALSE;
+    }
+    else
+    {
+        ssl->extClientCertKeyStateFlags =
+            EXT_CLIENT_CERT_KEY_STATE_GOT_CERT_KEY_UPDATE;
+        return PS_TRUE;
+    }
+}
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
+
 # ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
 int32_t matrixSslNeedCvSignature(ssl_t *ssl)
 {
@@ -525,6 +605,7 @@ int32 matrixSslNewServerSession(ssl_t **ssl, const sslKeys_t *keys,
     sslSessOpts_t *options)
 {
     ssl_t *lssl;
+    int32 providedVersionFlag;
 
     if (!ssl)
     {
@@ -534,6 +615,8 @@ int32 matrixSslNewServerSession(ssl_t **ssl, const sslKeys_t *keys,
     {
         return PS_ARG_FAIL;
     }
+
+    providedVersionFlag = options->versionFlag;
 
     /* Add SERVER_FLAGS to versionFlag member of options */
     options->versionFlag |= SSL_FLAGS_SERVER;
@@ -562,6 +645,29 @@ int32 matrixSslNewServerSession(ssl_t **ssl, const sslKeys_t *keys,
     }
 # endif /* USE_CLIENT_AUTH */
 
+    /*
+      Server-specific options that can be used to restrict the
+      supported protocol version range. These are only applicable
+      when the library user did not set any specific version to
+      versionFlag.
+    */
+# if defined(USE_TLS_1_2_TOGGLE) || defined(USE_TLS_1_0_TOGGLE)
+    if (providedVersionFlag == 0)
+    {
+#  ifdef USE_TLS_1_2_TOGGLE
+        if (options->serverDisableTls1_2)
+        {
+            lssl->disable_tls_1_2 = PS_TRUE;
+        }
+#  endif
+#  ifdef USE_TLS_1_0_TOGGLE
+        if (options->disableTls1_0)
+        {
+            lssl->disable_tls_1_0 = PS_TRUE;
+        }
+#  endif
+    }
+# endif /* USE_TLS_1_2_TOGGLE || USE_TLS_1_0_TOGGLE */
     /*
         For the server, ssl->expectedName can only be populated with
         the server name parsed from the Server Name Indication
@@ -1188,6 +1294,13 @@ DECODE_MORE:
     decodeRet = matrixSslDecode(ssl, &buf, &len, size, &start, &reqLen,
         &decodeErr, &alertLevel, &alertDesc);
 
+#if defined(USE_HARDWARE_CRYPTO_RECORD) || defined(USE_HARDWARE_CRYPTO_PKA) || defined(USE_EXT_CLIENT_CERT_KEY_LOADING)
+    if (decodeRet == PS_PENDING || decodeRet == PS_EAGAIN)
+    {
+        return decodeRet;
+    }
+HW_ASYNC_RESUME:
+#endif
 /*
     Convenience for the cases that expect buf to have moved
         - calculate the number of encoded bytes that were decoded

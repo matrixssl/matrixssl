@@ -9,9 +9,11 @@
 COMMON_MK_PATH:=$(dir $(lastword $(MAKEFILE_LIST)))
 
 # Allow extra CFLAGS, CPPFLAGS and LDFLAGS to be used.
+CFLAGS_DEBUGGABLE=$(DEBUGGABLE)
+CPPFLAGS_DEBUGGABLE=$(DEBUGGABLE)
 LDFLAGS += $(EXTRA_LDFLAGS) $(LDFLAGS_MAKEFILES)
-CFLAGS += $(CFLAGS_STANDARD) $(CFLAGS_PLATFORM) $(CFLAGS_ADDITIONAL) $(CFLAGS_WARNINGS) $(CFLAGS_CPU) $(CFLAGS_ASM) $(CFLAGS_PROFILE) $(CFLAGS_MAKEFILES) $(DEBUGGABLE) $(EXTRA_CFLAGS)
-CPPFLAGS += $(CPPFLAGS_STANDARD) $(CPPFLAGS_PLATFORM) $(CPPFLAGS_ADDITIONAL) $(CPPFLAGS_WARNINGS) $(CPPFLAGS_CPPPU) $(CPPFLAGS_ASM) $(CPPFLAGS_PROFILE) $(CPPFLAGS_MAKEFILES) $(DEBUGGABLE) $(EXTRA_CPPFLAGS)
+CFLAGS += $(CFLAGS_STANDARD) $(CFLAGS_PLATFORM) $(CFLAGS_ADDITIONAL) $(CFLAGS_WARNINGS) $(CFLAGS_CPU) $(CFLAGS_ASM) $(CFLAGS_PROFILE) $(CFLAGS_MAKEFILES) $(CFLAGS_DEBUGGABLE) $(CFLAGS_EXTRA) $(EXTRA_CFLAGS)
+CPPFLAGS += $(CPPFLAGS_STANDARD) $(CPPFLAGS_PLATFORM) $(CPPFLAGS_ADDITIONAL) $(CPPFLAGS_WARNINGS) $(CPPFLAGS_CPU) $(CPPFLAGS_CPPPU) $(CPPFLAGS_ASM) $(CPPFLAGS_PROFILE) $(CPPFLAGS_MAKEFILES) $(CPPFLAGS_DEBUGGABLE) $(CPPFLAGS_EXTRA) $(EXTRA_CPPFLAGS)
 
 #-------------------------------------------------------------------------------
 ## Makefile variables that must be defined in this file
@@ -65,13 +67,25 @@ CLEAN_ENV=LC_ALL=POSIX
 #  i386-redhat-linux
 #  x86_64-redhat-linux
 ifeq '$(CCARCH)' ''
+CCARCH:=$(shell $(CLEAN_ENV) $(CC) $(CFLAGS_ARCHITECTURE_VARIANT) $(FLAGS_ARCHITECTURE_VARIANT) -print-multiarch)
+ifeq '$(CCARCH)' ''
 CCARCH:=$(shell $(CLEAN_ENV) $(CC) -v 2>&1 | sed -n '/Target: / s/// p')
 ifeq '$(CCARCH)' ''
 # Could not obtain target triplet: Try still -dumpmachine (supported by
 # some versions of GCC)
 CCARCH:=$(shell $(CLEAN_ENV) $(CC) -dumpmachine)
 ifeq '$(CCARCH)' ''
-$(error Unable to determine compiler architecture. $(CC) -v or $(CC) -dumpmachine does not work. Please, provide CCARCH manually via an environment variable.)
+$(error Unable to determine compiler architecture.
+$(CC) $(CFLAGS_ARCHITECTURE_VARIANT) $(FLAGS_ARCHITECTURE_VARIANT) -print-multiarch or $(CC) -v or $(CC) -dumpmachine does not work. Please, provide CCARCH manually via an environment variable.)
+endif
+endif
+endif
+ifeq ($(origin CCARCH),file)
+ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),clobber)
+$(info Compiling target architecture: $(CCARCH))
+$(info If this is incorrect, provide the CCARCH variable manually to make.)
+endif
 endif
 endif
 endif
@@ -133,6 +147,12 @@ ifndef MATRIX_DEBUG
 endif
 CFLAGS+=$(OPT) $(C_STD)
 
+ifdef MATRIX_SSL_TRACE
+ CFLAGS+=-DUSE_SSL_HANDSHAKE_MSG_TRACE
+ CFLAGS+=-DUSE_SSL_INFORMATIONAL_TRACE
+ CFLAGS+=-DUSE_DTLS_DEBUG_TRACE
+endif
+
 ifeq "$(COMMON_MK_NO_TARGETS)" ""
 default: $(BUILD)
 
@@ -149,18 +169,22 @@ endif
 
 # 64 Bit Intel Target
 ifneq (,$(findstring x86_64-,$(CCARCH)))
- CFLAGS+=-m64
+ CFLAGS_ARCHITECTURE_VARIANT=-m64
  STROPTS+=", 64-bit Intel RSA/ECC ASM"
- # Enable AES-NI if the host supports it (assumes Host is Target)
+ # Provide flags for AES-NI if the host supports it (assumes Host is Target)
  ifneq (,$(findstring -linux,$(CCARCH)))
   ifeq ($(shell grep -o -m1 aes /proc/cpuinfo),aes)
-   CFLAGS+=-maes -mpclmul -msse4.1
+   CFLAGS_ENABLE_AESNI=-maes -mpclmul -msse4.1
+   CFLAGS_ENABLE_AES=-maes
+   CFLAGS+=$(CFLAGS_ENABLE_AES)
    STROPTS+=", AES-NI ASM"
   endif
  endif
  ifneq (,$(findstring apple,$(CCARCH)))
   ifeq ($(shell sysctl -n hw.optional.aes),1)
-   CFLAGS+=-maes -mpclmul -msse4.1
+   CFLAGS_ENABLE_AESNI=-maes -mpclmul -msse4.1
+   CFLAGS_ENABLE_AES=-maes
+   CFLAGS+=$(CFLAGS_ENABLE_AES)
    STROPTS+=", AES-NI ASM"
   endif
  endif
@@ -168,13 +192,16 @@ endif
 
 # 32 Bit Intel Target
 ifneq (,$(findstring i586-,$(CCARCH)))
- CFLAGS+=-m32
+ CFLAGS_ARCHITECTURE_VARIANT=-m32
  ifneq (,$(findstring edison,$(shell uname -n)))
   ifneq (,$(findstring -O3,$(OPT)))
    #Edison does not like -O3
    OPT:=-O2
   endif
-  CFLAGS+=-DEDISON -maes -mpclmul -msse4.1
+  CFLAGS+=-DEDISON
+  CFLAGS_ENABLE_AESNI=-maes -mpclmul -msse4.1
+  CFLAGS_ENABLE_AES=-maes
+  CFLAGS+=$(CFLAGS_ENABLE_AES)
   STROPTS+=", 32-bit Intel RSA/ECC ASM, AES-NI ASM, Intel Edison"
  else
   STROPTS+=", 32-bit Intel RSA/ECC ASM"
@@ -183,7 +210,7 @@ endif
 
 # 32 Bit Intel Target Alternate
 ifneq (,$(findstring i686-,$(CCARCH)))
- CFLAGS+=-m32
+ CFLAGS_ARCHITECTURE_VARIANT=-m32
  STROPTS+=", 32-bit Intel RSA/ECC ASM"
 endif
 ifneq (,$(findstring i386-,$(CCARCH)))

@@ -624,11 +624,12 @@ int32 psGetFileBufFp(psPool_t *pool, FILE *fp, unsigned char **buf,
 {
     struct stat f_stat;
     size_t tmp = 0;
+    int fno = fileno(fp);
 
-    if (fstat(fileno(fp), &f_stat) != 0)
+    if (fstat(fno, &f_stat) != 0)
     {
         fclose(fp);
-        psTraceStrCore("Unable to stat %s\n", (char *) fileName);
+        psTraceIntCore("Unable to stat fp %d\n", fno);
         return PS_PLATFORM_FAIL;
     }
     *buf = psMalloc(pool, (size_t) (f_stat.st_size + 1));

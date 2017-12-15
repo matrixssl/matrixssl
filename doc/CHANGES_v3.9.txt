@@ -3,6 +3,147 @@
 MATRIXSSL 3.9 CHANGELOG
 
 
+Changes between 3.9.3 and 3.9.5 [December 2017]
+
+This version fixes several vulnerabilities in the CMS and TLS libraries,
+contains a large amount of bug fixes and some new features for the TLS
+and X.509 libraries.
+
+-   SSL/TLS
+
+    -   Fixed several out-of-bounds heap reads reported by researchers
+        Simon Friedberger, Robert Merget and Juraj Somorovsky, working
+        at the Ruhr-University Bochum. It was possible to trigger the
+        out-of-bounds reads with maliciously crafted Certificate and
+        ServerHello handshake messages.
+
+    -   Fixed vulnerabilities reported by Richard Clarke (@rsclarke).
+        Truncated certificates could be created to cause out-of-bounds
+        reads of size 1 in getAsnOID and getSerialNum.
+
+    -   Fixed an issue where the server did not keep the raw DER of the
+        client cert during a rehandshake, even when the
+        keep_peer_cert_der session option was set.
+
+    -   Fixed an issue that caused empty SNI to be sent in the
+        ServerHello during renegotiation even when the last ClientHello
+        did not contain it.
+
+    -   Fixed issues with handling of RSA-SHA-1 server and
+        client certificates. One of the symptoms was a segfault that
+        occurred when trying to use a server certificate signed
+        with RSA-SHA-1.
+
+    -   Refactor supported_signature_algorithms checking and signature
+        algorithm selection for CertificateVerify and ServerKeyExchange
+        Including adding support for RSA-SHA-512 server certificates.
+
+    -   Added support for on-demand client certificate and client
+        private key loading (USE_EXT_CLIENT_CERT_KEY_LOADING). MatrixSSL
+        now provides an asynchronous mechanism that allows
+        client-programs to load or change the client certificate
+        on-demand, as a response to a CertificateRequest.
+
+    -   Added new option to matrixValidateCertsExt that can be used to
+        (re-)perform certificate date validation in that function. By
+        default, MatrixSSL checks the certificate date during parsing.
+        The new option is useful for e.g. long-living processes that may
+        outlast the certificate validity period.
+
+    -   Added support for SSLv2 Client Hello format used by some
+        TLS clients. Only Client Hello message is supported, SSLv2
+        connections are not supported as it would have
+        security implications. See RFC 5246: The Transport Layer
+        Security (TLS) Protocol Version 1.2 Appendix E.2 for details of
+        TLS backwards compatibility with SSLv2.
+
+    -   Enabled TLS FALSE START support by default. This allows better
+        interoperability with recent versions of Firefox browser and
+        some versions of Chrome. (Controlled
+        with USE_SERVER_SIDE_FALSE_START_SUPPORT.)
+
+    -   Fixed a compilation problem if USE_TLS_1_2 was not defined.
+
+    -   Fixed compilation issues when compiling without USE_SHA384.
+
+    -   Fixed compilation without USE_REHANDSHAKING.
+
+    -   Improved the example server and client applications.
+
+    -   Fixes to file paths client.c uses for RSA-3072 PEM files.
+
+-   Crypto library
+
+    -   Fixed an out-of-bounds read in psAesUnwrap.
+
+    -   Fixed byte order issue in psEccDsaSign.
+
+    -   Fixed double-free when s parameter handling fails in
+        MatrixCrypto's psEccDsaSign.
+
+-   CMS library
+
+    -   Fixed a critical bug in the Authenticated-Enveloped-data stream
+        parsing API (matrixCmsFinalParseAuthEnvData) that caused
+        verification of the CBC MAC to be skipped.
+-   X.509 library
+
+    -   The EC public key coordinates were encoded incorrectly into
+        certificates when the leading 8 bits of a coordinate were
+        all zero.
+
+    -   subjectKeyId got encoded always, even when no one actually
+        computed the value.
+
+    -   Encoding of extensions was omitted when there was an
+        issuerAltName but no subjectAltName given.
+
+    -   psWriteCertExt set the basicConstraints CA bit to TRUE even if
+        the value was actually CA_UNDEFINED.
+
+    -   psX509SetCAIssuedCertExtensions used the extensions struct
+        pointer from CSR when there were no extensions in the
+        CA's config. This lead to a double-free.
+
+    -   The psWriteCertReqMem_BinConfig function was leaking memory.
+
+    -   Added new initialization function for the extensions struct.
+
+    -   Fix for otherName OID encoding in subjectAltName.
+
+    -   Added possibility to give the otherName OID as a
+        dot-notation string.
+
+    -   Fixed otherName OIDs length restriction.
+
+    -   Added support for the PrintableString and IA5String ASN.1 types
+        in psX509SetDNAttribute.
+
+    -   Improved the order in which Relative Distinguished Names are
+        encoded into certificates and CSRs.
+
+    -   Support for setting and parsing certificate request with
+        challenge password (psX509SetChallengePassword(),
+        and psCertReqGetChallengePassword())
+
+-   Networking and the MatrixSSL Net convenience layer
+
+    -   Fixed multirecord handling in matrixsslNet.
+
+    -   Fixed mishandled PS_EAGAIN from MatrixSSL in matrixsslNet.c.
+
+    -   Added "peek" to psnet.
+
+    -   Added feature to matrixsslNet that allows writing during read
+        buffer contains some data.
+
+    -   Enlarged buffer used by matrixsslNet.c to avoid having the read
+        input in multiple blocks.
+
+    -   Fixes to MatrixSslNet to work when it receives multiple
+        application data records at once.
+
+
 Changes between 3.9.2 and 3.9.3 [June 2017]
 
 Fix serious buffer handling vulnerabilities along with other smaller bug

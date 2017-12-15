@@ -70,17 +70,21 @@ extern "C" {
 /* #define USE_SSL_RSA_WITH_NULL_MD5 / **< @security OFF * / */
 
 /**
-    False Start support for Chrome browser.
-    @see http://tools.ietf.org/html/draft-bmoeller-tls-falsestart-00
+    False Start support for Chrome and Firefox browsers.
+    @see https://tools.ietf.org/html/rfc7918
+
+    Some versions of Firefox browser and Chrome browser include support for
+    False Start. This flag will enable server side support on MatrixSSL
+    operating as server for client using false start feature.
 
     @note April 2012: Google has announced this feature will be removed in
     version 20 of their browser due to industry compatibility issues.
-
-    @note November 2017: An official IETF draft is in process for this
-    functionality to become standardized.
-    @see https://datatracker.ietf.org/doc/draft-ietf-tls-falsestart/
+    However because there are other browsers using the feature, this feature
+    is often recommendable to enable for maximal browser compatibility.
  */
-/* #define ENABLE_FALSE_START / **< @security OFF * / */
+#ifdef USE_SERVER_SIDE_FALSE_START_SUPPORT
+#define ENABLE_FALSE_START
+#endif /* USE_SERRVER_SIDE_FALSE_START_SUPPORT */
 
 /**
     zlib compression support.
@@ -210,6 +214,13 @@ extern "C" {
 # define DISABLE_SSLV3  /**< DO NOT DISABLE, undef below if required
                            @security NIST_SHALL_NOT */
 
+# ifndef NO_TLS_1_2_TOGGLE
+#  define USE_TLS_1_2_TOGGLE /**< Allow disabling TLS 1.2 dynamically. */
+# endif
+ # ifndef NO_TLS_1_0_TOGGLE
+#  define USE_TLS_1_0_TOGGLE /**< Allow disabling TLS 1.0 dynamically. */
+# endif
+   
 #  if defined USE_TLS_1_2_AND_ABOVE
 #   define DISABLE_TLS_1_1
 #   define DISABLE_TLS_1_0
@@ -236,7 +247,7 @@ extern "C" {
 #  include "zlib.h"
 # endif
 
-# if defined(USE_AES_GCM) || defined(USE_AES_CCM) || defined(USE_CHACHA20_POLY1305)
+# if defined(USE_AES_GCM) || defined(USE_AES_CCM) || defined(USE_CHACHA20_POLY1305_IETF)
 #  define USE_AEAD_CIPHER
 # endif
 
@@ -274,7 +285,7 @@ extern "C" {
 # define     SSL_MAX_PLAINTEXT_LEN       0x4000 /* 16KB */
 # define     SSL_MAX_RECORD_LEN          SSL_MAX_PLAINTEXT_LEN + 2048
 # define     SSL_MAX_BUF_SIZE            SSL_MAX_RECORD_LEN + 0x5
-# define     SSL_MAX_DISABLED_CIPHERS    8
+# define     SSL_MAX_DISABLED_CIPHERS    32
 /*
     Maximum buffer sizes for static SSL array types
  */
@@ -308,18 +319,18 @@ extern "C" {
 #  define DTLS_HEADER_ADD_LEN        8
 # endif
 
-# define TLS_CHACHA20_POLY1305_AAD_LEN   13
+# define TLS_CHACHA20_POLY1305_IETF_AAD_LEN   13
 # define TLS_GCM_AAD_LEN                 13
 # define TLS_AEAD_SEQNB_LEN              8
 
 # define TLS_GCM_TAG_LEN                 16
-# define TLS_CHACHA20_POLY1305_TAG_LEN   16
+# define TLS_CHACHA20_POLY1305_IETF_TAG_LEN   16
 # define TLS_CCM_TAG_LEN                 16
 # define TLS_CCM8_TAG_LEN                8
 
 # define TLS_AEAD_NONCE_MAXLEN           12/* Maximum length for an AEAD's nonce */
 # define TLS_EXPLICIT_NONCE_LEN          8
-# define TLS_CHACHA20_POLY1305_NONCE_LEN 0
+# define TLS_CHACHA20_POLY1305_IETF_NONCE_LEN 0
 
 # define AEAD_NONCE_LEN(SSL) ((SSL->flags & SSL_FLAGS_NONCE_W) ? TLS_EXPLICIT_NONCE_LEN : 0)
 # define AEAD_TAG_LEN(SSL) ((SSL->cipher->flags & CRYPTO_FLAGS_CCM8) ? 8 : 16)
@@ -428,6 +439,13 @@ extern "C" {
 # define BFLAG_STOP_BEAST        (1 << 2)
 # define BFLAG_KEEP_PEER_CERTS    (1 << 3) /* Keep peer cert chain. */
 # define BFLAG_KEEP_PEER_CERT_DER (1 << 4) /* Keep raw DER of peer certs. */
+
+enum PACKED
+{
+    tls_v_1_0 = 1,
+    tls_v_1_1 = 2,
+    tls_v_1_2 = 3
+};
 
 /*
     Number of bytes server must send before creating a re-handshake credit
@@ -640,15 +658,9 @@ static __inline uint16_t HASH_SIG_MASK(uint8_t hash, uint8_t sig)
 # define TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384   0xC030 /* 49200 */
 # define TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256    0xC031 /* 49201 */
 # define TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384    0xC032 /* 49202 */
-# ifdef CHACHA20POLY1305_IETF
 /* Defined in https://tools.ietf.org/html/draft-ietf-tls-chacha20-poly1305 */
 #  define TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256     0xCCA8 /* 52392 */
 #  define TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256   0xCCA9 /* 52393 */
-# else
-/* Defined in https://tools.ietf.org/html/draft-agl-tls-chacha20poly1305 */
-#  define TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256     0xCC13 /* 52243 */
-#  define TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256   0xCC14 /* 52244 */
-# endif
 
 /*
     Supported HELLO extensions
@@ -723,36 +735,109 @@ typedef struct
     char *hsHeader;
 } dtlsFragHdr_t;
 
-#  ifndef USE_DTLS_DEBUG_TRACE
-#   define psTraceDtls(x)
-#   define psTraceIntDtls(x, y)
-#   define psTraceStrDtls(x, y)
+#  include "../core/psLog.h"
+#  ifdef PS_LOGF_COMMON
+#   define psTraceDtls(x) PS_LOGF_COMMON(Log_Trace, PS_DTLS, PS_LOGF_FMT, \
+                                         PS_LOGF_FILELINE, "%s", x)
+#   define psTraceIntDtls(x, i) PS_LOGF_COMMON(Log_Trace, PS_DTLS,      \
+                                               PS_LOGF_FMT,             \
+                                               PS_LOGF_FILELINE, x, i)
+#   define psTraceStrDtls(x, s) PS_LOGF_COMMON(Log_Trace, PS_DTLS,      \
+                                               PS_LOGF_FMT,             \
+                                               PS_LOGF_FILELINE, x, s)
+#   define psTracePtrDtls(x, p) PS_LOGF_COMMON(Log_Trace, PS_DTLS,      \
+                                               PS_LOGF_FMT,             \
+                                               PS_LOGF_FILELINE, x, p)
+#   define psTracefDtls(x, ...) PS_LOGF_COMMON(Log_Trace, PS_DTLS,      \
+                                               PS_LOGF_FMT,             \
+                                               PS_LOGF_FILELINE, x, __VA_ARGS__)
 #  else
-#   define psTraceDtls(x) _psTrace(x)
-#   define psTraceIntDtls(x, y) _psTraceInt(x, y)
-#   define psTraceStrDtls(x, y) _psTraceStr(x, y)
-#  endif /* USE_DTLS_DEBUG_TRACE */
+#   ifndef USE_DTLS_DEBUG_TRACE
+#    define psTraceDtls(x)
+#    define psTraceIntDtls(x, y)
+#    define psTraceStrDtls(x, y)
+#   else
+#    define psTraceDtls(x) _psTrace(x)
+#    define psTraceIntDtls(x, y) _psTraceInt(x, y)
+#    define psTraceStrDtls(x, y) _psTraceStr(x, y)
+#   endif /* USE_DTLS_DEBUG_TRACE */
+#  endif /* PS_LOGF_COMMON */
 
 # endif  /* USE_DTLS */
 
-
-# ifndef USE_SSL_HANDSHAKE_MSG_TRACE
-#  define psTraceHs(x)
-#  define psTraceStrHs(x, y)
+# ifdef PS_LOGF_COMMON
+#  define psTraceHs(x) PS_LOGF_COMMON(Log_Trace, PS_MATRIXSSL_HS, PS_LOGF_FMT, \
+                                      PS_LOGF_FILELINE, "%s", x)
+#  define psTraceStrHs(x, s) PS_LOGF_COMMON(Log_Trace, PS_MATRIXSSL_HS, \
+                                            PS_LOGF_FMT,                \
+                                            PS_LOGF_FILELINE, x, s)
 # else
-#  define psTraceHs(x) _psTrace(x)
-#  define psTraceStrHs(x, y) _psTraceStr(x, y)
-# endif /* USE_SSL_HANDSHAKE_MSG_TRACE */
+#  ifndef USE_SSL_HANDSHAKE_MSG_TRACE
+#   define psTraceHs(x)
+#   define psTraceStrHs(x, y)
+#  else
+#   define psTraceHs(x) _psTrace(x)
+#   define psTraceStrHs(x, y) _psTraceStr(x, y)
+#  endif /* USE_SSL_HANDSHAKE_MSG_TRACE */
+# endif /* PS_LOGF_COMMON */
 
-# ifndef USE_SSL_INFORMATIONAL_TRACE
-#  define psTraceInfo(x)
-#  define psTraceStrInfo(x, y)
-#  define psTraceIntInfo(x, y)
+# ifdef PS_LOGF_COMMON
+#  define psTraceInfo(x) PS_LOGF_COMMON(Log_Info, PS_MATRIXSSL, PS_LOGF_FMT, \
+                                        PS_LOGF_FILELINE, "%s", x)
+#  define psTraceIntInfo(x, i) PS_LOGF_COMMON(Log_Info, PS_MATRIXSSL, \
+                                              PS_LOGF_FMT,              \
+                                              PS_LOGF_FILELINE, x, i)
+#  define psTraceStrInfo(x, s) PS_LOGF_COMMON(Log_Info, PS_MATRIXSSL, \
+                                              PS_LOGF_FMT,              \
+                                              PS_LOGF_FILELINE, x, s)
 # else
-#  define psTraceInfo(x) _psTrace(x)
-#  define psTraceStrInfo(x, y) _psTraceStr(x, y)
-#  define psTraceIntInfo(x, y) _psTraceInt(x, y)
+#  ifndef USE_SSL_INFORMATIONAL_TRACE
+#   define psTraceInfo(x)
+#   define psTraceStrInfo(x, y)
+#   define psTraceIntInfo(x, y)
+#  else
+#   define psTraceInfo(x) _psTrace(x)
+#   define psTraceStrInfo(x, y) _psTraceStr(x, y)
+#   define psTraceIntInfo(x, y) _psTraceInt(x, y)
+#  endif /* USE_SSL_INFORMATIONAL_TRACE */
+# endif /* PS_LOGF_COMMON */
+
+# ifdef USE_SSL_INFORMATIONAL_TRACE
+void psPrintSigAlgs(uint16_t sigAlgs, const char *where);
+void psPrintProtocolVersion(const char *where,
+        unsigned char majVer,
+        unsigned char minVer,
+        psBool_t addNewline);
+#  define psTracePrintSigAlgs(sigAlgs, where) \
+    psPrintSigAlgs(sigAlgs, where)
+#  define psTracePrintProtocolVersion(where, majVer, minVer, addNewline) \
+    psPrintProtocolVersion(where, majVer, minVer, addNewline)
+# else
+#  define psTracePrintSigAlgs(sigAlgs, where)
+#  define psTracePrintProtocolVersion(where, majVer, minVer, addNewline)
 # endif /* USE_SSL_INFORMATIONAL_TRACE */
+
+# if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
+psBool_t weSupportSigAlg(int32_t sigAlg,
+        int32_t pubKeyAlgorithm);
+psBool_t peerSupportsSigAlg(int32_t sigAlg,
+        uint16_t peerSigAlgs);
+psBool_t canUseSigAlg(int32_t sigAlg,
+        int32_t pubKeyAlgorithm,
+        uint16_t peerSigAlgs);
+int32_t upgradeSigAlg(int32_t sigAlg, int32_t pubKeyAlgorithm);
+int32_t chooseSigAlgInt(int32_t certSigAlg,
+        psSize_t keySize,
+        int32_t pubKeyAlgorithm,
+        uint16_t peerSigAlgs);
+int32_t chooseSigAlg(psX509Cert_t *cert,
+        psPubKey_t *privKey,
+        uint16_t peerSigAlgs);
+int32_t getSignatureAndHashAlgorithmEncoding(uint16_t sigAlgOid,
+        unsigned char *b1,
+        unsigned char *b2,
+        uint16_t *hashSize);
+# endif
 
 /******************************************************************************/
 
@@ -804,7 +889,7 @@ typedef struct
 } matrixValidateCertsOptions_t;
 
 /* flags for matrixValidateCertsOptions_t: */
-/*
+/**
    Validate the expectedName argument against a subset of the
    GeneralName rules for DNS, Email and IP types _before_ trying
    to find for expectedName in the cert. Note that this is only
@@ -813,13 +898,30 @@ typedef struct
  */
 # define VCERTS_FLAG_VALIDATE_EXPECTED_GENERAL_NAME 0x01
 
-/*
+/**
    Skip the expectedName matching. This is useful e.g. when
    matrixValidateCerts is called by the TLS server to validate
    a client certificate. The client name is usually not known
    in this case.
  */
 # define VCERTS_FLAG_SKIP_EXPECTED_NAME_VALIDATION 0x02
+
+/**
+   Enable matrixValidateCertsExt to perform an independent validation
+   of the certificate date ranges. Dates of the subject cert chain
+   and the found issuer cert are validated against the current
+   system time.
+
+   By default, MatrixSSL only checks the certificate date validity
+   during certificate parsing, setting the PS_CERT_AUTH_FAIL_DATE_FLAG
+   flag in cert->authFailFlags when date validation fails. This flag
+   will be noticed by matrixValidateCertsExt (but only for subject
+   certs, not the found issuer cert). In some applications, the delay
+   between parsing and the actual chain validation can be long. In such
+   situations, it is useful to re-perform the date validation
+   in matrixValidateCertsExt.
+*/
+#  define VCERTS_FLAG_REVALIDATE_DATES 0x04
 
 /* mFlags for matrixValidateCertsOptions_t: */
 /**
@@ -923,7 +1025,7 @@ typedef struct
     psSessionTicketKeys_t *sessTickets;
     sslSessTicketCb_t ticket_cb;
 # endif
-# if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+# if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
     unsigned char *OCSPResponseBuf;
     psSize_t OCSPResponseBufLen;
 # endif
@@ -948,7 +1050,7 @@ typedef struct
     short extendedMasterSecret; /* On by default.  -1 to disable */
     short trustedCAindication;  /* Client: 1 to use */
     short fallbackScsv;         /* Client: 1 to use */
-# ifdef USE_OCSP
+# if defined(USE_OCSP_RESPONSE) || defined(USE_OCSP_REQUEST)
     short OCSPstapling;         /* Client: 1 to send status_request */
 # endif
 # ifdef USE_ECC
@@ -965,6 +1067,10 @@ typedef struct
                                                          ClientHello. Effectively, this ensures that only
                                                          the version in versionFlag can be negotiated. */
 #endif /* USE_CLIENT_SIDE_SSL */
+    psBool_t disableTls1_0;
+#ifdef USE_SERVER_SIDE_SSL
+    psBool_t serverDisableTls1_2;
+#endif /* USE_SERVER_SIDE_SSL */
     void *userPtr;                                  /* Initial value of ssl->userPtr during NewSession */
     void *memAllocPtr;                              /* Will be passed to psOpenPool for each call
                                                        related to this session */
@@ -991,10 +1097,10 @@ typedef int32_t (*sslExtCb_t)(struct ssl *ssl, uint16_t extType, uint8_t extLen,
                               void *e);
 typedef int32_t (*sslCertCb_t)(struct ssl *ssl, psX509Cert_t *cert, int32_t alert);
 
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
 typedef int32_t (*ocspCb_t)(struct ssl *ssl, psOcspResponse_t *response,
                             psX509Cert_t *cert, int32_t status);
-# endif
+# endif /* USE_OCSP_RESPONSE */
 
 /******************************************************************************/
 /*
@@ -1261,6 +1367,9 @@ struct ssl
     int32_t extCvSigAlg;
     unsigned char *extCvOrigFlightEnd;
 # endif /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+    uint32_t extClientCertKeyStateFlags; /* Flags: EXT_CLIENT_CERT_KEY_* */
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
     flightEncode_t *flightEncode;
     unsigned char *delayHsHash;
     unsigned char *seqDelay;      /* tmp until flightEncode_t is built */
@@ -1288,7 +1397,16 @@ struct ssl
     char *alpn;              /* proto user has agreed to use */
     int32 alpnLen;
 #  endif /* USE_ALPN */
+# ifdef USE_TLS_1_2_TOGGLE
+    psBool_t disable_tls_1_2; /* Allow to disable TLS 1.2 dynamically.
+                                 (Servers only). */
+#  endif /* USE_TLS_1_2_TOGGLE */
 # endif /* USE_SERVER_SIDE_SSL */
+
+#  ifdef USE_TLS_1_0_TOGGLE
+    psBool_t disable_tls_1_0; /* Allow to disable TLS 1.0 dynamically. */
+#  endif /* USE_TLS_1_0_TOGGLE */
+
 # ifdef USE_CLIENT_SIDE_SSL
     /* Just to handle corner case of app data tacked on HELLO_REQUEST */
     int32 anonBk;
@@ -1365,6 +1483,7 @@ struct ssl
     uint32 myVerifyDataLen;
     uint32 peerVerifyDataLen;
     int32 secureRenegotiationFlag;
+    psBool_t secureRenegotiationInProgress;
 # endif /* ENABLE_SECURE_REHANDSHAKES */
 # ifdef SSL_REHANDSHAKES_ENABLED
     int32 rehandshakeCount;           /* Make this an internal define of 1 */
@@ -1381,7 +1500,10 @@ struct ssl
 # endif
 # ifdef USE_TLS_1_2
     uint16_t hashSigAlg;
-# endif
+#  if defined(USE_CLIENT_AUTH) && defined(USE_CLIENT_SIDE_SSL)
+    uint16_t serverSigAlgs;
+#  endif /* USE_CLIENT_AUTH && USE_CLIENT_SIDE_SSL */
+# endif /* USE_TLS_1_2 */
 
 # ifdef USE_DTLS
 #  ifdef USE_SERVER_SIDE_SSL
@@ -1480,6 +1602,8 @@ struct ssl
         uint32 status_request_v2 : 1;              /* received EXT_STATUS_REQUEST_V2 */
         uint32 signed_certificate_timestamp: 1;    /* received EXT_SIGNED_CERTIFICATE_TIMESTAMP */
         uint32 require_extended_master_secret : 1; /* peer may require */
+        /* For renegotiations. */
+        uint32 sni_in_last_client_hello : 1;
 # ifdef USE_EAP_FAST
         uint32 eap_fast_master_secret : 1;         /* Using eap_fast key derivation */
 # endif
@@ -1521,6 +1645,7 @@ extern int32    matrixSslNewSession(ssl_t **ssl, const sslKeys_t *keys,
                                     sslSessionId_t *session, sslSessOpts_t *options);
 extern void     matrixSslSetSessionOption(ssl_t *ssl, int32 option, void *arg);
 extern int32_t  matrixSslHandshakeIsComplete(const ssl_t *ssl);
+extern psBool_t matrixSslRehandshaking(const ssl_t *ssl);
 
 /* This used to be prefixed with 'matrix' */
 extern int32    sslEncodeClosureAlert(ssl_t *ssl, sslBuf_t *out,
@@ -1599,10 +1724,10 @@ extern int32 parseServerHelloDone(ssl_t *ssl, int32 hsLen, unsigned char **cp,
 extern int32 parseServerKeyExchange(ssl_t * ssl,
                                     unsigned char hsMsgHash[SHA512_HASH_SIZE],
                                     unsigned char **cp, unsigned char *end);
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
 extern int32 parseCertificateStatus(ssl_t *ssl, int32 hsLen, unsigned char **cp,
                                     unsigned char *end);
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 #  ifndef USE_ONLY_PSK_CIPHER_SUITE
 extern int32 parseCertificateRequest(ssl_t *ssl, int32 hsLen,
                                      unsigned char **cp, unsigned char *end);

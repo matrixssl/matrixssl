@@ -52,7 +52,7 @@
 # define SEED_BLOCKLEN   16
 # define SEED_IVLEN      SEED_BLOCKLEN
 # define SEED_KEYLEN     16
-# define CHACHA20POLY1305_IV_FIXED_LENGTH    12
+# define CHACHA20POLY1305_IETF_IV_FIXED_LENGTH    12
 # define CHACHA20POLY1305_IETF  /* Always use IETF mode */
 
 # define MAX_IVLEN       AES_IVLEN
@@ -69,6 +69,10 @@
 # endif
 # ifdef USE_LIBSODIUM_CRYPTO
 #  include "symmetric_libsodium.h"
+#  include "../ps_chacha20poly1305ietf.h"
+# endif
+# ifdef USE_MATRIX_CHACHA20_POLY1305_IETF
+#  include "../ps_chacha20poly1305ietf.h"
 # endif
 
 /******************************************************************************/
@@ -81,8 +85,8 @@ typedef union
 # ifdef USE_AES_CBC
     psAesCbc_t aes;
 # endif
-# ifdef USE_CHACHA20_POLY1305
-    psChacha20Poly1305_t chacha20poly1305;
+# ifdef USE_CHACHA20_POLY1305_IETF
+    psChacha20Poly1305Ietf_t chacha20poly1305ietf;
 # endif
 # ifdef USE_MATRIX_RC2
     psRc2Cbc_t rc2;

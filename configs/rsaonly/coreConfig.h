@@ -53,6 +53,19 @@
 #  endif
 
 /**
+    When logging or tracing use psLog.h APIs.
+
+    Generally, using psLog.h allows more control over logging, because
+    it is possible to filter log and tracing information more efficiently.
+    However, this feature comes with a footprint cost, so the feature can be
+    disabled by setting NO_PS_LOGF_COMMON or by commenting out USE_PS_LOGF_COMMON
+    below.
+ */
+#ifdef NO_PS_LOGF_COMMON
+#define USE_PS_LOGF_COMMON
+#endif /* NO_PS_LOGF_COMMON */
+
+/**
     If enabled, calls to the psError set of APIs will perform a platform
     abort on the exeutable to aid in debugging.
  */

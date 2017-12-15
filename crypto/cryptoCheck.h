@@ -105,10 +105,17 @@
 #  endif
 # endif
 
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
 #  ifndef USE_SHA1
 #   error "Enable USE_SHA1 in cryptoConfig.h for OCSP support"
 #  endif
+# endif
+
+# ifdef USE_OCSP_REQUEST
+#  ifndef USE_SHA1
+#   error "Enable USE_SHA1 in cryptoConfig.h for OCSP support"
+#  endif
+#   error "Enable USE_CERT_GEN in cryptoConfig.h for USE_OCSP_REQUEST"
 # endif
 
 #endif  /* _h_PS_CRYPTOCHECK */

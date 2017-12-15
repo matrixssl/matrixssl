@@ -66,10 +66,25 @@
 # endif
 
 # ifdef USE_CHACHA20_POLY1305
-#  ifndef USE_LIBSODIUM_CRYPTO
-#   error "libsodium required for chacha20_poly1305"
-#  endif
-# endif
+#  ifndef USE_CHACHA20_POLY1305_IETF
+#   ifndef NO_CHACHA20_POLY1305_IETF
+
+/* Issue warning if old USE_CHACHA20_POLY1305 is used, and there is
+   nothing said about CHACHA20_POLY1305_IETF.
+   Old versions of MatrixSSL used USE_CHACHA20_POLY1305 to turn on/off
+   ChaCha20Poly1305 non-IETF/IETF. */
+#    ifdef WIN32
+#     pragma message("Define USE_CHACHA20_POLY1305_IETF instead of USE_CHACHA20_POLY1305.")
+#    else
+#     warning "Define USE_CHACHA20_POLY1305_IETF instead of USE_CHACHA20_POLY1305."
+#    endif
+
+/* Defining USE_CHACHA20_POLY1305_IETF for compatibility, unless
+   spefically forbidden using NO_CHACHA20_POLY1305_IETF. */
+#    define USE_CHACHA20_POLY1305_IETF
+#   endif /* !NO_CHACHA20_POLY1305_IETF */
+#  endif /* !USE_CHACHA20_POLY1305_IETF */
+# endif /* USE_CHACHA20_POLY1305 */
 
 # ifdef USE_ARC4
 #  define USE_MATRIX_ARC4
@@ -146,14 +161,18 @@
 #  define USE_MATRIX_PRNG
 # endif
 
+# ifdef USE_CHACHA20_POLY1305_IETF
+#  define USE_MATRIX_CHACHA20_POLY1305_IETF
+# endif /* USE_CHACHA20_POLY1305_IETF */
+
 # ifdef USE_LIBSODIUM_CRYPTO
 /******************************************************************************/
 /**
     Use libsodium cryptography primitives (link with libsodium.a).
  */
-#  ifdef USE_CHACHA20_POLY1305
-/* #undef USE_MATRIX_CHACHA20_POLY1305 / * @note, not defined in matrix crypto * / */
-#   define USE_LIBSODIUM_CHACHA20_POLY1305
+#  ifdef USE_CHACHA20_POLY1305_IETF
+#   undef USE_MATRIX_CHACHA20_POLY1305_IETF /* @note, not defined in matrix crypto */
+#   define USE_LIBSODIUM_CHACHA20_POLY1305_IETF
 #  endif
  
 /* libsodium AES-GCM is not automatically enabled.

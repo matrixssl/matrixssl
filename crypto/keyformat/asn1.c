@@ -610,6 +610,13 @@ int32_t getAsnOID(const unsigned char **pp, uint32_t len, int32_t *oi,
     rc = PS_PARSE_FAIL;
     end = p + len;
     plen = end - p;
+
+    if (len < 1)
+    {
+        psTraceCrypto("Malformed algorithmId 1\n");
+        return rc;
+    }
+
     if (*(p++) != ASN_OID || (rc = getAsnLength32(&p, (uint32_t) (end - p), &arcLen, 0))
         < 0)
     {
@@ -643,7 +650,8 @@ int32_t getAsnOID(const unsigned char **pp, uint32_t len, int32_t *oi,
     {
         plen -= (end - p);
         *paramLen = len - plen;
-        if (*p != ASN_NULL)
+
+        if (*paramLen < 1 || *p != ASN_NULL)
         {
             *pp = p;
             /* paramLen tells whether params exist or completely missing (0) */

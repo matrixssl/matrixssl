@@ -66,6 +66,29 @@ extern "C" {
 #  endif
 # endif
 
+/*
+  Convenience macros for finding out minimum and maximum enabled TLS version.
+*/
+# if defined(USE_TLS_1_2) && !defined(DISABLE_TLS_1_2)
+#  define MAX_ENABLED_TLS_VER TLS_1_2_MIN_VER
+# elif defined(USE_TLS_1_1) && !defined(DISABLE_TLS_1_1)
+#  define MAX_ENABLED_TLS_VER TLS_1_1_MIN_VER
+# elif defined(USE_TLS) && !defined(DISABLE_TLS_1_0)
+#  define MAX_ENABLED_TLS_VER TLS_MIN_VER
+# elif !defined(DISABLE_SSLV3)
+#  define MAX_ENABLED_TLS_VER SSL3_MIN_VER
+# endif
+
+# if !defined(DISABLE_SSLV3)
+#  define MIN_ENABLED_TLS_VER SSL3_MIN_VER
+# elif defined(USE_TLS) && !defined(DISABLE_TLS_1_0)
+#  define MIN_ENABLED_TLS_VER TLS_MIN_VER
+# elif defined(USE_TLS_1_1) && !defined(DISABLE_TLS_1_1)
+#  define MIN_ENABLED_TLS_VER TLS_1_1_MIN_VER
+# elif defined(USE_TLS_1_2) && !defined(DISABLE_TLS_1_2)
+#  define MIN_ENABLED_TLS_VER TLS_1_2_MIN_VER
+# endif
+
 # ifdef USE_SHARED_SESSION_CACHE
 #  ifndef POSIX
 #   error "USE_SHARED_SESSION_CACHE only implemented for POSIX platforms."
@@ -244,8 +267,8 @@ extern "C" {
 #  endif
 
 #  ifdef USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-#   ifndef USE_CHACHA20_POLY1305
-#    error "Enable USE_CHACHA20_POLY1305 in cryptoConfig.h for USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+#   ifndef USE_CHACHA20_POLY1305_IETF
+#    error "Enable USE_CHACHA20_POLY1305_IETF in cryptoConfig.h for USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
 #   endif
 #   ifndef USE_ECC
 #    error "Enable USE_ECC in cryptoConfig.h for USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
@@ -253,15 +276,15 @@ extern "C" {
 #   define USE_DHE_CIPHER_SUITE
 #   define USE_ECDSA_CIPHER_SUITE
 #   define USE_ECC_CIPHER_SUITE
-#   define USE_CHACHA20_POLY1305_CIPHER_SUITE
+#   define USE_CHACHA20_POLY1305_IETF_CIPHER_SUITE
 #  endif
 
 #  ifdef USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
 #   ifndef USE_RSA
 #    error "Enable USE_RSA in cryptoConfig.h for USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
 #   endif
-#   ifndef USE_CHACHA20_POLY1305
-#    error "Enable USE_CHACHA20_POLY1305 in cryptoConfig.h for USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+#   ifndef USE_CHACHA20_POLY1305_IETF
+#    error "Enable USE_CHACHA20_POLY1305_IETF in cryptoConfig.h for USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
 #   endif
 #   ifndef USE_ECC
 #    error "Enable USE_ECC in cryptoConfig.h for USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
@@ -269,7 +292,7 @@ extern "C" {
 #   define USE_DHE_CIPHER_SUITE
 #   define USE_RSA_CIPHER_SUITE
 #   define USE_ECC_CIPHER_SUITE
-#   define USE_CHACHA20_POLY1305_CIPHER_SUITE
+#   define USE_CHACHA20_POLY1305_IETF_CIPHER_SUITE
 #  endif
 
 #  ifdef USE_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256

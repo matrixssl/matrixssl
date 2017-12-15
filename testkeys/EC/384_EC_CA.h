@@ -1,6 +1,6 @@
 /**
  *      @file    384_EC_CA.h
- *
+ *      @version :%h%d$
  * Binary file for including certificate to MatrixSSL.
  */
 static const unsigned char EC384CA[] = {

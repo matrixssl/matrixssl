@@ -32,10 +32,13 @@
 /******************************************************************************/
 
 #include "crypto/cryptoImpl.h"
+#include <string.h>
+#include <stdio.h>
 
 #define DATABYTES_AMOUNT    100 * 1048576   /* # x 1MB (1024-byte variety) */
 
 #define TINY_CHUNKS     16
+#define CHACHA20_TINY_CHUNKS     64
 #define SMALL_CHUNKS    256
 #define MEDIUM_CHUNKS   1024
 #define LARGE_CHUNKS    4096
@@ -66,7 +69,8 @@ enum
     SHA256_ALG,
     SHA384_ALG,
     SHA512_ALG,
-    MD5_ALG
+    MD5_ALG,
+    CHACHA20POLY1305IETF_ALG
 };
 
 #if defined(USE_HMAC_SHA1) || defined(USE_HMAC_SHA256)
@@ -255,6 +259,38 @@ static void runTime(psCipherContext_t *ctx, psCipherGivContext_t *ctx_giv,
         psGetTime(&end, NULL);
         break;
 #endif
+#ifdef USE_CHACHA20_POLY1305_IETF
+    case CHACHA20POLY1305IETF_ALG:
+        {
+            static unsigned char chacha20_iv[] =
+            {
+                0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+                0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f
+            };
+            static unsigned char chacha20_aad[] =
+            {
+                0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+                0x48, 0x49, 0x4a, 0x4b,
+            };
+
+            psGetTime(&start, NULL);
+            while (bytesSent < bytesToSend)
+            {
+                psChacha20Poly1305IetfEncryptDetached(
+                        &ctx->chacha20poly1305ietf,
+                        dataChunk,
+                        chunk,
+                        chacha20_iv,
+                        chacha20_aad,
+                        sizeof chacha20_aad,
+                        dataChunk,
+                        chacha20_aad);
+                bytesSent += chunk;
+            }
+            psGetTime(&end, NULL);
+            break;
+        }
+#endif
     default:
         psFree(dataChunk, NULL);
         return;
@@ -285,16 +321,16 @@ static int32 psAesTestCBC(void)
     psCipherContext_t eCtx;
 
 # if defined(USE_MATRIX_AES_CBC) && !defined(PS_AES_IMPROVE_PERF_INCREASE_CODESIZE)
-    _psTrace("##########\n#\n# ");
-    _psTrace("AES speeds can be improved by enabling\n# ");
-    _psTrace("PS_AES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
-    _psTrace("#\n#\n#########\n");
+    printf("##########\n#\n# ");
+    printf("AES speeds can be improved by enabling\n# ");
+    printf("PS_AES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
+    printf("#\n#\n#########\n");
 # endif
 
-    _psTrace("***** AES-128 CBC *****\n");
+    printf("***** AES-128 CBC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 16, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     runTime(&eCtx, NULL, TINY_CHUNKS, AES_ENC_ALG);
@@ -306,10 +342,10 @@ static int32 psAesTestCBC(void)
     runTime(&eCtx, NULL, HUGE_CHUNKS, AES_DEC_ALG);
     psAesClearCBC(&eCtx.aes);
 
-    _psTrace("***** AES-192 CBC *****\n");
+    printf("***** AES-192 CBC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 24, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     runTime(&eCtx, NULL, TINY_CHUNKS, AES_ENC_ALG);
@@ -321,10 +357,10 @@ static int32 psAesTestCBC(void)
     runTime(&eCtx, NULL, HUGE_CHUNKS, AES_DEC_ALG);
     psAesClearCBC(&eCtx.aes);
 
-    _psTrace("***** AES-256 CBC *****\n");
+    printf("***** AES-256 CBC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 32, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     runTime(&eCtx, NULL, TINY_CHUNKS, AES_ENC_ALG);
@@ -347,17 +383,17 @@ static int32 psAesTestCBCHmac(void)
     psHmac_t hCtx;
 
 #  if defined(USE_MATRIX_AES_CBC) && !defined(PS_AES_IMPROVE_PERF_INCREASE_CODESIZE)
-    _psTrace("##########\n#\n# ");
-    _psTrace("AES speeds can be improved by enabling\n# ");
-    _psTrace("PS_AES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
-    _psTrace("#\n#\n#########\n");
+    printf("##########\n#\n# ");
+    printf("AES speeds can be improved by enabling\n# ");
+    printf("PS_AES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
+    printf("#\n#\n#########\n");
 #  endif
 
 #  ifdef USE_HMAC_SHA1
-    _psTrace("***** AES-128 CBC + SHA1-HMAC *****\n");
+    printf("***** AES-128 CBC + SHA1-HMAC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 16, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     psHmacSha1Init(&hCtx.u.sha1, key, SHA1_HASH_SIZE);
@@ -372,10 +408,10 @@ static int32 psAesTestCBCHmac(void)
     runWithHmac(&eCtx, &hCtx, 0, HUGE_CHUNKS, AES_HMAC_ALG);
     psAesClearCBC(&eCtx.aes);
 
-    _psTrace("***** AES-256 CBC + SHA1-HMAC *****\n");
+    printf("***** AES-256 CBC + SHA1-HMAC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 32, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     psHmacSha1Init(&hCtx.u.sha1, key, SHA1_HASH_SIZE);
@@ -392,10 +428,10 @@ static int32 psAesTestCBCHmac(void)
 #  endif
 
 #  ifdef USE_HMAC_SHA256
-    _psTrace("***** AES-128 CBC + SHA256-HMAC *****\n");
+    printf("***** AES-128 CBC + SHA256-HMAC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 16, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     psHmacSha256Init(&hCtx.u.sha256, key, 32);
@@ -410,10 +446,10 @@ static int32 psAesTestCBCHmac(void)
     runWithHmac(&eCtx, &hCtx, SHA256_HASH_SIZE, HUGE_CHUNKS, AES_HMAC256_ALG);
     psAesClearCBC(&eCtx.aes);
 
-    _psTrace("***** AES-256 CBC + SHA256-HMAC *****\n");
+    printf("***** AES-256 CBC + SHA256-HMAC *****\n");
     if ((err = psAesInitCBC(&eCtx.aes, iv, key, 32, PS_AES_ENCRYPT)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  returned %d\n", err);
+        printf("FAILED:  returned %d\n", err);
         return err;
     }
     psHmacSha256Init(&hCtx.u.sha256, key, 32);
@@ -446,10 +482,10 @@ int32 psAesTestGCM(void)
     memset(&eCtxGiv, 0, sizeof(eCtxGiv));
 
 #  ifndef USE_LIBSODIUM_AES_GCM
-    _psTrace("***** AES-GCM-128 *****\n");
+    printf("***** AES-GCM-128 *****\n");
     if ((err = psAesInitGCM(&eCtx.aesgcm, key, 16)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  psAesInitGCM returned %d\n", err);
+        printf("FAILED:  psAesInitGCM returned %d\n", err);
         return err;
     }
     psAesReadyGCM(&eCtx.aesgcm, iv, iv, 16);
@@ -459,13 +495,13 @@ int32 psAesTestGCM(void)
     runTime(&eCtx, &eCtxGiv, LARGE_CHUNKS, AES_GCM_ALG);
     runTime(&eCtx, &eCtxGiv, HUGE_CHUNKS, AES_GCM_ALG);
 #  else
-    _psTrace("***** Skipping AES-GCM-128 *****\n");
+    printf("***** Skipping AES-GCM-128 *****\n");
 #  endif /* !USE_LIBSODIUM */
 
-    _psTrace("***** AES-GCM-256 *****\n");
+    printf("***** AES-GCM-256 *****\n");
     if ((err = psAesInitGCM(&eCtx.aesgcm, key, 32)) != PS_SUCCESS)
     {
-        _psTraceInt("FAILED:  psAesInitGCM returned %d\n", err);
+        printf("FAILED:  psAesInitGCM returned %d\n", err);
         return err;
     }
     psAesReadyGCM(&eCtx.aesgcm, iv, iv, 16);
@@ -496,10 +532,10 @@ int32 psDes3Test(void)
     psCipherContext_t eCtx;
 
 # if defined(USE_MATRIX_3DES) && !defined(PS_3DES_IMPROVE_PERF_INCREASE_CODESIZE)
-    _psTrace("##########\n#\n# ");
-    _psTrace("3DES speeds can be improved by enabling\n# ");
-    _psTrace("PS_3DES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
-    _psTrace("#\n#\n#########\n");
+    printf("##########\n#\n# ");
+    printf("3DES speeds can be improved by enabling\n# ");
+    printf("PS_3DES_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
+    printf("#\n#\n#########\n");
 # endif
 
     psDes3Init(&eCtx.des3, iv, key);
@@ -685,10 +721,10 @@ int32  psSha1Test(void)
     psDigestContext_t ctx;
 
 # if defined(USE_MATRIX_SHA1) && !defined(PS_SHA1_IMPROVE_PERF_INCREASE_CODESIZE)
-    _psTrace("##########\n#\n# ");
-    _psTrace("SHA-1 speeds can be improved by enabling\n# ");
-    _psTrace("PS_SHA1_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
-    _psTrace("#\n#\n#########\n");
+    printf("##########\n#\n# ");
+    printf("SHA-1 speeds can be improved by enabling\n# ");
+    printf("PS_SHA1_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
+    printf("#\n#\n#########\n");
 # endif
 
 
@@ -764,10 +800,10 @@ int32 psMd5Test(void)
     psDigestContext_t ctx;
 
 # if defined(USE_MATRIX_MD5) && !defined(PS_MD5_IMPROVE_PERF_INCREASE_CODESIZE)
-    _psTrace("##########\n#\n# ");
-    _psTrace("MD5 speeds can be improved by enabling\n# ");
-    _psTrace("PS_MD5_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
-    _psTrace("#\n#\n#########\n");
+    printf("##########\n#\n# ");
+    printf("MD5 speeds can be improved by enabling\n# ");
+    printf("PS_MD5_IMPROVE_PERF_INCREASE_CODESIZE in cryptoConfig.h\n");
+    printf("#\n#\n#########\n");
 # endif
 
     psMd5Init(&ctx.md5);
@@ -799,6 +835,32 @@ int32 psMd2Test(void)
 }
 #endif /* USE_MD2 */
 /******************************************************************************/
+
+# ifdef USE_CHACHA20_POLY1305_IETF
+static unsigned char chacha20_key[] =
+{
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+    0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+    0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f
+};
+
+int32 psChacha20Poly1305IetfTest(void)
+{
+    psCipherContext_t cip;
+    psChacha20Poly1305Ietf_t *ctx = &(cip.chacha20poly1305ietf);
+
+    psChacha20Poly1305IetfInit(ctx, chacha20_key);
+    /* Use sizes starting from CHACHA20 minimum block. */
+    runTime(&cip, NULL, CHACHA20_TINY_CHUNKS, CHACHA20POLY1305IETF_ALG);
+    runTime(&cip, NULL, SMALL_CHUNKS, CHACHA20POLY1305IETF_ALG);
+    runTime(&cip, NULL, MEDIUM_CHUNKS, CHACHA20POLY1305IETF_ALG);
+    runTime(&cip, NULL, LARGE_CHUNKS, CHACHA20POLY1305IETF_ALG);
+    runTime(&cip, NULL, HUGE_CHUNKS, CHACHA20POLY1305IETF_ALG);
+
+    return PS_SUCCESS;
+}
+# endif /* USE_CHACHA20_POLY1305_IETF */
 
 /******************************************************************************/
 
@@ -902,7 +964,15 @@ static test_t tests[] = {
 #endif
       , "***** MD2 TESTS *****" },
 
+#ifdef USE_CHACHA20_POLY1305_IETF
+    { psChacha20Poly1305IetfTest
+#else
+    { NULL
+#endif
+      , "***** CHACHA20-POLY1305 *****" },
+
     { NULL,             ""                                                                     }
+
 };
 
 /******************************************************************************/
@@ -913,29 +983,71 @@ static test_t tests[] = {
 int main(int argc, char **argv)
 {
     int32 i;
+    int l;
 
+    if (argc > 1)
+    {
+        if (!strcmp(argv[1], "--list"))
+        {
+            printf("Tests:\n");
+            for (i = 0; *tests[i].name; i++)
+            {
+                printf("%s\n", tests[i].name);
+            }
+            return 0;
+        }
+        for(l = 1; l < argc; l++)
+        {
+            for (i = 0; *tests[i].name; i++)
+            {
+                if (strstr(tests[i].name, argv[l]))
+                {
+                    break;
+                }
+            }
+            if (!*tests[i].name)
+            {
+                fprintf(stderr, "Test not found: %s\n", argv[l]);
+                fprintf(stderr, "Usage: %s [--list | test...]\n", argv[0]);
+                exit(1);
+            }
+        }
+    }
+    
     if (psCryptoOpen(PSCRYPTO_CONFIG) < PS_SUCCESS)
     {
-        _psTrace("Failed to initialize library:  psCryptoOpen failed\n");
+        printf("Failed to initialize library:  psCryptoOpen failed\n");
         return -1;
     }
 
     for (i = 0; *tests[i].name; i++)
     {
+        for(l = 1; argc > 1 && l < argc; l++)
+        {
+            if (strstr(tests[i].name, argv[l]))
+            {
+                break;
+            }
+        }
+        if (l == argc && argc > 1)
+        {
+            continue;
+        }
+
         if (tests[i].fn)
         {
-            _psTraceStr("%s\n", tests[i].name);
+            printf("%s\n", tests[i].name);
             tests[i].fn();
         }
         else
         {
-            _psTraceStr("%s: SKIPPED\n", tests[i].name);
+            printf("%s: SKIPPED\n", tests[i].name);
         }
     }
     psCryptoClose();
 
 #ifdef WIN32
-    _psTrace("Press any key to close");
+    printf("Press any key to close");
     getchar();
 #endif
 

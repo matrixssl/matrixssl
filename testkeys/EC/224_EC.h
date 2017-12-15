@@ -1,6 +1,6 @@
 /**
  *      @file    224_EC.h
- *
+ *      @version :%h%d$
  * Binary file for including certificate to MatrixSSL.
  */
 static const unsigned char EC224[] = {

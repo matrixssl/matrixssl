@@ -38,7 +38,7 @@
 
 # ifndef USE_ONLY_PSK_CIPHER_SUITE
 static int32 writeCertificate(ssl_t *ssl, sslBuf_t *out, int32 notEmpty);
-#  if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+#  if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
 static int32 writeCertificateStatusOrig(ssl_t *ssl, sslBuf_t *out);
 static int32 writeCertificateStatus(ssl_t *ssl, sslBuf_t *out);
 static int32 writeMultiRecordCertificateStatus(ssl_t *ssl, sslBuf_t *out);
@@ -1667,7 +1667,7 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
             messageSize += 4; /* 2 type, 2 length, 0 value */
         }
 
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
         /* If we are sending the OCSP status_request extension, we are also
             sending the CERTIFICATE_STATUS handshake message */
         if (ssl->extFlags.status_request)
@@ -1687,7 +1687,7 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
                            ssl->keys->OCSPResponseBufLen;
             messageSize += secureWriteAdditions(ssl, 1);
         }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 
 #ifdef USE_SCT
         if (ssl->extFlags.signed_certificate_timestamp) {
@@ -1774,12 +1774,12 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
                 {
                     rc = writeCertificate(ssl, out, 1);
                 }
-#    ifdef USE_OCSP
+#    ifdef USE_OCSP_RESPONSE
                 if (rc == MATRIXSSL_SUCCESS)
                 {
                     rc = writeCertificateStatus(ssl, out);
                 }
-#    endif
+#    endif /* USE_OCSP_RESPONSE */
             }
 #   endif   /* !USE_ONLY_PSK_CIPHER_SUITE */
             if (rc == MATRIXSSL_SUCCESS)
@@ -1820,12 +1820,12 @@ int32 sslEncodeResponse(ssl_t *ssl, psBuf_t *out, uint32 *requiredLen)
         {
             rc = writeCertificate(ssl, out, 1);
         }
-#   ifdef USE_OCSP
+#   ifdef USE_OCSP_RESPONSE
         if (rc == MATRIXSSL_SUCCESS)
         {
             rc = writeCertificateStatus(ssl, out);
         }
-#   endif
+#   endif /* USE_OCSP_RESPONSE */
 #  endif /* !USE_ONLY_PSK_CIPHER_SUITE */
 #  ifdef USE_PSK_CIPHER_SUITE
     }
@@ -2589,9 +2589,14 @@ static int32 encryptFlight(ssl_t *ssl, unsigned char **end)
                 incrTwoByte(ssl, ssl->epoch, 1);
                 zeroSixByte(ssl->rsn);
             }
+#ifdef psTracefDtls
+            psTracefDtls("Flight Encode: RSN %d, MSN %d, Epoch %d\n",
+                         ssl->rsn[5], ssl->msn, ssl->epoch[1]);
+#else
             psTraceIntDtls("RSN %d, ", ssl->rsn[5]);
             psTraceIntDtls("MSN %d, ", ssl->msn);
             psTraceIntDtls("Epoch %d\n", ssl->epoch[1]);
+#endif
             *msg->seqDelay = ssl->epoch[0]; msg->seqDelay++;
             *msg->seqDelay = ssl->epoch[1]; msg->seqDelay++;
             *msg->seqDelay = ssl->rsn[0]; msg->seqDelay++;
@@ -3623,7 +3628,7 @@ static int32 encryptRecord(ssl_t *ssl, int32 type, int32 hsMsgType,
         {
             psTraceIntInfo("Error encrypting 1: %d\n", rc);
             psTraceIntInfo("messageSize is %d\n", messageSize);
-            psTraceIntInfo("pointer diff %d\n", *c - out->end);
+            psTraceIntInfo("pointer diff %d\n", (int) (*c - out->end));
             psTraceIntInfo("cipher suite %d\n", ssl->cipher->ident);
             return MATRIXSSL_ERROR;
         }
@@ -3807,7 +3812,12 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
     }
 #  endif
 
-    if (ssl->extFlags.sni)
+    /*
+      Second condition is for renegotiations. Otherwise we would
+      send an empty SNI extension as a response during renegotation,
+      even when the latest ClientHello did not actually contain SNI.
+    */
+    if (ssl->extFlags.sni && ssl->extFlags.sni_in_last_client_hello)
     {
         if (extLen == 0)
         {
@@ -3815,7 +3825,7 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
         }
         extLen += 4;
     }
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
     if (ssl->extFlags.status_request)
     {
         if (extLen == 0)
@@ -3824,7 +3834,7 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
         }
         extLen += 4;
     }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 
 #  ifdef USE_SCT
     if (ssl->extFlags.signed_certificate_timestamp) {
@@ -3912,6 +3922,9 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
  */
     *c = ssl->majVer; c++;
     *c = ssl->minVer; c++;
+
+    psTracePrintProtocolVersion("Encoded ServerHello.server_version",
+            ssl->majVer, ssl->minVer, 1);
 
 /*
     The next 32 bytes are the server's random value, to be combined with
@@ -4009,14 +4022,15 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
         }
 #  endif
 
-        if (ssl->extFlags.sni)
+        /* For the second condition, see comment above. */
+        if (ssl->extFlags.sni && ssl->extFlags.sni_in_last_client_hello)
         {
             *c = (EXT_SNI & 0xFF00) >> 8; c++;
             *c = EXT_SNI & 0xFF; c++;
             *c = 0; c++;
             *c = 0; c++;
         }
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
         if (ssl->extFlags.status_request)
         {
             *c = (EXT_STATUS_REQUEST & 0xFF00) >> 8; c++;
@@ -4024,7 +4038,7 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
             *c = 0; c++;
             *c = 0; c++;
         }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 
 #  ifdef USE_SCT
         if (ssl->extFlags.signed_certificate_timestamp)
@@ -4082,6 +4096,7 @@ static int32 writeServerHello(ssl_t *ssl, sslBuf_t *out)
                 c += ssl->peerVerifyDataLen;
                 memcpy(c, ssl->myVerifyData, ssl->myVerifyDataLen);
                 c += ssl->myVerifyDataLen;
+                ssl->secureRenegotiationInProgress = PS_TRUE;
             }
         }
 #  endif /* ENABLE_SECURE_REHANDSHAKES */
@@ -4512,9 +4527,12 @@ static int32 writeServerKeyExchange(ssl_t *ssl, sslBuf_t *out, uint32 pLen,
  */
     if (ssl->flags & SSL_FLAGS_DHE_WITH_RSA)
     {
+        int32 skeSigAlg = 0; /* If this stays 0, we will use MD5-SHA-1. */
+
+        psTracePrintSigAlgs(ssl->hashSigAlg, "Peer ClientHello");
 #    ifndef USE_ONLY_PSK_CIPHER_SUITE
         /* Saved aside for pkaAfter_t */
-        if ((hsMsgHash = psMalloc(ssl->hsPool, SHA384_HASH_SIZE)) == NULL)
+        if ((hsMsgHash = psMalloc(ssl->hsPool, SHA512_HASH_SIZE)) == NULL)
         {
             return PS_MEM_FAIL;
         }
@@ -4522,59 +4540,10 @@ static int32 writeServerKeyExchange(ssl_t *ssl, sslBuf_t *out, uint32 pLen,
 #    ifdef USE_TLS_1_2
         if (ssl->flags & SSL_FLAGS_TLS_1_2)
         {
-            /* Using the algorithm from the certificate */
-            if (ssl->keys->cert->sigAlgorithm == OID_SHA256_RSA_SIG)
-            {
-                hashSize = SHA256_HASH_SIZE;
-                psSha256PreInit(&digestCtx.sha256);
-                psSha256Init(&digestCtx.sha256);
-                psSha256Update(&digestCtx.sha256, ssl->sec.clientRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha256Update(&digestCtx.sha256, ssl->sec.serverRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha256Update(&digestCtx.sha256, sigStart,
-                    (uint32) (c - sigStart));
-                psSha256Final(&digestCtx.sha256, hsMsgHash);
-                *c++ = 0x4;
-                *c++ = 0x1;
-#     ifdef USE_SHA384
-            }
-            else if (ssl->keys->cert->sigAlgorithm == OID_SHA384_RSA_SIG)
-            {
-                hashSize = SHA384_HASH_SIZE;
-                psSha384PreInit(&digestCtx.sha384);
-                psSha384Init(&digestCtx.sha384);
-                psSha384Update(&digestCtx.sha384, ssl->sec.clientRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha384Update(&digestCtx.sha384, ssl->sec.serverRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha384Update(&digestCtx.sha384, sigStart,
-                    (uint32) (c - sigStart));
-                psSha384Final(&digestCtx.sha384, hsMsgHash);
-                *c++ = 0x5;
-                *c++ = 0x1;
-#     endif     /* USE_SHA384 */
-                /* If MD5, just send a SHA1.  Don't want to contribute to any
-                    longevity of MD5 */
-#     ifdef USE_SHA1
-            }
-            else if (ssl->keys->cert->sigAlgorithm == OID_SHA1_RSA_SIG ||
-                     ssl->keys->cert->sigAlgorithm == OID_MD5_RSA_SIG)
-            {
-                hashSize = SHA1_HASH_SIZE;
-                psSha1PreInit(&digestCtx.sha1);
-                psSha1Init(&digestCtx.sha1);
-                psSha1Update(&digestCtx.sha1, ssl->sec.clientRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha1Update(&digestCtx.sha1, ssl->sec.serverRandom,
-                    SSL_HS_RANDOM_SIZE);
-                psSha1Update(&digestCtx.sha1, sigStart, (uint32) (c - sigStart));
-                psSha1Final(&digestCtx.sha1, hsMsgHash);
-                *c++ = 0x2;
-                *c++ = 0x1;
-#     endif
-            }
-            else
+            skeSigAlg = chooseSigAlg(ssl->keys->cert,
+                    &ssl->keys->privKey,
+                    ssl->hashSigAlg);
+            if (skeSigAlg == PS_UNSUPPORTED_FAIL)
             {
                 psTraceIntInfo("Unavailable sigAlgorithm for SKE write: %d\n",
                     ssl->keys->cert->sigAlgorithm);
@@ -4582,43 +4551,94 @@ static int32 writeServerKeyExchange(ssl_t *ssl, sslBuf_t *out, uint32 pLen,
                 return PS_UNSUPPORTED_FAIL;
             }
         }
-        else
+#    endif  /* USE_TLS_1_2 */
+
+        switch(skeSigAlg)
         {
-#     ifdef USE_MD5SHA1
+#      ifdef USE_MD5SHA1
+        case 0:
             hashSize = MD5SHA1_HASHLEN;
             psMd5Sha1PreInit(&digestCtx.md5sha1);
             psMd5Sha1Init(&digestCtx.md5sha1);
             psMd5Sha1Update(&digestCtx.md5sha1, ssl->sec.clientRandom,
-                SSL_HS_RANDOM_SIZE);
+                    SSL_HS_RANDOM_SIZE);
             psMd5Sha1Update(&digestCtx.md5sha1, ssl->sec.serverRandom,
-                SSL_HS_RANDOM_SIZE);
-            psMd5Sha1Update(&digestCtx.md5sha1, sigStart, (uint32) (c - sigStart));
+                    SSL_HS_RANDOM_SIZE);
+            psMd5Sha1Update(&digestCtx.md5sha1, sigStart,
+                    (uint32) (c - sigStart));
             psMd5Sha1Final(&digestCtx.md5sha1, hsMsgHash);
-#     else
+            break;
+#      endif /* USE_MD5SHA1 */
+#      ifdef USE_SHA1
+        case OID_SHA1_RSA_SIG:
+            hashSize = SHA1_HASH_SIZE;
+            psSha1PreInit(&digestCtx.sha1);
+            psSha1Init(&digestCtx.sha1);
+            psSha1Update(&digestCtx.sha1, ssl->sec.clientRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha1Update(&digestCtx.sha1, ssl->sec.serverRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha1Update(&digestCtx.sha1, sigStart,
+                    (uint32) (c - sigStart));
+            psSha1Final(&digestCtx.sha1, hsMsgHash);
+            *c++ = 0x2;
+            *c++ = 0x1;
+            break;
+#      endif /* USE_SHA1 */
+#      ifdef USE_SHA256
+        case OID_SHA256_RSA_SIG:
+            hashSize = SHA256_HASH_SIZE;
+            psSha256PreInit(&digestCtx.sha256);
+            psSha256Init(&digestCtx.sha256);
+            psSha256Update(&digestCtx.sha256, ssl->sec.clientRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha256Update(&digestCtx.sha256, ssl->sec.serverRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha256Update(&digestCtx.sha256, sigStart,
+                    (uint32) (c - sigStart));
+            psSha256Final(&digestCtx.sha256, hsMsgHash);
+            *c++ = 0x4;
+            *c++ = 0x1;
+            break;
+#     endif /* USE_SHA256 */
+#     ifdef USE_SHA384
+        case OID_SHA384_RSA_SIG:
+            hashSize = SHA384_HASH_SIZE;
+            psSha384PreInit(&digestCtx.sha384);
+            psSha384Init(&digestCtx.sha384);
+            psSha384Update(&digestCtx.sha384, ssl->sec.clientRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha384Update(&digestCtx.sha384, ssl->sec.serverRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha384Update(&digestCtx.sha384, sigStart,
+                    (uint32) (c - sigStart));
+            psSha384Final(&digestCtx.sha384, hsMsgHash);
+            *c++ = 0x5;
+            *c++ = 0x1;
+            break;
+#     endif     /* USE_SHA384 */
+#     ifdef USE_SHA512
+        case OID_SHA512_RSA_SIG:
+            hashSize = SHA512_HASH_SIZE;
+            psSha512PreInit(&digestCtx.sha512);
+            psSha512Init(&digestCtx.sha512);
+            psSha512Update(&digestCtx.sha512, ssl->sec.clientRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha512Update(&digestCtx.sha512, ssl->sec.serverRandom,
+                    SSL_HS_RANDOM_SIZE);
+            psSha512Update(&digestCtx.sha512, sigStart,
+                    (uint32) (c - sigStart));
+            psSha512Final(&digestCtx.sha512, hsMsgHash);
+            *c++ = 0x6;
+            *c++ = 0x1;
+            break;
+#     endif     /* USE_SHA512 */
+        default:
             psTraceIntInfo("Unavailable sigAlgorithm for SKE write: %d\n",
-                ssl->keys->cert->sigAlgorithm);
+                    skeSigAlg);
             psFree(hsMsgHash, ssl->hsPool);
             return PS_UNSUPPORTED_FAIL;
-#     endif /* USE_MD5SHA1 */
         }
-#    else /* USE_TLS_1_2 */
-#     ifdef USE_MD5SHA1
-        hashSize = MD5SHA1_HASHLEN;
-        psMd5Sha1PreInit(&digestCtx.md5sha1);
-        psMd5Sha1Init(&digestCtx.md5sha1);
-        psMd5Sha1Update(&digestCtx.md5sha1, ssl->sec.clientRandom,
-            SSL_HS_RANDOM_SIZE);
-        psMd5Sha1Update(&digestCtx.md5sha1, ssl->sec.serverRandom,
-            SSL_HS_RANDOM_SIZE);
-        psMd5Sha1Update(&digestCtx.md5sha1, sigStart, (uint32) (c - sigStart));
-        psMd5Sha1Final(&digestCtx.md5sha1, hsMsgHash);
-#     else
-        psTraceIntInfo("Unavailable sigAlgorithm for SKE write: %d\n",
-            ssl->keys->cert->sigAlgorithm);
-        psFree(hsMsgHash, ssl->hsPool);
-        return PS_UNSUPPORTED_FAIL;
-#     endif /* USE_MD5SHA1 */
-#    endif  /* USE_TLS_1_2 */
 
         *c = (ssl->keys->privKey.keysize & 0xFF00) >> 8; c++;
         *c = ssl->keys->privKey.keysize & 0xFF; c++;
@@ -5117,7 +5137,7 @@ static int32 writeMultiRecordCertificate(ssl_t *ssl, sslBuf_t *out,
 #  endif /* USE_SERVER_SIDE_SSL || USE_CLIENT_AUTH */
 
 
-#  if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+#  if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
 static int32 writeCertificateStatusOrig(ssl_t *ssl, sslBuf_t *out)
 {
     unsigned char *c, *end, *encryptStart;
@@ -5676,6 +5696,25 @@ static int32 writeFinished(ssl_t *ssl, sslBuf_t *out)
     }
 #  endif /* USE_CLIENT_SIDE_SSL || USE_CLIENT_AUTH */
 # endif  /* !USE_ONLY_PSK_CIPHER_SUITE */
+
+# ifdef ENABLE_SECURE_REHANDSHAKES
+    /* Check if this was the last message in the handshake,
+       indicating that the handshake is over. */
+    if (ssl->flags & SSL_FLAGS_SERVER)
+    {
+        if (!(ssl->flags & SSL_FLAGS_RESUMED))
+        {
+            ssl->secureRenegotiationInProgress = PS_FALSE;
+        }
+    }
+    else /* We're the client. */
+    {
+        if (ssl->flags & SSL_FLAGS_RESUMED)
+        {
+            ssl->secureRenegotiationInProgress = PS_FALSE;
+        }
+    }
+# endif
     return MATRIXSSL_SUCCESS;
 }
 
@@ -6067,7 +6106,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
     }
 #  endif
 
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
     if (options && options->OCSPstapling == 1)
     {
         if (extLen == 0)
@@ -6077,7 +6116,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
         /* Currently only supporting an empty status_request extension */
         extLen += 9;
     }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 
 #  ifdef USE_TLS_1_2
     /*
@@ -6155,6 +6194,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
     /* On the client side, the value is set to the algorithms offered */
     ssl->hashSigAlg = sigHashFlags;
 
+    psTracePrintSigAlgs(ssl->hashSigAlg, "Our ClientHello");
 #  endif /* USE_TLS_1_2 */
 
     /* Add any user-provided extensions */
@@ -6253,6 +6293,9 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
  */
     *c = ssl->majVer; c++;
     *c = ssl->minVer; c++;
+
+    psTracePrintProtocolVersion("Encoded ClientHello.client_version",
+            ssl->majVer, ssl->minVer, 1);
 
 /*
     The next 32 bytes are the server's random value, to be combined with
@@ -6446,6 +6489,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
             *c = ssl->myVerifyDataLen & 0xFF; c++;
             memcpy(c, ssl->myVerifyData, ssl->myVerifyDataLen);
             c += ssl->myVerifyDataLen;
+            ssl->secureRenegotiationInProgress = PS_TRUE;
         }
 #  endif /* ENABLE_SECURE_REHANDSHAKES */
 
@@ -6515,7 +6559,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
         }
 #  endif /* USE_STATELESS_SESSION_TICKETS       */
 
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
         if (options->OCSPstapling)
         {
             ssl->extFlags.req_status_request = 1;
@@ -6529,7 +6573,7 @@ int32_t matrixSslEncodeClientHello(ssl_t *ssl, sslBuf_t *out,
             *c = 0x00; c++;
             *c = 0x00; c++;
         }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
 
 #  ifdef USE_TRUSTED_CA_INDICATION
         if (options->trustedCAindication)
@@ -7499,7 +7543,7 @@ static int nowDoCvPkaInnerRSA(ssl_t *ssl, pkaAfter_t *pka,
         using_tls_1_2 = 0;     /* TLS 1.2 defined but not used. */
     }
 #     else /* ! USE_TLS_1_2 */
-    use_tls_1_2 = 0;     /* TLS 1.2 not defined and thus not used. */
+    using_tls_1_2 = 0;     /* TLS 1.2 not defined and thus not used. */
 #     endif /* USE_TLS_1_2 */
 
     psAssert(using_tls_1_2 == 0 || using_tls_1_2 == 1);
@@ -7556,7 +7600,10 @@ static int nowDoCvPkaInnerRSA(ssl_t *ssl, pkaAfter_t *pka,
 out:
     clearPkaAfter(ssl);
 
-    return PS_SUCCESS;
+    if (rc >= 0)
+        return PS_SUCCESS;
+    else
+        return rc;
 }
 #    endif /* USE_RSA */
 
@@ -7576,8 +7623,8 @@ static int32 nowDoCvPka(ssl_t *ssl, psBuf_t *out)
         if (ssl->retransmit)
         {
             /* This call is not gated on pkaAfter.type so we test for
-                retransmits manaully.  The retransmit will have already been
-                written in writeCertifiateVerify if true */
+                retransmits manually.  The retransmit will have already been
+                written in writeCertificateVerify if true */
             return PS_SUCCESS;
         }
     }
@@ -7640,6 +7687,7 @@ static int32 writeCertificateVerify(ssl_t *ssl, sslBuf_t *out)
     int32_t rc;
     pkaAfter_t *pkaAfter;
     void *pkiData = ssl->userPtr;
+    int32_t sigAlg;
 
     psTraceHs("<<< Client creating CERTIFICATE_VERIFY  message\n");
     c = out->end;
@@ -7722,67 +7770,47 @@ static int32 writeCertificateVerify(ssl_t *ssl, sslBuf_t *out)
     Correct to be looking at the child-most cert here because that is the
     one associated with the private key.
  */
+#   ifdef USE_TLS_1_2
+    if (ssl->flags & SSL_FLAGS_TLS_1_2)
+    {
+        /*
+          Pick the hash algorithm to use with the public key.
+          Use the signature algorithm used in our certificate as
+          the basis for the selection, because we have checked
+          in parseCertificateRequest that the server supports that.
+        */
+        sigAlg = chooseSigAlg(ssl->keys->cert,
+                &ssl->keys->privKey,
+                ssl->serverSigAlgs);
+        if (sigAlg <= 0)
+        {
+                psTraceInfo("Need more hash support for certVerify\n");
+                return MATRIXSSL_ERROR;
+        }
+    }
+    else
+    {
+        hashSize = MD5_HASH_SIZE + SHA1_HASH_SIZE;
+    }
+#   else /* USE_TLS_1_2 */
+    hashSize = MD5_HASH_SIZE + SHA1_HASH_SIZE;
+#   endif /* USE_TLS_1_2 */
+
 #    ifdef USE_ECC
     if (ssl->keys->cert->pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
     {
-        hashSize = MD5_HASH_SIZE + SHA1_HASH_SIZE;
 #     ifdef USE_TLS_1_2
         if (ssl->flags & SSL_FLAGS_TLS_1_2)
         {
-            /*  RFC:  "The hash and signature algorithms used in the
-                signature MUST be one of those present in the
-                supported_signature_algorithms field of the
-                CertificateRequest message.  In addition, the hash and
-                signature algorithms MUST be compatible with the key in the
-                client's end-entity certificate."
+            unsigned char b1, b2;
 
-                We've done the above tests in the parse of the
-                CertificateRequest message and wouldn't be here if our
-                certs didn't match the sigAlgs.  However, we do have
-                to test for both sig algorithm types here to find the
-                hash strength because the sig alg might not match the
-                pubkey alg.  This was also already confirmed in
-                CertRequest parse so wouldn't be here if not allowed */
-            if ((ssl->keys->cert->sigAlgorithm == OID_SHA1_ECDSA_SIG) ||
-                (ssl->keys->cert->sigAlgorithm == OID_SHA1_RSA_SIG))
+            if (getSignatureAndHashAlgorithmEncoding(sigAlg,
+                            &b1, &b2, &hashSize) < 0)
             {
-                *c = 0x2; c++; /* SHA1 */
-                *c = 0x3; c++; /* ECDSA */
-                hashSize = SHA1_HASH_SIZE;
-            }
-            else if ((ssl->keys->cert->sigAlgorithm ==
-                      OID_SHA256_ECDSA_SIG) || (ssl->keys->cert->sigAlgorithm
-                                                == OID_SHA256_RSA_SIG))
-            {
-                *c = 0x4; c++; /* SHA256 */
-                *c = 0x3; c++; /* ECDSA */
-                hashSize = SHA256_HASH_SIZE;
-#      ifdef USE_SHA384
-            }
-            else if ((ssl->keys->cert->sigAlgorithm ==
-                      OID_SHA384_ECDSA_SIG) || (ssl->keys->cert->sigAlgorithm
-                                                == OID_SHA384_RSA_SIG))
-            {
-                *c = 0x5; c++; /* SHA384 */
-                *c = 0x3; c++; /* ECDSA */
-                hashSize = SHA384_HASH_SIZE;
-#      endif
-#      ifdef USE_SHA512
-            }
-            else if ((ssl->keys->cert->sigAlgorithm ==
-                      OID_SHA512_ECDSA_SIG) || (ssl->keys->cert->sigAlgorithm
-                                                == OID_SHA512_RSA_SIG))
-            {
-                *c = 0x6; c++; /* SHA512 */
-                *c = 0x3; c++; /* ECDSA */
-                hashSize = SHA512_HASH_SIZE;
-#      endif
-            }
-            else
-            {
-                psTraceInfo("Need more hash support for certVerify\n");
                 return MATRIXSSL_ERROR;
             }
+            *c = b1; c++;
+            *c = b2; c++;
         }
 #     endif /* USE_TLS_1_2 */
 
@@ -7818,7 +7846,7 @@ static int32 writeCertificateVerify(ssl_t *ssl, sslBuf_t *out)
         pkaAfter->user = rc;
         c += rc;
 #     ifdef USE_DTLS
-    }
+        }
 #     endif
     }
     else
@@ -7826,59 +7854,25 @@ static int32 writeCertificateVerify(ssl_t *ssl, sslBuf_t *out)
 #    endif /* USE_ECC */
 
 #    ifdef USE_RSA
-    hashSize = MD5_HASH_SIZE + SHA1_HASH_SIZE;
 #     ifdef USE_TLS_1_2
     if (ssl->flags & SSL_FLAGS_TLS_1_2)
     {
-        /*      RFC:  "The hash and signature algorithms used in the
-            signature MUST be one of those present in the
-            supported_signature_algorithms field of the
-            CertificateRequest message.  In addition, the hash and
-            signature algorithms MUST be compatible with the key in the
-            client's end-entity certificate.
+        unsigned char b1, b2;
 
-            We've done the above tests in the parse of the
-            CertificateRequest message and wouldn't be here if our
-            certs didn't match the sigAlgs.  However, we do have
-            to test for both sig algorithm types here to find the
-            hash strength because the sig alg might not match the
-            pubkey alg.  This was also already confirmed in
-            CertRequest parse so wouldn't be here if not allowed */
-        if (ssl->keys->cert->sigAlgorithm == OID_SHA1_RSA_SIG ||
-            ssl->keys->cert->sigAlgorithm == OID_MD5_RSA_SIG ||
-            ssl->keys->cert->sigAlgorithm == OID_SHA1_ECDSA_SIG)
+        if (ssl->keys->cert->sigAlgorithm != OID_RSASSA_PSS)
         {
-            *c = 0x2; c++;     /* SHA1 */
-            *c = 0x1; c++;     /* RSA */
-            hashSize = SHA1_HASH_SIZE;
+            if (getSignatureAndHashAlgorithmEncoding(sigAlg,
+                            &b1, &b2, &hashSize) < 0)
+            {
+                psTraceInfo("Need additional hash support for certVerify\n");
+                return MATRIXSSL_ERROR;
+            }
+            *c = b1; c++;
+            *c = b2; c++;
         }
-        else if (ssl->keys->cert->sigAlgorithm == OID_SHA256_RSA_SIG ||
-                 ssl->keys->cert->sigAlgorithm == OID_SHA256_ECDSA_SIG)
-        {
-            *c = 0x4; c++;     /* SHA256 */
-            *c = 0x1; c++;     /* RSA */
-            /* Normal handshake hash uses SHA256 and has been done above */
-            hashSize = SHA256_HASH_SIZE;
-#      ifdef USE_SHA384
-        }
-        else if (ssl->keys->cert->sigAlgorithm == OID_SHA384_RSA_SIG ||
-                 ssl->keys->cert->sigAlgorithm == OID_SHA384_ECDSA_SIG)
-        {
-            *c = 0x5; c++;     /* SHA384 */
-            *c = 0x1; c++;     /* RSA */
-            hashSize = SHA384_HASH_SIZE;
-#      endif /* USE_SHA384 */
-#      ifdef USE_SHA512
-        }
-        else if (ssl->keys->cert->sigAlgorithm == OID_SHA512_RSA_SIG ||
-                 ssl->keys->cert->sigAlgorithm == OID_SHA512_ECDSA_SIG)
-        {
-            *c = 0x6; c++;     /* SHA512 */
-            *c = 0x1; c++;     /* RSA */
-            hashSize = SHA512_HASH_SIZE;
-#      endif /* USE_SHA512 */
 #      ifdef USE_PKCS1_PSS
-        }
+        /* Special handling for OID_RSASSA_PSS, since it is not yet
+           supported by the sigAlg functions. */
         else if (ssl->keys->cert->sigAlgorithm == OID_RSASSA_PSS)
         {
             if (ssl->keys->cert->pssHash == PKCS1_SHA1_ID ||
@@ -7912,8 +7906,8 @@ static int32 writeCertificateVerify(ssl_t *ssl, sslBuf_t *out)
                 return MATRIXSSL_ERROR;
             }
             *c = 0x1; c++;     /* RSA */
-#      endif
         }
+#      endif /* USE_PKCS1_PSS */
         else
         {
             psTraceInfo("Need additional hash support for certVerify\n");

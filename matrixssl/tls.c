@@ -422,7 +422,9 @@ int32_t tlsHMACSha1(ssl_t *ssl, int32 mode, unsigned char type,
     tmp[4] = len & 0xFF;
 #    ifdef USE_HMAC_TLS
 #     ifdef USE_HMAC_TLS_LUCKY13_COUNTERMEASURE
-    alt_len = mode == HMAC_CREATE ? len : ssl->rec.len;
+    /* Lucky13 counter measure is only used when receiving record.
+       Decrement 4 bytes of header from amount of ssl->rec to process. */
+    alt_len = mode == HMAC_CREATE || ssl->rec.len < len + 4? len : ssl->rec.len - 4;
 #     else
     alt_len = len;
 #     endif
@@ -520,7 +522,9 @@ int32_t tlsHMACSha2(ssl_t *ssl, int32 mode, unsigned char type,
 
 #    ifdef USE_HMAC_TLS
 #     ifdef USE_HMAC_TLS_LUCKY13_COUNTERMEASURE
-    alt_len = mode == HMAC_CREATE ? len : ssl->rec.len;
+    /* Lucky13 counter measure is only used when receiving record.
+       Decrement 4 bytes of header from amount of ssl->rec to process. */
+    alt_len = mode == HMAC_CREATE || ssl->rec.len < len + 4? len : ssl->rec.len - 4;
 #     else
     alt_len = len;
 #     endif
@@ -984,6 +988,742 @@ int32 matrixSslLoadHelloExtension(tlsExtension_t *ext,
     return PS_SUCCESS;
 }
 #endif /* USE_CLIENT_SIDE_SSL */
+
+#if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
+#ifndef USE_ONLY_PSK_CIPHER_SUITE
+/**
+  Return PS_TRUE if sigAlg is in peerSigAlgs, PS_FALSE otherwise.
+
+  peerSigAlgs should be the a set of masks we created after
+  parsing the peer's supported_signature_algorithms list
+  in ClientHello or CertificateRequest.
+*/
+psBool_t peerSupportsSigAlg(int32_t sigAlg,
+        uint16_t peerSigAlgs)
+{
+    uint16_t yes;
+
+    if (sigAlg == OID_MD5_RSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_MD5_RSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA1_RSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA1_RSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA256_RSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA256_RSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA384_RSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA384_RSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA512_RSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA512_RSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA1_ECDSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA1_ECDSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA256_ECDSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA256_ECDSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA384_ECDSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA384_ECDSA_MASK) != 0);
+    }
+    else if (sigAlg == OID_SHA512_ECDSA_SIG)
+    {
+        yes = ((peerSigAlgs & HASH_SIG_SHA512_ECDSA_MASK) != 0);
+    }
+    else
+    {
+        return PS_FALSE; /* Unknown/unsupported sig alg. */
+    }
+
+    if (yes)
+    {
+        return PS_TRUE;
+    }
+    else
+    {
+        return PS_FALSE;
+    }
+}
+
+/**
+  Return PS_TRUE when we support sigAlg for signature generation,
+  PS_FALSE otherwise.
+
+  Compile-time switches as well as FIPS or non-FIPS mode is taken
+  into account.
+
+  @param[in] sigAlg The signature algorithm whose support is to
+  be checked.
+  @param[in] pubKeyAlgorithm The public key algorithm of our
+  private/public key pair (OID_RSA_KEY_ALG or OID_ECDSA_KEY_ALG.)
+*/
+psBool_t weSupportSigAlg(int32_t sigAlg,
+                         int32_t pubKeyAlgorithm)
+{
+    uint16_t we_support = 0;
+    uint16_t is_non_fips = 0; /* 1 if not allowed in FIPS mode for
+                                 signature generation. */
+
+    PS_VARIABLE_SET_BUT_UNUSED(is_non_fips);
+
+#ifndef USE_RSA
+    if (pubKeyAlgorithm == OID_RSA_KEY_ALG)
+    {
+        return PS_FALSE;
+    }
+#endif
+#ifndef USE_ECC
+    if (pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
+    {
+        return PS_FALSE;
+    }
+#endif
+
+    if (pubKeyAlgorithm == OID_RSA_KEY_ALG)
+    {
+        if (sigAlg == OID_MD2_RSA_SIG || sigAlg == OID_MD5_RSA_SIG)
+        {
+            /* No support for generating RSA-MD2 or RSA-MD5 signatures. */
+            is_non_fips = 1;
+            we_support = 0;
+        }
+        else if (sigAlg == OID_SHA1_RSA_SIG)
+        {
+            is_non_fips = 1;
+#ifdef USE_SHA1
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA256_RSA_SIG)
+        {
+#ifdef USE_SHA256
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA384_RSA_SIG)
+        {
+#ifdef USE_SHA384
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA512_RSA_SIG)
+        {
+#ifdef USE_SHA512
+            we_support = 1;
+#endif
+        }
+        else
+        {
+            /* Our key does not support this algorithm. */
+            return PS_FALSE;
+        }
+    }
+    else if (pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
+    {
+        if (sigAlg == OID_SHA1_ECDSA_SIG)
+        {
+#ifdef USE_SHA1
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA256_ECDSA_SIG)
+        {
+#ifdef USE_SHA256
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA384_ECDSA_SIG)
+        {
+#ifdef USE_SHA384
+            we_support = 1;
+#endif
+        }
+        else if (sigAlg == OID_SHA512_ECDSA_SIG)
+        {
+#ifdef USE_SHA512
+            we_support = 1;
+#endif
+        }
+        else
+        {
+            /* Our key does not support this algorithm. */
+            return PS_FALSE;
+        }
+    }
+    else
+    {
+        return PS_FALSE; /* Unsupported public key alg, e.g. DSA. */
+    }
+
+    /* The basic capability is there. Now do some further checks
+       if needed. */
+
+    if (we_support)
+    {
+        return PS_TRUE;
+    }
+    else
+    {
+        return PS_FALSE;
+    }
+}
+
+/** Return PS_TRUE when:
+   - We support sigAlg for signature generation.
+   - sigAlg is in peerSigAlgs.
+
+   @param[in] sigAlg The signature algorithm whose support to check.
+   @param[in] pubKeyAlgorithm The public key algorithm of our key.
+   @param[in] peerSigAlgs The masks of the sigAlgs supported by the
+     peer. This should be the one parsed from the peer's
+     supported_signature_algorithms list in CertificateVerify or
+     CertificateRequest. In this case, sigAlg \in peerSigAlgs
+     means that the peer supports sigAlg for signature verification.
+*/
+psBool_t canUseSigAlg(int32_t sigAlg,
+        int32_t pubKeyAlgorithm,
+        uint16_t peerSigAlgs)
+{
+    return (weSupportSigAlg(sigAlg, pubKeyAlgorithm) &&
+            peerSupportsSigAlg(sigAlg, peerSigAlgs));
+}
+
+/**
+  Upgrade to a more secure signature algorithm. If the algorithm
+  is already the strongest possible for the key type (i.e.
+  RSA-SHA-512 or ECDSA-SHA-512) change to the most popular
+  one (i.e. RSA-SHA-256 or ECDSA-SHA-256).
+*/
+int32_t upgradeSigAlg(int32_t sigAlg, int32_t pubKeyAlgorithm)
+{
+    /*
+      RSA:
+      MD2 -> SHA256
+      MD5 -> SHA256
+      SHA1 -> SHA256
+      SHA256 -> SHA384
+      SHA384 -> SHA512
+      SHA512 -> SHA256
+    */
+    if (pubKeyAlgorithm == OID_RSA_KEY_ALG)
+    {
+        if (sigAlg == OID_MD2_RSA_SIG ||
+                sigAlg == OID_MD5_RSA_SIG ||
+                sigAlg == OID_SHA1_RSA_SIG)
+        {
+            return OID_SHA256_RSA_SIG;
+        }
+        else if (sigAlg == OID_SHA256_RSA_SIG)
+        {
+            return OID_SHA384_RSA_SIG;
+        }
+        else if (sigAlg == OID_SHA384_RSA_SIG)
+        {
+            return OID_SHA512_RSA_SIG;
+        }
+        else if (sigAlg == OID_SHA512_RSA_SIG)
+        {
+            return OID_SHA256_RSA_SIG;
+        }
+        else
+        {
+            return PS_UNSUPPORTED_FAIL;
+        }
+    }
+    /*
+      ECDSA:
+      SHA1 -> SHA256
+      SHA256 -> SHA384
+      SHA384 -> SHA512
+      SHA512 -> SHA256
+    */
+    else if (pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
+    {
+        if (sigAlg == OID_SHA1_ECDSA_SIG)
+        {
+            return OID_SHA256_ECDSA_SIG;
+        }
+        else if (sigAlg == OID_SHA256_ECDSA_SIG)
+        {
+            return OID_SHA384_ECDSA_SIG;
+        }
+        else if (sigAlg == OID_SHA384_ECDSA_SIG)
+        {
+            return OID_SHA512_ECDSA_SIG;
+        }
+        else if (sigAlg == OID_SHA512_ECDSA_SIG)
+        {
+            return OID_SHA256_ECDSA_SIG;
+        }
+        else
+        {
+            return PS_UNSUPPORTED_FAIL;
+        }
+    }
+    else
+    {
+        return PS_UNSUPPORTED_FAIL;
+    }
+}
+
+static
+psSize_t sigAlgToHashLen(int32_t sigAlg)
+{
+    switch(sigAlg)
+    {
+    case OID_MD2_RSA_SIG:
+    case OID_MD5_RSA_SIG:
+        return MD5_HASH_SIZE;
+    case OID_SHA1_RSA_SIG:
+    case OID_SHA1_ECDSA_SIG:
+        return SHA1_HASH_SIZE;
+    case OID_SHA256_RSA_SIG:
+    case OID_SHA256_ECDSA_SIG:
+        return SHA256_HASH_SIZE;
+    case OID_SHA384_RSA_SIG:
+    case OID_SHA384_ECDSA_SIG:
+        return SHA384_HASH_SIZE;
+    case OID_SHA512_RSA_SIG:
+    case OID_SHA512_ECDSA_SIG:
+        return SHA512_HASH_SIZE;
+    default:
+        return PS_UNSUPPORTED_FAIL;
+    }
+}
+
+/** Return PS_TRUE if sigAlg is deemed insecure.
+    Return PS_FALSE otherwise.
+*/
+static
+int32_t isInsecureSigAlg(int32_t sigAlg)
+{
+    if (sigAlg == OID_MD2_RSA_SIG
+            || sigAlg == OID_MD5_RSA_SIG
+            || sigAlg == OID_SHA1_RSA_SIG
+            || sigAlg == OID_SHA1_ECDSA_SIG)
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+/* Return PS_TRUE when sigAlg,modulusNBytes is an invalid
+   hash and modulus size combination. Return PS_FALSE
+   otherwise. */
+static
+int32_t isInvalidModulusHashSizeCombination(int32_t sigAlg,
+        psSize_t modulusNBytes)
+{
+    psSize_t hashLen = sigAlgToHashLen(sigAlg);
+
+    /* Check the PKCS #1.5 restriction that there should be room
+       for at least 8 padding bytes before RSA encryption.
+       (11 = 8 pad bytes + 00 + BT + 00). */
+    if (modulusNBytes < (hashLen + 11))
+    {
+        return PS_TRUE;
+    }
+
+    return PS_FALSE;
+}
+
+static
+int32_t sigAlgRsaToEcdsa(int32_t sigAlg)
+{
+    if (sigAlg == OID_SHA1_RSA_SIG)
+    {
+        return OID_SHA1_ECDSA_SIG;
+    }
+    if (sigAlg == OID_SHA256_RSA_SIG)
+    {
+        return OID_SHA256_ECDSA_SIG;
+    }
+    if (sigAlg == OID_SHA384_RSA_SIG)
+    {
+        return OID_SHA384_ECDSA_SIG;
+    }
+    if (sigAlg == OID_SHA512_RSA_SIG)
+    {
+        return OID_SHA512_ECDSA_SIG;
+    }
+    else
+    {
+        return OID_SHA256_ECDSA_SIG;
+    }
+}
+
+static
+int32_t ecdsaToRsa(int32_t sigAlg)
+{
+    if (sigAlg == OID_SHA1_ECDSA_SIG)
+    {
+        return OID_SHA1_RSA_SIG;
+    }
+    if (sigAlg == OID_SHA256_ECDSA_SIG)
+    {
+        return OID_SHA256_RSA_SIG;
+    }
+    if (sigAlg == OID_SHA384_ECDSA_SIG)
+    {
+        return OID_SHA384_RSA_SIG;
+    }
+    if (sigAlg == OID_SHA512_ECDSA_SIG)
+    {
+        return OID_SHA512_RSA_SIG;
+    }
+    else
+    {
+        return OID_SHA256_RSA_SIG;
+    }
+}
+
+/**
+  Determine signature algorithm to use in the CertificateVerify or
+  ServerKeyExchange handshake messages in TLS 1.2.
+
+  TODO: add support for RSASSA-PSS.
+
+  This function should only be called when using TLS 1.2.
+
+  @param[in] certSigAlg The signature algorithm with which our
+  certificate was signed.
+  @param[in] keySize The size of our private key in bytes. For RSA,
+  this is modulus; for ECDSA, this is the curve size.
+  @param[in] pubKeyAlgorithm The public key algorithm to use for
+  authentication. This should the same algorithm our public/private key
+  pair is meant for. Must be either OID_RSA_KEY_ALG or
+  OID_ECDSA_KEY_ALG.
+  @param[in] peerSigAlg The list of signature algorithm masks
+  the peer supports (e.g. HASH_SIG_SHA*_RSA_MASK). This should
+  be the list created during parsing of the ClientHello or
+  CertificateRequest message.
+  @return The signature algorithm to use.
+*/
+int32_t chooseSigAlgInt(int32_t certSigAlg,
+        psSize_t keySize,
+        int32_t pubKeyAlgorithm,
+        uint16_t peerSigAlgs)
+{
+    int32 a = certSigAlg;
+
+#ifndef USE_RSA
+    if (pubKeyAlgorithm == OID_RSA_KEY_ALG)
+    {
+        return PS_UNSUPPORTED_FAIL;
+    }
+#endif
+#ifndef USE_ECC
+    if (pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
+    {
+        return PS_UNSUPPORTED_FAIL;
+    }
+#endif
+
+    /*
+      We are going to use certSigAlg as the basis of our choice.
+      This is because the SSL layer must ensure anyway that the peer
+      supports this algorithm.
+    */
+    if (pubKeyAlgorithm == OID_RSA_KEY_ALG)
+    {
+        if (certSigAlg == OID_SHA1_ECDSA_SIG ||
+                certSigAlg == OID_SHA256_ECDSA_SIG ||
+                certSigAlg == OID_SHA384_ECDSA_SIG ||
+                certSigAlg == OID_SHA512_ECDSA_SIG)
+        {
+            /* Pubkey is RSA, but cert is signed with ECDSA.
+               Convert certSigAlg to corresponding RSA alg. */
+            a = ecdsaToRsa(certSigAlg);
+        }
+
+        /*
+          For RSA signatures, RFC 5746 allows to pick any hash algorithm,
+          as long as it is supported by the peer, i.e. included in the
+          peer's signature_algorithms list.
+
+          We use this opportunity to switch from the insecure MD5 and
+          SHA-1 to SHA-256, if possible. We don't want to contribute
+          to the longevity of obsolete hash algorithms.
+        */
+        if (isInsecureSigAlg(a))
+        {
+            /* Try to upgrade. */
+            a = upgradeSigAlg(a, OID_RSA_KEY_ALG);
+            if (!canUseSigAlg(a, OID_RSA_KEY_ALG, peerSigAlgs))
+            {
+                /* Stil not supported. Try the next alternative. */
+                a = upgradeSigAlg(a, OID_RSA_KEY_ALG);
+                if (!canUseSigAlg(a, OID_RSA_KEY_ALG, peerSigAlgs))
+                {
+                    /* Unable to upgrade insecure alg. Have to use the server
+                       cert sig alg. */
+                    a = certSigAlg;
+                }
+            }
+        }
+        /* Not allowing e.g. RSA-SHA-512 with a 512-bit modulus. */
+        if (isInvalidModulusHashSizeCombination(a, keySize))
+        {
+            /* Try "next best" hash algorithm. */
+            a = upgradeSigAlg(a, OID_RSA_KEY_ALG);
+            if (isInvalidModulusHashSizeCombination(a, keySize))
+            {
+                return PS_UNSUPPORTED_FAIL;
+            }
+        }
+    }
+    else if (pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
+    {
+        if (certSigAlg != OID_SHA1_ECDSA_SIG &&
+                certSigAlg != OID_SHA256_ECDSA_SIG &&
+                certSigAlg != OID_SHA384_ECDSA_SIG &&
+                certSigAlg != OID_SHA512_ECDSA_SIG)
+        {
+            /* Pubkey is ECDSA, but cert is signed with RSA.
+               Convert to corresponding ECDSA alg. */
+            a = sigAlgRsaToEcdsa(certSigAlg);
+        }
+    }
+    else
+    {
+        return PS_UNSUPPORTED_FAIL; /* Unknown/unsupported pub key alg. */
+    }
+
+    /* Validate our choice. */
+    if (canUseSigAlg(a, pubKeyAlgorithm, peerSigAlgs))
+    {
+        psTraceIntInfo("Chose sigAlg %d\n", a);
+        return a;
+    }
+    else
+    {
+        return PS_UNSUPPORTED_FAIL;
+    }
+}
+
+int32_t chooseSigAlg(psX509Cert_t *cert,
+        psPubKey_t *privKey,
+        uint16_t peerSigAlgs)
+{
+    int32 pubKeyAlg;
+
+# ifdef USE_CERT_PARSE
+    pubKeyAlg = cert->pubKeyAlgorithm;
+# else
+    if (privKey->type == PS_RSA)
+    {
+        pubKeyAlg = OID_RSA_KEY_ALG;
+    }
+    else if (privKey->type == PS_ECC)
+    {
+        pubKeyAlg = OID_ECDSA_KEY_ALG;
+    }
+    else
+    {
+        return PS_UNSUPPORTED_FAIL;
+    }
+# endif /* USE_CERT_PARSE */
+
+    return chooseSigAlgInt(cert->sigAlgorithm,
+            privKey->keysize,
+            pubKeyAlg,
+            peerSigAlgs);
+}
+
+/* Return the TLS 1.2 SignatureAndHashAlgorithm encoding for the
+   given algorithm OID. */
+int32_t getSignatureAndHashAlgorithmEncoding(uint16_t sigAlgOid,
+     unsigned char *octet1,
+     unsigned char *octet2,
+     uint16_t *hashSize)
+{
+    unsigned char b1, b2;
+    uint16_t hLen = 0;
+
+    psAssert(octet1 != NULL && octet2 != NULL && hashSize != NULL);
+
+    switch(sigAlgOid)
+    {
+#ifdef USE_SHA1
+    case OID_SHA1_ECDSA_SIG:
+        b1 = 0x2; /* SHA-1 */
+        b2 = 0x3; /* ECDSA */
+        hLen = SHA1_HASH_SIZE;
+        break;
+    case OID_SHA1_RSA_SIG:
+        b1 = 0x2; /* SHA-1 */
+        b2 = 0x1; /* RSA */
+        hLen = SHA1_HASH_SIZE;
+        break;
+#endif
+#ifdef USE_SHA256
+    case OID_SHA256_ECDSA_SIG:
+        b1 = 0x4; /* SHA-256 */
+        b2 = 0x3; /* ECDSA */
+        hLen = SHA256_HASH_SIZE;
+        break;
+    case OID_SHA256_RSA_SIG:
+        b1 = 0x4; /* SHA-256 */
+        b2 = 0x1; /* RSA */
+        hLen = SHA256_HASH_SIZE;
+        break;
+#endif
+#ifdef USE_SHA384
+    case OID_SHA384_ECDSA_SIG:
+        b1 = 0x5; /* SHA-384 */
+        b2 = 0x3; /* ECDSA */
+        hLen = SHA384_HASH_SIZE;
+        break;
+    case OID_SHA384_RSA_SIG:
+        b1 = 0x5; /* SHA-384 */
+        b2 = 0x1; /* RSA */
+        hLen = SHA384_HASH_SIZE;
+        break;
+#endif
+#ifdef USE_SHA512
+    case OID_SHA512_ECDSA_SIG:
+        b1 = 0x6; /* SHA-512 */
+        b2 = 0x3; /* ECDSA */
+        hLen = SHA512_HASH_SIZE;
+        break;
+    case OID_SHA512_RSA_SIG:
+        b1 = 0x6; /* SHA-512 */
+        b2 = 0x1; /* RSA */
+        hLen = SHA512_HASH_SIZE;
+        break;
+#endif
+    default:
+        return PS_UNSUPPORTED_FAIL;
+    }
+
+    *octet1 = b1;
+    *octet2 = b2;
+    *hashSize = hLen;
+
+    return PS_SUCCESS;
+}
+#endif /* ! USE_ONLY_PSK_CIPHER_SUITE */
+#endif /* USE_SERVER_SIDE_SSL || USE_CLIENT_AUTH */
+
+# ifdef USE_SSL_INFORMATIONAL_TRACE
+void psPrintSigAlgs(uint16_t sigAlgs, const char *where)
+{
+    if (where)
+    {
+        psTraceStrInfo("Signature algorithms in %s:\n", where);
+    }
+
+    if (sigAlgs & HASH_SIG_MD5_RSA_MASK)
+    {
+        _psTrace("RSA-MD5");
+    }
+    if (sigAlgs & HASH_SIG_SHA1_RSA_MASK)
+    {
+        _psTrace(" RSA-SHA1");
+    }
+    if (sigAlgs & HASH_SIG_SHA256_RSA_MASK)
+    {
+        _psTrace(" RSA-SHA256");
+    }
+    if (sigAlgs & HASH_SIG_SHA384_RSA_MASK)
+    {
+        _psTrace(" RSA-SHA384");
+    }
+    if (sigAlgs & HASH_SIG_SHA512_RSA_MASK)
+    {
+        _psTrace(" RSA-SHA512");
+    }
+    if (sigAlgs & HASH_SIG_SHA1_ECDSA_MASK)
+    {
+        _psTrace(" ECDSA-SHA1");
+    }
+    if (sigAlgs & HASH_SIG_SHA256_ECDSA_MASK)
+    {
+        _psTrace(" ECDSA-SHA256");
+    }
+    if (sigAlgs & HASH_SIG_SHA384_ECDSA_MASK)
+    {
+        _psTrace(" ECDSA-SHA384");
+    }
+    if (sigAlgs & HASH_SIG_SHA512_ECDSA_MASK)
+    {
+        _psTrace(" ECDSA-SHA512");
+    }
+    _psTrace("\n");
+}
+
+void psPrintProtocolVersion(const char *where,
+        unsigned char majVer,
+        unsigned char minVer,
+        psBool_t addNewline)
+{
+    if (where)
+    {
+        psTraceStrInfo("%s : ", where);
+    }
+    if (majVer == TLS_MAJ_VER)
+    {
+        if (minVer == TLS_1_2_MIN_VER)
+        {
+            _psTrace("TLS 1.2");
+        }
+        else if (minVer == TLS_1_1_MIN_VER)
+        {
+            _psTrace("TLS 1.1");
+        }
+        else if (minVer == TLS_1_0_MIN_VER)
+        {
+            _psTrace("TLS 1.0");
+        }
+        else if (minVer == SSL3_MIN_VER)
+        {
+            _psTrace("SSL 3.0");
+        }
+        else
+        {
+            _psTrace("Unsupported protocol version");
+        }
+    }
+# ifdef USE_DTLS
+    else if (majVer == DTLS_MAJ_VER)
+    {
+        if (minVer == DTLS_1_2_MIN_VER)
+        {
+            _psTrace("DTLS 1.2");
+        }
+        else if (minVer == DTLS_MIN_VER)
+        {
+            _psTrace("DTLS 1.0");
+        }
+        else
+        {
+            _psTrace("Unsupported protocol version");
+        }
+    }
+# endif /* USE_DTLS */
+    else
+    {
+        _psTrace("Unsupported protocol version");
+    }
+    if (addNewline)
+    {
+        _psTrace("\n");
+    }
+}
+
+# endif /* USE_SSL_INFORMATIONAL_TRACE */
 
 /******************************************************************************/
 

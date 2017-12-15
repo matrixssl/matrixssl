@@ -552,7 +552,7 @@ int32 dtlsEncryptFragRecord(ssl_t *ssl, flightEncode_t *msg,
     if (ssl->encrypt(ssl, encryptStart, encryptStart,
             (int32) (*c - encryptStart)) < 0)
     {
-        psTraceStrInfo("Error encrypting message for write\n", NULL);
+        psTraceInfo("Error encrypting message for write\n");
         return PS_FAILURE;
     }
 

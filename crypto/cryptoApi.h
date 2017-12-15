@@ -178,8 +178,8 @@ typedef enum
     AES_CBC_DEC,
     AES_GCM_ENC,
     AES_GCM_DEC,
-    CHACHA20_POLY1305_ENC,
-    CHACHA20_POLY1305_DEC,
+    CHACHA20_POLY1305_IETF_ENC,
+    CHACHA20_POLY1305_IETF_DEC,
     ARC4,
     DES3,
     IDEA,
@@ -270,29 +270,52 @@ PSPUBLIC void psAesClearGCM(psAesGcm_t *ctx);
 
 # endif   /* USE_AES */
 
-# ifdef USE_CHACHA20_POLY1305
+# ifdef USE_CHACHA20_POLY1305_IETF
 /******************************************************************************/
-PSPUBLIC int32_t psChacha20Poly1305Init(psChacha20Poly1305_t *ctx,
-                                        const unsigned char key[crypto_aead_chacha20poly1305_KEYBYTES],
-                                        uint8_t keylen);
-PSPUBLIC void psChacha20Poly1305Ready(psChacha20Poly1305_t *ctx,
-                                      const unsigned char IV[crypto_aead_chacha20poly1305_NPUBBYTES + 4],
-                                      const unsigned char *aad, psSize_t aadLen);
-PSPUBLIC void psChacha20Poly1305Encrypt(psChacha20Poly1305_t *ctx,
-                                        const unsigned char *pt, unsigned char *ct, uint32_t len);
+PSPUBLIC psRes_t psChacha20Poly1305IetfInit(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char Key_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_KEYBYTES)]);
 
-PSPUBLIC int32_t psChacha20Poly1305Decrypt(psChacha20Poly1305_t *ctx,
-                                           const unsigned char *ct, uint32_t ctLen,
-                                           unsigned char *pt, uint32_t ptLen);
+PSPUBLIC psResSize_t psChacha20Poly1305IetfEncryptDetached(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char *Plaintext_p,
+        psSizeL_t PlaintextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSize_t AadNBytes,
+        unsigned char *Ciphertext_p,
+        unsigned char Mac_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_ABYTES)]);
 
-PSPUBLIC void psChacha20Poly1305DecryptTagless(psChacha20Poly1305_t *ctx,
-                                               const unsigned char *ct, unsigned char *pt,
-                                               uint32_t len);
+PSPUBLIC psResSize_t psChacha20Poly1305IetfDecryptDetached(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char *Ciphertext_p,
+        psSizeL_t CiphertextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        const unsigned char Mac_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_ABYTES)],
+        unsigned char *Plaintext_p);
 
-PSPUBLIC void psChacha20Poly1305GetTag(psChacha20Poly1305_t * ctx,
-                                       uint8_t tagBytes,
-                                       unsigned char tag[crypto_aead_chacha20poly1305_ABYTES]);
-PSPUBLIC void psChacha20Poly1305Clear(psChacha20Poly1305_t *ctx);
+PSPUBLIC psResSize_t psChacha20Poly1305IetfEncrypt(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char *Plaintext_p,
+        psSizeL_t PlaintextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        unsigned char Ciphertext_p[PS_EXACTLY_EXPR(PlaintextNBytes + PS_CHACHA20POLY1305_IETF_ABYTES)]);
+
+PSPUBLIC psResSize_t psChacha20Poly1305IetfDecrypt(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char CiphertextWithTag_p[PS_EXACTLY_EXPR(CiphertextNBytes)],
+        psSizeL_t CiphertextWithTagNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        unsigned char *Plaintext_p);
+
+PSPUBLIC void psChacha20Poly1305IetfClear(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)]);
 # endif
 
 # ifdef USE_3DES
@@ -306,6 +329,10 @@ PSPUBLIC void psDes3Encrypt(psDes3_t *ctx, const unsigned char *pt,
 PSPUBLIC void psDes3Clear(psDes3_t *ctx);
 # endif
 
+#ifndef PS_PARAMETER_UNUSED
+# define PS_PARAMETER_UNUSED(x) do { (void) (x); } while (0)
+#endif
+
 /******************************************************************************/
 /*
     Hash Digest Algorithms
@@ -315,6 +342,7 @@ PSPUBLIC void psDes3Clear(psDes3_t *ctx);
 static __inline void psMd5PreInit(psMd5_t *md5)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(md5);
 }
 PSPUBLIC int32_t psMd5Init(psMd5_t *md5);
 PSPUBLIC void psMd5Update(psMd5_t *md5, const unsigned char *buf, uint32_t len);
@@ -328,6 +356,7 @@ PSPUBLIC void psMd5Final(psMd5_t * md, unsigned char hash[MD5_HASHLEN]);
 static __inline void psSha1PreInit(psSha1_t *sha1)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(sha1);
 }
 PSPUBLIC int32_t psSha1Init(psSha1_t *sha1);
 PSPUBLIC void psSha1Update(psSha1_t *sha1,
@@ -335,6 +364,8 @@ PSPUBLIC void psSha1Update(psSha1_t *sha1,
 PSPUBLIC void psSha1Final(psSha1_t * sha1, unsigned char hash[SHA1_HASHLEN]);
 static __inline void psSha1Sync(psSha1_t *ctx, int sync_all)
 {
+    PS_PARAMETER_UNUSED(ctx);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psSha1Cpy(psSha1_t *d, const psSha1_t *s)
 {
@@ -349,6 +380,7 @@ static __inline void psSha1Cpy(psSha1_t *d, const psSha1_t *s)
 static __inline void psMd5Sha1PreInit(psMd5Sha1_t *md)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(md);
 }
 PSPUBLIC int32_t psMd5Sha1Init(psMd5Sha1_t *md);
 PSPUBLIC void psMd5Sha1Update(psMd5Sha1_t *md,
@@ -357,6 +389,8 @@ PSPUBLIC void psMd5Sha1Final(psMd5Sha1_t * md,
                              unsigned char hash[MD5SHA1_HASHLEN]);
 static __inline void psMd5Sha1Sync(psMd5Sha1_t *ctx, int sync_all)
 {
+    PS_PARAMETER_UNUSED(ctx);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psMd5Sha1Cpy(psMd5Sha1_t *d, const psMd5Sha1_t *s)
 {
@@ -371,6 +405,7 @@ static __inline void psMd5Sha1Cpy(psMd5Sha1_t *d, const psMd5Sha1_t *s)
 static __inline void psSha224PreInit(psSha256_t *sha224)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(sha224);
 }
 PSPUBLIC void psSha224Init(psSha256_t *sha224);
 PSPUBLIC void psSha224Update(psSha256_t *sha224,
@@ -379,6 +414,8 @@ PSPUBLIC void psSha224Final(psSha256_t * sha224,
                             unsigned char hash[SHA224_HASHLEN]);
 static __inline void psSha224Sync(psSha256_t *md, int sync_all)
 {
+    PS_PARAMETER_UNUSED(md);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psSha224Cpy(psSha256_t *d, const psSha256_t *s)
 {
@@ -393,6 +430,7 @@ static __inline void psSha224Cpy(psSha256_t *d, const psSha256_t *s)
 static __inline void psSha256PreInit(psSha256_t *sha256)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(sha256);
 }
 PSPUBLIC int32_t psSha256Init(psSha256_t *sha256);
 PSPUBLIC void psSha256Update(psSha256_t *sha256,
@@ -401,6 +439,8 @@ PSPUBLIC void psSha256Final(psSha256_t * sha256,
                             unsigned char hash[SHA256_HASHLEN]);
 static __inline void psSha256Sync(psSha256_t *md, int sync_all)
 {
+    PS_PARAMETER_UNUSED(md);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psSha256Cpy(psSha256_t *d, const psSha256_t *s)
 {
@@ -415,6 +455,7 @@ static __inline void psSha256Cpy(psSha256_t *d, const psSha256_t *s)
 static __inline void psSha384PreInit(psSha384_t *sha384)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(sha384);
 }
 PSPUBLIC int32_t psSha384Init(psSha384_t *sha384);
 PSPUBLIC void psSha384Update(psSha384_t *sha384,
@@ -423,6 +464,8 @@ PSPUBLIC void psSha384Final(psSha384_t * sha384,
                             unsigned char hash[SHA384_HASHLEN]);
 static __inline void psSha384Sync(psSha384_t *md, int sync_all)
 {
+    PS_PARAMETER_UNUSED(md);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psSha384Cpy(psSha384_t *d, const psSha384_t *s)
 {
@@ -437,6 +480,7 @@ static __inline void psSha384Cpy(psSha384_t *d, const psSha384_t *s)
 static __inline void psSha512PreInit(psSha512_t *sha512)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(sha512);
 }
 PSPUBLIC int32_t psSha512Init(psSha512_t *md);
 PSPUBLIC void psSha512Update(psSha512_t *md,
@@ -445,6 +489,8 @@ PSPUBLIC void psSha512Final(psSha512_t * md,
                             unsigned char hash[SHA512_HASHLEN]);
 static __inline void psSha512Sync(psSha512_t *md, int sync_all)
 {
+    PS_PARAMETER_UNUSED(md);
+    PS_PARAMETER_UNUSED(sync_all);
 }
 static __inline void psSha512Cpy(psSha512_t *d, const psSha512_t *s)
 {
@@ -881,6 +927,7 @@ PSPUBLIC int32_t psMd4Final(psMd4_t *md, unsigned char *hash);
 static __inline void psMd2PreInit(psMd2_t *md2)
 {
     /* Nothing to pre-initialize for native crypto. */
+    PS_PARAMETER_UNUSED(md2);
 }
 PSPUBLIC void psMd2Init(psMd2_t *md);
 PSPUBLIC int32_t psMd2Update(psMd2_t *md, const unsigned char *buf,

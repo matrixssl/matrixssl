@@ -43,6 +43,10 @@
 #  include <errno.h>        /* Defines EWOULDBLOCK, etc. */
 
 #  ifdef POSIX
+#   define USE_GETOPT_LONG
+#   ifdef USE_GETOPT_LONG
+#    include <getopt.h>
+#   endif
 #   include <unistd.h>
 #   include <netdb.h>      /* Defines AF_INET, etc. */
 #   include <sys/socket.h> /* sockaddr */

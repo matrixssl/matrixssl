@@ -1,6 +1,6 @@
 /**
  *      @file    521_ECDH-RSA.h
- *
+ *      @version :%h%d$
  * Binary file for including certificate to MatrixSSL.
  */
 static const unsigned char ECDHRSA521[] = {

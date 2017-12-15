@@ -85,17 +85,37 @@
 /*
     Crypto trace
  */
-# ifndef USE_CRYPTO_TRACE
-#  define psTraceCrypto(x)
-#  define psTraceStrCrypto(x, y)
-#  define psTraceIntCrypto(x, y)
-#  define psTracePtrCrypto(x, y)
+# ifdef USE_PS_LOGF_COMMON
+#   define psTraceCrypto(x) PS_LOGF_COMMON(Log_Trace, PS_CRYPTO, PS_LOGF_FMT, \
+                                           PS_LOGF_FILELINE, "%s", x)
+#   define psTraceIntCrypto(x, i) PS_LOGF_COMMON(Log_Trace, PS_CRYPTO, \
+                                                 PS_LOGF_FMT,          \
+                                                 PS_LOGF_FILELINE, x, i)
+#   define psTraceStrCrypto(x, s) PS_LOGF_COMMON(Log_Trace, PS_CRYPTO, \
+                                                 PS_LOGF_FMT,          \
+                                                 PS_LOGF_FILELINE, x, s)
+#   define psTracePtrCrypto(x, p) PS_LOGF_COMMON(Log_Trace, PS_CRYPTO, \
+                                                 PS_LOGF_FMT,          \
+                                                 PS_LOGF_FILELINE, x, p)
+#   define psTracefCrypto(x, ...) PS_LOGF_COMMON(Log_Trace, PS_CRYPTO, \
+                                                 PS_LOGF_FMT,          \
+                                                 PS_LOGF_FILELINE, x,  \
+                                                 __VA_ARGS__)
 # else
-#  define psTraceCrypto(x) _psTrace(x)
-#  define psTraceStrCrypto(x, y) _psTraceStr(x, y)
-#  define psTraceIntCrypto(x, y) _psTraceInt(x, y)
-#  define psTracePtrCrypto(x, y) _psTracePtr(x, y)
-# endif /* USE_CRYPTO_TRACE */
+#  ifndef USE_CRYPTO_TRACE
+#   define psTraceCrypto(x)
+#   define psTraceStrCrypto(x, y)
+#   define psTraceIntCrypto(x, y)
+#   define psTracePtrCrypto(x, y)
+#   define psTracefCrypto(x, y)
+#  else
+#   define psTraceCrypto(x) _psTrace(x)
+#   define psTraceStrCrypto(x, y) _psTraceStr(x, y)
+#   define psTraceIntCrypto(x, y) _psTraceInt(x, y)
+#   define psTracePtrCrypto(x, y) _psTracePtr(x, y)
+#   define psTracefCrypto(x, y) /* Only available via PS_LOGF_COMMON. */
+#  endif /* USE_CRYPTO_TRACE */
+# endif /* PS_LOGF_COMMON */
 
 /******************************************************************************/
 /*
@@ -399,7 +419,7 @@ extern int32_t psGetPrngLocked(unsigned char *bytes, psSize_t size,
 # define CRYPTO_FLAGS_ARC4   (1 << 3)
 # define CRYPTO_FLAGS_SEED   (1 << 4)
 # define CRYPTO_FLAGS_IDEA   (1 << 5)
-# define CRYPTO_FLAGS_CHACHA (1 << 6) /* Short for CHACHA20_POLY2305 */
+# define CRYPTO_FLAGS_CHACHA (1 << 6) /* Short for CHACHA20_POLY1305_IETF */
 
 # define CRYPTO_FLAGS_SHA1   (1 << 8)
 # define CRYPTO_FLAGS_SHA2   (1 << 9)

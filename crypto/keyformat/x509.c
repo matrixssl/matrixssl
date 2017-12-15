@@ -159,7 +159,6 @@ static int32_t getTimeValidity(psPool_t *pool, const unsigned char **pp,
 static int32_t getImplicitBitString(psPool_t *pool, const unsigned char **pp,
                                     psSize_t len, int32_t impVal, unsigned char **bitString,
                                     psSize_t *bitLen);
-static int32_t validateDateRange(psX509Cert_t *cert);
 static int32_t issuedBefore(rfc_e rfc, const psX509Cert_t *cert);
 
 #  ifdef USE_RSA
@@ -1025,7 +1024,7 @@ static int parse_single_cert(psPool_t *pool, const unsigned char **pp,
         goto out;
     }
 
-#  ifdef USE_OCSP
+#  if defined(USE_OCSP_RESPONSE) || defined(USE_OCSP_REQUEST)
     /* A sha1 hash of the public key is useful for OCSP */
     memcpy(cert->sha1KeyHash, sha1KeyHash, SHA1_HASH_SIZE);
 #  endif
@@ -1487,6 +1486,26 @@ static void freeDomainComponentList(x509DomainComponent_t *domainComponent,
     }
 }
 
+int32_t x509NewExtensions(x509v3extensions_t **extensions, psPool_t *pool)
+{
+    x509v3extensions_t *ext;
+
+    ext = psMalloc(pool, sizeof(x509v3extensions_t));
+    if (ext == NULL)
+    {
+        return PS_MEM_FAIL;
+    }
+    memset(ext, 0x0, sizeof(x509v3extensions_t));
+    ext->pool = pool;
+    ext->bc.pathLenConstraint = -1;
+    ext->bc.cA = CA_UNDEFINED;
+    ext->refCount = 1;
+
+    *extensions = ext;
+
+    return PS_SUCCESS;
+}
+
 void x509FreeExtensions(x509v3extensions_t *extensions)
 {
 
@@ -1503,6 +1522,13 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
     {
         return;
     }
+    if (extensions->refCount > 1)
+    {
+        extensions->refCount--;
+        return;
+    }
+    extensions->refCount = 0;
+
     if (extensions->san)
     {
         active = extensions->san;
@@ -1510,6 +1536,10 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
         {
             inc = active->next;
             psFree(active->data, extensions->pool);
+            if (active->oidLen > 0)
+            {
+                psFree(active->oid, extensions->pool);
+            }
             psFree(active, extensions->pool);
             active = inc;
         }
@@ -1522,6 +1552,10 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
         {
             inc = active->next;
             psFree(active->data, extensions->pool);
+            if (active->oidLen > 0)
+            {
+                psFree(active->oid, extensions->pool);
+            }
             psFree(active, extensions->pool);
             active = inc;
         }
@@ -1634,9 +1668,15 @@ void x509FreeExtensions(x509v3extensions_t *extensions)
     {
         if (extensions->netscapeComment->comment)
         {
-            psFree(extensions->netscapeComment->comment, pool);
+            psFree(extensions->netscapeComment->comment, extensions->pool);
         }
-        psFree(extensions->netscapeComment, pool);
+        psFree(extensions->netscapeComment, extensions->pool);
+    }
+
+    if (extensions->otherAttributes)
+    {
+        psDynBufUninit(extensions->otherAttributes);
+        psFree(extensions->otherAttributes, extensions->pool);
     }
 #  endif /* USE_FULL_CERT_PARSE || USE_CERT_GEN */
 }
@@ -2492,10 +2532,19 @@ static int32_t parseGeneralNames(psPool_t *pool, const unsigned char **buf,
                 psTraceCrypto("ASN parse error SAN otherName\n");
                 return PS_PARSE_FAIL;
             }
-            if (*(p++) != ASN_OID
-                || getAsnLength(&p, (int32) (extEnd - p), &activeName->oidLen) < 0
-                || (uint32) (extEnd - p) < activeName->oidLen
-                || activeName->oidLen > sizeof(activeName->oid))
+
+            if (*(p++) != ASN_OID)
+            {
+                psTraceCrypto("ASN parse error SAN otherName oid\n");
+                return -1;
+            }
+            if (getAsnLength(&p, (int32) (extEnd - p), &activeName->oidLen) < 0)
+            {
+                psTraceCrypto("ASN parse error SAN otherName oid\n");
+                return -1;
+            }
+            activeName->oid = psMalloc(pool, activeName->oidLen);
+            if ((uint32) (extEnd - p) < activeName->oidLen)
             {
 
                 psTraceCrypto("ASN parse error SAN otherName oid\n");
@@ -4235,6 +4284,12 @@ int32_t getSerialNum(psPool_t *pool, const unsigned char **pp, psSize_t len,
     const unsigned char *p = *pp;
     psSize_t vlen;
 
+    if (len < 1)
+    {
+        psTraceCrypto("ASN getSerialNum failed\n");
+        return PS_PARSE_FAIL;
+    }
+
     if ((*p != (ASN_CONTEXT_SPECIFIC | ASN_PRIMITIVE | 2)) &&
         (*p != ASN_INTEGER))
     {
@@ -4389,7 +4444,7 @@ static int32 issuedBefore(rfc_e rfc, const psX509Cert_t *cert)
         0 on parse success (FAIL_DATE_FLAG could be set)
         PS_FAILURE on parse error
  */
-static int32 validateDateRange(psX509Cert_t *cert)
+int32 validateDateRange(psX509Cert_t *cert)
 {
     int32 err;
     psBrokenDownTime_t timeNow;
@@ -5577,13 +5632,23 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
                     if (sc->extensions.ak.keyLen != 0)
                     {
                         psTraceCrypto("Subject/Issuer key id mismatch\n");
+#ifdef DISABLE_AUTH_KEY_ID_CHECK
+                        psTraceCrypto("Ignoring Subject/Issuer key id mismatch " \
+                                "due to #define DISABLE_AUTH_KEY_ID_CHECK\n");
+#else
                         sc->authStatus = PS_CERT_AUTH_FAIL_AUTHKEY;
+#endif /* DISABLE_AUTH_KEY_ID_CHECK */
                     }
                 }
                 else
                 {
                     psTraceCrypto("Subject/Issuer key id mismatch\n");
+#ifdef DISABLE_AUTH_KEY_ID_CHECK
+                    psTraceCrypto("Ignoring Subject/Issuer key id mismatch " \
+                            "due to #define DISABLE_AUTH_KEY_ID_CHECK\n");
+#else
                     sc->authStatus = PS_CERT_AUTH_FAIL_AUTHKEY;
+#endif /* DISABLE_AUTH_KEY_ID_CHECK */
                 }
             }
             else
@@ -5592,7 +5657,13 @@ int32 psX509AuthenticateCert(psPool_t *pool, psX509Cert_t *subjectCert,
                         ic->extensions.sk.len) != 0)
                 {
                     psTraceCrypto("Subject/Issuer key id data mismatch\n");
+#ifdef DISABLE_AUTH_KEY_ID_CHECK
+                    psTraceCrypto("Ignoring Subject/Issuer key id mismatch " \
+                            "due to #define DISABLE_AUTH_KEY_ID_CHECK\n");
+#else
                     sc->authStatus = PS_CERT_AUTH_FAIL_AUTHKEY;
+#endif /* DISABLE_AUTH_KEY_ID_CHECK */
+
                 }
             }
         }
@@ -5794,7 +5865,7 @@ static int32_t x509ConfirmSignature(const unsigned char *sigHash,
 /******************************************************************************/
 # endif /* USE_CERT_PARSE */
 
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
 
 /******************************************************************************/
 
@@ -7213,7 +7284,7 @@ void psOcspResponseUninit(psOcspResponse_t *res)
 }
 
 
-# endif /* USE_OCSP */
+# endif /* USE_OCSP_RESPONSE */
 
 #endif  /* USE_X509 */
 /******************************************************************************/

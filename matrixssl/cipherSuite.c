@@ -348,48 +348,40 @@ int32 csAesDecrypt(void *ssl, unsigned char *ct,
 
 /******************************************************************************/
 
-/* #define DEBUG_CHACHA20_POLY1305_CIPHER_SUITE */
-#ifdef USE_CHACHA20_POLY1305_CIPHER_SUITE
-int32 csChacha20Poly1305Init(sslSec_t *sec, int32 type, uint32 keysize)
+/* #define DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE */
+#ifdef USE_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+int32 csChacha20Poly1305IetfInit(sslSec_t *sec, int32 type, uint32 keysize)
 {
-    int32 err;
+    psRes_t err;
+
+    psAssert(keysize == PS_CHACHA20POLY1305_IETF_KEYBYTES);
 
     if (type == INIT_ENCRYPT_CIPHER)
     {
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-        psTraceInfo("Entering csChacha20Poly1305Init encrypt\n");
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+        psTraceInfo("Entering csChacha20Poly1305IetfInit encrypt\n");
         psTraceBytes("sec->writeKey", sec->writeKey, keysize);
 # endif
-        memset(&sec->encryptCtx.chacha20poly1305, 0, sizeof(psChacha20Poly1305_t));
-        if ((err = psChacha20Poly1305Init(&sec->encryptCtx.chacha20poly1305, sec->writeKey,
-                 keysize)) < 0)
-        {
-            return err;
-        }
+        err = psChacha20Poly1305IetfInit(&sec->encryptCtx.chacha20poly1305ietf, sec->writeKey);
     }
     else
     {
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-        psTraceInfo("Entering csChacha20Poly1305Init decrypt\n");
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+        psTraceInfo("Entering csChacha20Poly1305IetfInit decrypt\n");
         psTraceBytes("sec->readKey", sec->readKey, keysize);
 # endif
-        memset(&sec->decryptCtx.chacha20poly1305, 0, sizeof(psChacha20Poly1305_t));
-        if ((err = psChacha20Poly1305Init(&sec->decryptCtx.chacha20poly1305, sec->readKey,
-                 keysize)) < 0)
-        {
-            return err;
-        }
+        err = psChacha20Poly1305IetfInit(&sec->decryptCtx.chacha20poly1305ietf, sec->readKey);
     }
-    return 0;
+    return err;
 }
 
-int32 csChacha20Poly1305Encrypt(void *ssl, unsigned char *pt,
+int32 csChacha20Poly1305IetfEncrypt(void *ssl, unsigned char *pt,
     unsigned char *ct, uint32 len)
 {
     ssl_t *lssl = ssl;
-    psChacha20Poly1305_t *ctx;
+    psChacha20Poly1305Ietf_t *ctx;
     unsigned char nonce[TLS_AEAD_NONCE_MAXLEN];
-    unsigned char aad[TLS_CHACHA20_POLY1305_AAD_LEN];
+    unsigned char aad[TLS_CHACHA20_POLY1305_IETF_AAD_LEN];
     int32 i, ptLen;
 
     if (len == 0)
@@ -400,44 +392,32 @@ int32 csChacha20Poly1305Encrypt(void *ssl, unsigned char *pt,
     {
         return PS_LIMIT_FAIL;
     }
-    ptLen = len - TLS_CHACHA20_POLY1305_TAG_LEN;
-    ctx = &lssl->sec.encryptCtx.chacha20poly1305;
+    ptLen = len - TLS_CHACHA20_POLY1305_IETF_TAG_LEN;
+    ctx = &lssl->sec.encryptCtx.chacha20poly1305ietf;
 
     memset(nonce, 0, TLS_AEAD_NONCE_MAXLEN);
-    memset(aad, 0, TLS_CHACHA20_POLY1305_AAD_LEN);
+    memset(aad, 0, TLS_CHACHA20_POLY1305_IETF_AAD_LEN);
 
-# ifdef CHACHA20POLY1305_IETF
-#  ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceInfo("Entering csChacha20Poly1305Encrypt IETF\n");
+#  ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+    psTraceInfo("Entering csChacha20Poly1305IetfEncrypt IETF\n");
 #  endif
-    if (sizeof(lssl->sec.writeIV) < CHACHA20POLY1305_IV_FIXED_LENGTH)
+    if (sizeof(lssl->sec.writeIV) < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH)
     {
         return PS_LIMIT_FAIL;
     }
-    if (sizeof(nonce) < CHACHA20POLY1305_IV_FIXED_LENGTH)
+    if (sizeof(nonce) < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH)
     {
         return PS_LIMIT_FAIL;
     }
 
     /* The nonce is built according to: https://tools.ietf.org/html/draft-ietf-tls-chacha20-poly1305 */
 
-    memcpy(nonce + (CHACHA20POLY1305_IV_FIXED_LENGTH - TLS_AEAD_SEQNB_LEN), lssl->sec.seq, TLS_AEAD_SEQNB_LEN);
+    memcpy(nonce + (CHACHA20POLY1305_IETF_IV_FIXED_LENGTH - TLS_AEAD_SEQNB_LEN), lssl->sec.seq, TLS_AEAD_SEQNB_LEN);
 
-    for (i = 0; i < CHACHA20POLY1305_IV_FIXED_LENGTH; i++)
+    for (i = 0; i < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH; i++)
     {
         nonce[i] ^= lssl->sec.writeIV[i];
     }
-# else
-#  ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceInfo("Entering csChacha20Poly1305Encrypt\n");
-#  endif
-
-/*
-    The nonce is just the sequence number, as explained in
-    https://tools.ietf.org/html/draft-agl-tls-chacha20poly1305-04#section-5 AEAD construction
- */
-    memcpy(nonce, lssl->sec.seq, TLS_AEAD_SEQNB_LEN);
-# endif
     /* --- Fill Additional data ---// */
     memcpy(aad, lssl->sec.seq, TLS_AEAD_SEQNB_LEN);
     i = TLS_AEAD_SEQNB_LEN;
@@ -448,20 +428,25 @@ int32 csChacha20Poly1305Encrypt(void *ssl, unsigned char *pt,
     aad[i++] = ptLen >> 8 & 0xFF;
     aad[i++] = ptLen & 0xFF;
 
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceBytes("nonce", nonce, CHACHA20POLY1305_IV_FIXED_LENGTH);
-    psTraceBytes("aad", aad, TLS_CHACHA20_POLY1305_AAD_LEN);
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+    psTraceBytes("nonce", nonce, CHACHA20POLY1305_IETF_IV_FIXED_LENGTH);
+    psTraceBytes("aad", aad, TLS_CHACHA20_POLY1305_IETF_AAD_LEN);
     psTraceBytes("pt", pt, ptLen);
 # endif
 
     /* Perform encryption and authentication tag computation */
-    psChacha20Poly1305Ready(ctx, nonce, aad, TLS_CHACHA20_POLY1305_AAD_LEN);
-    psChacha20Poly1305Encrypt(ctx, pt, ct, ptLen);
-    psChacha20Poly1305GetTag(ctx, TLS_CHACHA20_POLY1305_TAG_LEN, ct + ptLen);
+    (void)psChacha20Poly1305IetfEncrypt(
+            ctx,
+            pt,
+            ptLen,
+            nonce,
+            aad,
+            TLS_CHACHA20_POLY1305_IETF_AAD_LEN,
+            ct);
 
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
     psTraceBytes("ct", ct, ptLen);
-    psTraceBytes("tag", ct + ptLen, TLS_CHACHA20_POLY1305_TAG_LEN);
+    psTraceBytes("tag", ct + ptLen, TLS_CHACHA20_POLY1305_IETF_TAG_LEN);
 # endif
 
     /* Normally HMAC would increment the sequence */
@@ -476,63 +461,56 @@ int32 csChacha20Poly1305Encrypt(void *ssl, unsigned char *pt,
     return len;
 }
 
-int32 csChacha20Poly1305Decrypt(void *ssl, unsigned char *ct,
+int32 csChacha20Poly1305IetfDecrypt(void *ssl, unsigned char *ct,
     unsigned char *pt, uint32 len)
 {
     ssl_t *lssl = ssl;
-    psChacha20Poly1305_t *ctx;
+    psChacha20Poly1305Ietf_t *ctx;
     int32 i, ctLen, bytes;
 
     unsigned char nonce[TLS_AEAD_NONCE_MAXLEN];
-    unsigned char aad[TLS_CHACHA20_POLY1305_AAD_LEN];
+    unsigned char aad[TLS_CHACHA20_POLY1305_IETF_AAD_LEN];
 
-    ctx = &lssl->sec.decryptCtx.chacha20poly1305;
+    ctx = &lssl->sec.decryptCtx.chacha20poly1305ietf;
 
     memset(nonce, 0, TLS_AEAD_NONCE_MAXLEN);
-    memset(aad, 0, TLS_CHACHA20_POLY1305_AAD_LEN);
+    memset(aad, 0, TLS_CHACHA20_POLY1305_IETF_AAD_LEN);
 
-# ifdef CHACHA20POLY1305_IETF
     /* Check https://tools.ietf.org/html/draft-nir-cfrg-chacha20-poly1305-06 */
 
-#  ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceInfo("Entering csChacha20Poly1305Decrypt IETF\n");
+#  ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+    psTraceInfo("Entering csChacha20Poly1305IetfDecrypt IETF\n");
 #  endif
 
-    if (sizeof(lssl->sec.readIV) < CHACHA20POLY1305_IV_FIXED_LENGTH)
+    if (sizeof(lssl->sec.readIV) < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH)
     {
         return PS_LIMIT_FAIL;
     }
-    if (sizeof(nonce) < CHACHA20POLY1305_IV_FIXED_LENGTH)
+    if (sizeof(nonce) < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH)
     {
         return PS_LIMIT_FAIL;
     }
 
     /* The nonce is built according to: https://tools.ietf.org/html/draft-ietf-tls-chacha20-poly1305 */
 
-    memcpy(nonce + (CHACHA20POLY1305_IV_FIXED_LENGTH - TLS_AEAD_SEQNB_LEN), lssl->sec.remSeq, TLS_AEAD_SEQNB_LEN);
+    memcpy(nonce + (CHACHA20POLY1305_IETF_IV_FIXED_LENGTH - TLS_AEAD_SEQNB_LEN), lssl->sec.remSeq, TLS_AEAD_SEQNB_LEN);
 
-    for (i = 0; i < CHACHA20POLY1305_IV_FIXED_LENGTH; i++)
+    for (i = 0; i < CHACHA20POLY1305_IETF_IV_FIXED_LENGTH; i++)
     {
         nonce[i] ^= lssl->sec.readIV[i];
     }
 
-# else
-#  ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceInfo("Entering csChacha20Poly1305Decrypt\n");
-#  endif
-    memcpy(nonce, lssl->sec.remSeq, TLS_AEAD_SEQNB_LEN);
-# endif
 
     /* --- Fill Additional data ---// */
     memcpy(aad, lssl->sec.remSeq, TLS_AEAD_SEQNB_LEN);
     i = TLS_AEAD_SEQNB_LEN;
 
     /* Update length of encrypted data: we have to remove tag's length */
-    if (len < TLS_CHACHA20_POLY1305_TAG_LEN)
+    if (len < TLS_CHACHA20_POLY1305_IETF_TAG_LEN)
     {
         return PS_LIMIT_FAIL;
     }
-    ctLen = len - TLS_CHACHA20_POLY1305_TAG_LEN;
+    ctLen = len - TLS_CHACHA20_POLY1305_IETF_TAG_LEN;
 
     aad[i++] = lssl->rec.type;
     aad[i++] = lssl->majVer;
@@ -540,19 +518,17 @@ int32 csChacha20Poly1305Decrypt(void *ssl, unsigned char *ct,
     aad[i++] = ctLen >> 8 & 0xFF;
     aad[i++] = ctLen & 0xFF;
 
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
-    psTraceBytes("nonce", nonce, CHACHA20POLY1305_IV_FIXED_LENGTH);
-    psTraceBytes("aad", aad, TLS_CHACHA20_POLY1305_AAD_LEN);
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
+    psTraceBytes("nonce", nonce, CHACHA20POLY1305_IETF_IV_FIXED_LENGTH);
+    psTraceBytes("aad", aad, TLS_CHACHA20_POLY1305_IETF_AAD_LEN);
     psTraceBytes("ct", ct, ctLen);
-    psTraceBytes("tag", ct + ctLen, TLS_CHACHA20_POLY1305_TAG_LEN);
+    psTraceBytes("tag", ct + ctLen, TLS_CHACHA20_POLY1305_IETF_TAG_LEN);
 # endif
 
     /* --- Check authentication tag and decrypt data ---// */
-    psChacha20Poly1305Ready(ctx, nonce, aad, TLS_CHACHA20_POLY1305_AAD_LEN);
-
-    if ((bytes = psChacha20Poly1305Decrypt(ctx, ct, len, pt, ctLen)) < 0)
+    if ((bytes = psChacha20Poly1305IetfDecrypt(ctx, ct, len, nonce, aad, TLS_CHACHA20_POLY1305_IETF_AAD_LEN, pt)) < 0)
     {
-# ifdef DEBUG_CHACHA20_POLY1305_CIPHER_SUITE
+# ifdef DEBUG_CHACHA20_POLY1305_IETF_CIPHER_SUITE
         psTraceInfo("Decrypt NOK\n");
 # endif
         return -1;
@@ -569,7 +545,7 @@ int32 csChacha20Poly1305Decrypt(void *ssl, unsigned char *ct,
 
     return bytes;
 }
-#endif /* USE_CHACHA20_POLY1305_CIPHER_SUITE */
+#endif /* USE_CHACHA20_POLY1305_IETF_CIPHER_SUITE */
 
 /******************************************************************************/
 
@@ -917,11 +893,11 @@ const static sslCipherSpec_t supportedCiphers[] = {
       CRYPTO_FLAGS_CHACHA | CRYPTO_FLAGS_SHA2,
       0,                                /* macSize */
       32,                               /* keySize */
-      CHACHA20POLY1305_IV_FIXED_LENGTH, /* ivSize */
+      CHACHA20POLY1305_IETF_IV_FIXED_LENGTH, /* ivSize */
       0,                                /* blocksize */
-      csChacha20Poly1305Init,
-      csChacha20Poly1305Encrypt,
-      csChacha20Poly1305Decrypt,
+      csChacha20Poly1305IetfInit,
+      csChacha20Poly1305IetfEncrypt,
+      csChacha20Poly1305IetfDecrypt,
       NULL,
       NULL },
 #endif /* USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 */
@@ -932,11 +908,11 @@ const static sslCipherSpec_t supportedCiphers[] = {
       CRYPTO_FLAGS_CHACHA | CRYPTO_FLAGS_SHA2,
       0,                                /* macSize */
       32,                               /* keySize */
-      CHACHA20POLY1305_IV_FIXED_LENGTH, /* ivSize */
+      CHACHA20POLY1305_IETF_IV_FIXED_LENGTH, /* ivSize */
       0,                                /* blocksize */
-      csChacha20Poly1305Init,
-      csChacha20Poly1305Encrypt,
-      csChacha20Poly1305Decrypt,
+      csChacha20Poly1305IetfInit,
+      csChacha20Poly1305IetfEncrypt,
+      csChacha20Poly1305IetfDecrypt,
       NULL,
       NULL },
 #endif /* USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 */
@@ -1972,59 +1948,11 @@ static int32_t validateKeyForExtensions(ssl_t *ssl, const sslCipherSpec_t *spec,
             }
 #   endif  /* USE_DHE_CIPHER_SUITE */
 
-            /* Now look for the specific pubkey/hash combo is supported */
-            switch (crt->sigAlgorithm)
+            if (!peerSupportsSigAlg(crt->sigAlgorithm,
+                            ssl->hashSigAlg))
             {
-#   ifdef USE_RSA_CIPHER_SUITE
-            case OID_SHA256_RSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA256_RSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    ifdef USE_SHA1
-            case OID_SHA1_RSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA1_RSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    endif
-#    ifdef USE_SHA384
-            case OID_SHA384_RSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA384_RSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    endif
-#   endif       /* USE_RSA_CIPHER_SUITE */
-#   ifdef USE_ECC_CIPHER_SUITE
-            case OID_SHA256_ECDSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA256_ECDSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    ifdef USE_SHA1
-            case OID_SHA1_ECDSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA1_ECDSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    endif
-#    ifdef USE_SHA384
-            case OID_SHA384_ECDSA_SIG:
-                if (!(ssl->hashSigAlg & HASH_SIG_SHA384_ECDSA_MASK))
-                {
-                    return PS_UNSUPPORTED_FAIL;
-                }
-                break;
-#    endif
-#   endif       /* USE_ECC */
-            default:
-                psTraceInfo("Don't share ANY sig/hash algorithms with peer\n");
+                psTraceInfo("Peer doesn't support all sig/hash algorithm " \
+                        "pairs in our certificate chain.\n");
                 return PS_UNSUPPORTED_FAIL;
             }
 
@@ -2121,7 +2049,14 @@ int32_t haveKeyMaterial(const ssl_t *ssl, int32 cipherType, short reallyTest)
         return PS_SUCCESS;
     }
 # endif
-
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+    if (!(ssl->flags & SSL_FLAGS_SERVER) && reallyTest == 0)
+    {
+        /* When using on-demand client cert and key loading, we may not
+           have loaded any key or cert material yet. */
+        return PS_SUCCESS;
+    }
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
 # ifndef USE_ONLY_PSK_CIPHER_SUITE
 
     /*  To start, capture all the cipherTypes where servers must have an

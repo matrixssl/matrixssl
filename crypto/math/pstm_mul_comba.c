@@ -121,6 +121,11 @@
 /* ARM code */
 /* #pragma message ("Using 32 bit ARM Assembly Optimizations") */
 
+# if defined __arm__ && defined __thumb__ && !defined __thumb2__
+#  error "Platform not supported: Thumb1 mode on ARMv4-v6."
+#  error "Please, turn off thumb mode or enable thumb2."
+# endif
+
 #  define COMBA_START
 
 #  define COMBA_CLEAR \

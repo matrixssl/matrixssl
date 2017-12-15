@@ -1,4 +1,4 @@
-# Developer's Guide {#DevelopersGuide} 
+# @matrixssl Developer Guidance {#DevelopersGuide} 
 
 
 **@matrixssl version @version**
@@ -13,7 +13,7 @@
 
 # OVERVIEW 
 
-This developer's guide is a general SSL/TLS overview and a @matrixssl specific integration reference for adding SSL security into an application. 
+This guidance is a general SSL/TLS overview and a @matrixssl specific integration reference for adding SSL security into an application. 
 
 This document is primarily intended for the software developer performing @matrixssl integration into their custom application but is also a useful reference for anybody wishing to learn more about @matrixssl or the SSL/TLS protocol in general. 
 
@@ -149,7 +149,7 @@ The following TLS RFCs are implemented by @matrixssl.
 `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256`
 
 * [draft-ietf-tls-falsestart](https://datatracker.ietf.org/doc/draft-ietf-tls-falsestart/) Transport Layer Security (TLS) False Start
-: Supported. Disabled by default due to security concerns. See [False Start](#21-ssltls-version-security).
+: Supported. Disabled by default due to security concerns -- see [False Start Weakness](https://en.wikipedia.org/wiki/Transport_Layer_Security#Version_rollback_attacks). 
 
 
 ## Currently Unsupported RFCs
@@ -249,7 +249,7 @@ SSL_DH_anon_WITH_RC4_128_MD5
 ```
 
 
-# SECURITY CONSIDERATIONS 
+# SECURITY CONSIDERATIONS
 
 Prior to working directly with the @matrixssl library there are some critical SSL security concepts that application integrators should be familiar with.
 
@@ -454,7 +454,8 @@ Example [Equifax GeoTrust](https://www.geotrust.com/resources/root-certificates/
 Certificate chain sent to a @matrixssl client during SSL handshake Certificate message by remote server https://www.google.com.
 
 	**C=US, O=GeoTrust Inc., CN=GeoTrust Global CA**
-	*Issuer*: C=US, O=Equifax, OU=Equifax Secure Certificate Authority [Valid, matches a loaded trusted root subject]
+	*Issuer*: C=US, O=Equifax, OU=Equifax Secure Certificate Authority 
+	[Valid, matches a loaded trusted root subject]
 	*Authority KeyId*: 48:E6:68:F9:2B:D2:B2:95... [Valid, matches the Issuer Subject KeyId]
 	*Subject KeyId*: C0:7A:98:68:8D:89:FB:AB...
 	*Basic Constraints*: critical CA:TRUE [Valid, this certificate can sign others]
@@ -465,14 +466,16 @@ Certificate chain sent to a @matrixssl client during SSL handshake Certificate m
 	*Authority KeyId*: C0:7A:98:68:8D:89:FB:AB... [Valid, matches the Issuer Subject KeyId]
 	*Subject KeyId*: 4A:DD:06:16:1B:BC:F6:68...
 	*Validity*: (Apr  5 15:15:55 2013 GMT to Apr  4 15:15:55 2015 GMT) [Valid]
-	*Basic Constraints*: critical CA:TRUE, pathlen:0 [Valid, this certificate can sign others and the signed certificate is not also a CA]
+	*Basic Constraints*: critical CA:TRUE, pathlen:0 
+	[Valid, this certificate can sign others and the signed certificate is not also a CA]
 	*Key Usage*: critical Certificate Sign, CRL Sign [Valid, able to sign certificates]
 	*Version*: 3 [Valid]
 	>>>**C=US, ST=California, L=Mountain View, O=Google Inc, CN=*.google.com**
 	*Issuer*: C=US, O=Google Inc, CN=Google Internet Authority G2 [Valid, matches parent subject]
 	*X509v3 Basic Constraints*: critical CA:FALSE [Valid, this is a leaf cert]
 	*Extended Key Usage*: TLS Web Server Authentication, TLS Web Client Authentication [Valid]
-	*X509v3 Subject Alternative Name*: DNS:*.google.com, DNS:*.android.com... [Valid, matches expected DNS name]
+	*X509v3 Subject Alternative Name*: DNS:*.google.com, DNS:*.android.com... 
+	[Valid, matches expected DNS name]
 	*Validity*: (Mar 12 09:53:40 2014 GMT to Jun 10 00:00:00 2014 GMT) [Valid]
 
 
@@ -503,7 +506,7 @@ In _@matrixssl Commercial Edition_, Certificate Authority root and child certifi
 
 # APPLICATION INTEGRATION FLOW 
 
-@matrixssl is a C code library that provides a security layer for client and server applications allowing them to securely communicate with other SSL enabled peers. @matrixssl is transport agnostic and can just as easily integrate with an HTTP server as it could with a device communicating through a serial port.  For simplicity, this developer's guide will assume a socket-based implementation for all its examples unless otherwise noted.
+@matrixssl is a C code library that provides a security layer for client and server applications allowing them to securely communicate with other SSL enabled peers. @matrixssl is transport agnostic and can just as easily integrate with an HTTP server as it could with a device communicating through a serial port.  For simplicity, this guidance will assume a socket-based implementation for all its examples unless otherwise noted.
 
 The term application in this document refers to the peer (client or server) application the @matrixssl library is being integrated into.
 
@@ -512,7 +515,7 @@ This section will detail the specific points in the application life cycle where
 Refer to the @matrixssl API document to get familiar with the interface to the library and with the example code to see how they are used at implementation.   Follow the guidelines below when using these APIs to integrate @matrixssl into an application.
 
 
-## `ssl_t` Structure
+## The ssl_t Structure
 
 The `ssl_t` structure holds the state and keys for each client or server connection as well as buffers for encoding and decoding SSL data. The buffers are dynamically managed internally to make the integration with existing non-secure software easier. SSL is a record based protocol, and the internal buffer management makes a better 'impedance match' with classic stream based protocols. For example, data may be read from a socket, but if a full SSL record has not been received, no data is available for the caller to process.  This partial record is held within the `ssl_t` buffer. The @matrixssl API is also designed so there are no buffer copies, and the caller is able to read and write network data directly into the SSL buffers, providing a very low memory overhead per session.
 
@@ -638,7 +641,7 @@ Example implementations of @matrixssl client and server applications integration
 
 # CONFIGURABLE FEATURES 
 
-@matrixssl contains a set of optional features that are configurable at compile time.  This allows the user to remove unneeded functionality to reduce code size footprint and disable potentially insecure features.  Each of these options are pre-processor defines that can be disabled by simply commenting out the #define in the header files or by using the -D compile flag during build.  APIs with dependencies on optional features are highlighted in the Define Dependencies sub-section in the API documentation for that function.
+@matrixssl contains a set of optional features that are configurable at compile time.  This allows the user to remove unneeded functionality to reduce code size footprint and disable potentially insecure features.  Each of these options are pre-processor defines that can be disabled by simply commenting out the \#define in the header files or by using the -D compile flag during build.  APIs with dependencies on optional features are highlighted in the Define Dependencies sub-section in the API documentation for that function.
 
 *Not all configurable options are listed below. See comments directly in configuration header files for more fine-tuning.*
 
@@ -674,7 +677,7 @@ Example implementations of @matrixssl client and server applications integration
 : Disabled by default.
 
 `REQUESTED_MAX_PLAINTEXT_RECORD_LEN`
-: matrixsslConfig.h – Enable the “max_fragment_length” TLS extension defined in RFC 4366.  Value of #define determines fragment length (server may reject)
+: matrixsslConfig.h – Enable the “max_fragment_length” TLS extension defined in RFC 4366.  Value of \#define determines fragment length (server may reject)
 
 `USE_CLIENT_AUTH`
 : matrixsslConfig.h - Enables  two-way(mutual) authentication
@@ -812,7 +815,7 @@ Optimizing assembly code for low level math operations is available for many com
 
 ## Debug Configuration 
 
-@matrixssl contains a set of optional debug features that are configurable at compile time.  Each of these options are pre-processor defines that can be disabled by simply commenting out the `#define` in the specified header files.
+@matrixssl contains a set of optional debug features that are configurable at compile time.  Each of these options are pre-processor defines that can be disabled by simply commenting out the \#define in the specified header files.
 
 `HALT_ON_PS_ERROR`
 : coreConfig.h - Enables the osdepBreak platform function whenever a psError trace function is called.  Helpful in debug environments.
@@ -1102,9 +1105,11 @@ When creating the session resumption information (either the standard session ta
 **Servers**: Servers that wish to process ALPN extensions sent from a client must call the `matrixSslRegisterALPNCallback` function immediately after the session is created with `matrixSslNewServerSession`.  The timing of the registration is important so that the callback can be associated with the proper session context before the first handshake message from the client is passed to `matrixSslReceivedData`.
 
 The server ALPN callback that is registered with `matrixSslRegisterALPNCallback` must have a prototype of:
-```C
+
+```{.c}
 void ALPN_callback(void *ssl, short protoCount,	char *proto[MAX_PROTO_EXT], int32_t protoLen[MAX_PROTO_EXT], int32_t *index)
 ```
+
 `ssl`
 : parameter is the session context and may be typecast to an `ssl_t * ` type if access is required.
 
@@ -1126,7 +1131,8 @@ void ALPN_callback(void *ssl, short protoCount,	char *proto[MAX_PROTO_EXT], int3
 To generate the ALPN extension, the API `matrixSslCreateALPNext` is used in conjunction with the `matrixSslNewHelloExtension` or `matrixSslLoadHelloExtension` framework.
 
 The `matrixSslCreateALPNext` API accepts an array of `unsigned char * ` string values (array length of `MAX_PROTO_EXT`) along with a companion array that hold the string lengths for the protocol list.  The function will format the protocols into the specified ALPN extension format and return that to the caller in the output parameters.  Once the extension has been created the client must load the extension using the `matrixSslLoadHelloExtension` API (`matrixSslNewHelloExtension` must have been called as well).  Finally, the extension must be passed to `matrixSslNewClientSession` in the extensions parameter.  Here is what the ALPN extension creation and session start might look like:
-```C
+
+```{.c}
 tlsExtension_t * extension;
 unsigned char	*alpn[MAX_PROTO_EXT];
 int32_t			alpnLen[MAX_PROTO_EXT];
@@ -1150,6 +1156,7 @@ matrixSslNewClientSession(&ssl, keys, sid, g_cipher, g_ciphers, certCb, g_ip, ex
 
 matrixSslDeleteHelloExtension(extension);
 ```
+
 To receive the server reply to the ALPN extension the client must register an extension callback routine using the `extCb` parameter when calling `matrixSslNewClientSession`.  The callback will be invoked with the ALPN extension ID of `EXT_ALPN` (16) with a format of a single byte length followed by the protocol string value the server has agreed to. 
 
 See the example in `apps/ssl/client.c` for full implementation details.
@@ -1250,14 +1257,13 @@ When a client sends the `status_request` extension the server will look to see i
 ### Configuring OCSP Feature for Use
 
 The OCSP functionality depends on definitions in `cryptoConfig.h`. Full read/write functionality and server features requires following defines:
-``` {.c}
-#define USE_X509
-#define USE_CERT_PARSE
-#define USE_FULL_CERT_PARSE
-#define USE_CRL
-#define USE_OCSP
-#define USE_OCSP_MUST_STAPLE
-```
+
+	#define USE_X509
+	#define USE_CERT_PARSE
+	#define USE_FULL_CERT_PARSE
+	#define USE_CRL
+	#define USE_OCSP
+	#define USE_OCSP_MUST_STAPLE
 
 The standard configurations like `default` on *@matrixssl* FIPS and Commercial releases have already neccessary features enabled.
 
@@ -1277,15 +1283,16 @@ The most of functionality of `ocsp.c` program is found in `OCSPRequestAndRespons
 In @matrixssl, function `matrixSslWriteOCSPRequestExt()` is used to create OCSP requests.
 
 The function is invoked as follows:
-``` {.c}
-if (matrixSslWriteOCSPRequestExt(NULL, 
-                                 subject,
-                                 issuer,
-                                 &request,
-                                 &requestLen,
-                                 &info) != PS_SUCCESS) {
-    /* Error handling */
-    return PS_FAILURE;
+
+```{.c}
+	if (matrixSslWriteOCSPRequestExt(NULL, 
+	                                 subject,
+	                                 issuer,
+	                                 &request,
+	                                 &requestLen,
+	                                 &info) != PS_SUCCESS) {
+	    /* Error handling */
+	    return PS_FAILURE;
 }
 ```
 
@@ -1302,21 +1309,15 @@ is no longer needed.
 
 ##### Providing name for requestor (requestorName)
 
-The @matrixssl allows providing name for OCSP requestor. The name is represented
-using X.509 GeneralName. matrixSslWriteOCSPRequestInfoSetRequestorId() function
-is provided to help encoding the OCSP requestor name in suitable format for
-OCSP request. Note: This option is relatively rarely used and some OCSP
-Responders will reject requests with RequestorName.
+The @matrixssl allows providing name for OCSP requestor. The name is represented using X.509 GeneralName. matrixSslWriteOCSPRequestInfoSetRequestorId() function is provided to help encoding the OCSP requestor name in suitable format for OCSP request. Note: This option is relatively rarely used and some OCSP Responders will reject requests with RequestorName.
 
 
 ##### Providing list of requests (requestList)
 
 If `matrixSslWriteOCSPRequestInfo_t` flag `MATRIXSSL_WRITE_OCSP_REQUEST_FLAG_CERT_LIST` is specified,
-then OCSP request is made concerning a list of certificates linked
-(via `subject->next`). This is a convenient way to allow for less network
-traffic when working with the certificates from the same issuer.
-Note: Some OCSP responders only support single request, and will reject requests
-concerning multiple certificates.
+then OCSP request is made concerning a list of certificates linked (via `subject->next`). This is a convenient way to allow for less network traffic when working with the certificates from the same issuer. 
+
+Note: Some OCSP responders only support single request, and will reject requests concerning multiple certificates.
 
 
 #### Interacting with OCSP server
@@ -1326,6 +1327,7 @@ The most OCSP servers use **HTTP** protocol. *@matrixssl* provides `psUrlInterac
 You can see `getOCSPResponse()` function in `ocsp.c` for a concrete example on how to interact with the server.
 
 To use HTTP protocol, it is necessary to know the correct URL. The URL is in practice commonly specified in AuthorityInfoAccess extensions of X.509 certificate. The following function will extract authority information from X.509 certificate. 
+
 ```{.c}
 static char *getAuthorityInfoOCSP_URI(const psX509Cert_t *subject)
 {
@@ -1369,6 +1371,7 @@ The functions support both OCSP responses just retrieved as response to a constr
 To validate OCSP response, an issuer certificate is used. Many organizations use the same certificates to sign OCSP responses than are used to validate certificates themselves. In this case, the issuer certificate has been obtained and validated already as part of X.509 certificate validation. In case, OCSP responses have been signed with other keys designated for that purpose, then they shall be validated just like any other X.509 intermediate certificate, e.g. using `psX509ParseCert()` and `psX509AuthenticateCert()`.
 
 The certificate of keys intended to be used for OCSP may have been marked for that purpose. This can be checked e.g. with the following code: 
+
 ```{.c}
 bool gotEKU_OCSP = false;
 bool gotKU_OCSP = false;
@@ -1380,6 +1383,7 @@ if ((ext->ekuFlags & EXT_KEY_USAGE_OCSP_SIGNING) > 0)
 if ((ext->keyUsageFlags & KEY_USAGE_DIGITAL_SIGNATURE) > 0)
     gotKY_OCSP = true;
 ```
+
 Only if both key usage and extended key usage flags are found in the certificate, the key can be considered to be marked for OCSP usage. However, many of the keys used for OCSP do not have this purpose marked in their certificate, and the most important validity check for OCSP signers remains ensuring that they have been signed by (one of) the CA root(s).
 
 
@@ -1401,8 +1405,7 @@ If OCSP response is found to be no longer valid or there is another issue in tim
 
 The purpose of OCSP is to check if a certificate is revoked. `validateOCSPResponse_ex()` function is (finally) provided for this purpose. The function supports many different arguments. The options are used to pass in optional arguments.
 
-``` 
-{.c}
+```{.c}
 opts.knownFlag = &known;
 opts.revocationFlag = &revocated;
 opts.nonceMatch = &nonceOk;
@@ -1454,7 +1457,8 @@ Implementations that wish to capture counts of SSL events can tap into the `MATR
 
 - Failed resumed handshake count
 
-- Number of application data bytes received
+- Number of 
+- application data bytes received
 
 - Number of application data bytes sent
 
@@ -1482,7 +1486,7 @@ EAP-FAST requires a  _Protected Access Credential (PAC)_ to be provisioned betwe
 
 The _PAC_ is exchanged between the peers by the client sending the  [Stateless Session Ticket Resumption](#61-stateless-session-ticket-resumption) specification: the `CLIENT_HELLO SessionTicket Extension`. However, a _PAC_ explicitly cannot be received by a client in the corresponding `NewSessionTicket` handshake message from the server, and must be provisioned out-of-band. Unfortunately this requires alteration of the standard TLS state machine logic.
 
-```C
+```{.c}
 sslSessionId_t	*sid;
 ssl_t 			*ssl;
 ...

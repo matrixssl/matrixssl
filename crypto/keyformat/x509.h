@@ -210,9 +210,10 @@ typedef struct psGeneralNameEntry
     psPool_t *pool;
     x509GeneralNameType_t id;
     unsigned char name[16];
-    unsigned char oid[32];                   /* SubjectAltName OtherName */
+    unsigned char *oid;                   /* SubjectAltName OtherName */
     unsigned char *data;
     psSize_t oidLen;
+    uint8_t oidHasTagLenPrefix;
     psSize_t dataLen;
     struct psGeneralNameEntry *next;
 } x509GeneralName_t;
@@ -552,6 +553,9 @@ typedef struct
     unsigned char *crlNum;
     int32 crlNumLen;
 #   endif /* USE_CRL */
+    psDynBuf_t *otherAttributes;
+    int32_t refCount;
+    void *reserved[3]; /* Allow future extensions with binary compatibility. */
 } x509v3extensions_t;
 
 #  endif /* USE_CERT_PARSE */
@@ -646,9 +650,9 @@ typedef struct psCert
 #   endif
     unsigned char sigHash[MAX_HASH_SIZE];
 #  endif /* USE_CERT_PARSE */
-#  ifdef USE_OCSP
+#  if defined(USE_OCSP_RESPONSE) || defined(USE_OCSP_REQUEST)
     unsigned char sha1KeyHash[SHA1_HASH_SIZE];
-#  endif
+#  endif /* USE_OCSP_RESPONSE || USE_OCSP_REQUEST */
 #  ifdef ENABLE_CA_CERT_HASH
     /** @note this is used only by MatrixSSL for Trusted CA Indication extension */
     unsigned char sha1CertHash[SHA1_HASH_SIZE];
@@ -672,8 +676,11 @@ extern int32_t getSerialNum(psPool_t *pool, const unsigned char **pp,
 extern int32_t getExplicitExtensions(psPool_t *pool, const unsigned char **pp,
         psSize_t inlen, int32_t expVal, x509v3extensions_t *extensions,
         uint8_t known);
+extern int32_t x509NewExtensions(x509v3extensions_t **extensions,
+        psPool_t *pool);
 extern void x509FreeExtensions(x509v3extensions_t *extensions);
 extern int32_t psX509ValidateGeneralName(const char *n);
+extern int32_t validateDateRange(psX509Cert_t *cert);
 
 /** Get the number of organizationalUnits in a distinguished name (DN). */
 extern int32_t psX509GetNumOrganizationalUnits(const x509DNattributes_t *DN);
@@ -748,18 +755,9 @@ extern int32_t psX509GetOnelineDN(const x509DNattributes_t *DN,
         size_t *out_str_len);
 #  endif /* USE_FULL_CERT_PARSE */
 
-#ifdef USE_OCSP
-#include <time.h>
-#ifdef WIN32
-#define false   0
-#define true    1
-
-#define bool int
-
-#define timegm _mkgmtime
-#else
-#include <stdbool.h>
-#endif
+#  ifdef USE_OCSP_RESPONSE
+#   include <time.h>
+#   include <stdbool.h>
 
 /* The default value of allowed mismatch in times in OCSP messages and the local
    clock. */
@@ -952,6 +950,10 @@ extern int32_t psOcspRequestWriteOld(psPool_t *pool, psX509Cert_t *cert,
 /* Uninitialize OCSP response. */
 void psOcspResponseUninit(psOcspResponse_t *res);
 
+#  endif /* USE_OCSP_RESPONSE */
+
+#  ifdef USE_OCSP_REQUEST
+
 typedef struct
 {
     int32_t flags;
@@ -1014,7 +1016,7 @@ extern void psOcspRequestWriteVersion(
     int version,
     psOcspRequestWriteInfo_t *info);
 
-#  endif
+#  endif /* USE_OCSP_REQUEST */
 
 /******************************************************************************/
 

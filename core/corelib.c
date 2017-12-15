@@ -176,7 +176,7 @@ void _psErrorStr(const char *msg, const char *val)
 /*
     copy 'len' bytes from 'b' to 's', converting all to printable characters
  */
-static void mem2str(char *s, const unsigned char *b, uint32 len)
+void psMem2Str(char *s, const unsigned char *b, uint32 len)
 {
     for (; len > 0; len--)
     {
@@ -216,7 +216,7 @@ void psTraceBytes(const char *tag, const unsigned char *p, int l)
             {
                 if (i != 0)
                 {
-                    mem2str(s, p - 16, 16);
+                    psMem2Str(s, p - 16, 16);
                     _psTraceStr("  %s", s);
                 }
 #ifdef _LP64
@@ -243,7 +243,7 @@ void psTraceBytes(const char *tag, const unsigned char *p, int l)
     {
         memset(s, 0x0, 16);
         i = l & 0xF;
-        mem2str(s, p - i, (unsigned int) i);
+        psMem2Str(s, p - i, (unsigned int) i);
         for (; i < 16; i++)
         {
             _psTrace("   ");
@@ -820,18 +820,46 @@ PSPUBLIC int psBrokenDownTimeCmp(const psBrokenDownTime_t *t1,
 /*
     Helper function for String conversion.
  */
-PSPUBLIC int32 psToUtf8String(psPool_t *pool,
+static int32 psToUtfXString(psPool_t *pool,
     const unsigned char *input, size_t input_len,
     psStringType_t input_type,
     unsigned char **output, size_t *output_len,
-    int opts)
+    int oclen, int opts)
 {
     int32 err;
     psParseBuf_t in;
     psDynBuf_t out;
     size_t ignored_size;
     int clen = 1;
-
+    unsigned char bytes0[4] = { 0, 0, 0, 0 };
+    const unsigned short *map = NULL;
+    const unsigned short map_t61[256] =
+    {
+        /* T.61 maps most of the ASCII as-is. */
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        32, 33, 34, 0, 0, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+        48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+        64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+        80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 0, 93, 0, 95,
+        0, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
+        111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 0, 124,
+        0, 0, 127,
+        /* Control characters. */
+        128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141,
+        142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155,
+        156, 157, 158, 159,
+        /* Extended characters */
+        160, 161, 162, 163, 36, 165, 166, 167, 168, 0, 0, 171, 0, 0, 0, 0,
+        176, 177, 178, 179, 180, 181, 182, 183, 184, 0, 0, 187, 188, 189, 190,
+        191,
+        0, 0x300, 0x301, 0x302, 0x303, 0x304, 0x306, 0x307, 0x308,
+        0, 0x30A, 0x327, 0x332, 0x30B, 0x328, 0x30C,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x2126, 0xC6, 0xD0, 0xAA, 0x126, 0, 0x132, 0x13F, 0x141, 0xD8, 0x152,
+        0xBA, 0xDE, 0x166, 0x14A, 0x149, 0x138, 0xE6, 0x111, 0xF0, 0x127,
+        0x131, 0x133, 0x140, 0x142, 0xF8, 0x153, 0xDF, 0xFE, 0x167, 0x14B, 0
+    };
     if ((opts & ~PS_STRING_DUAL_NIL) != 0)
     {
         return PS_UNSUPPORTED_FAIL;
@@ -843,6 +871,15 @@ PSPUBLIC int32 psToUtf8String(psPool_t *pool,
     case PS_STRING_PRINTABLE_STRING:
         /* These are subsets of ASCII. */
         break;
+    case PS_STRING_TELETEX_STRING:
+        /* Superset of ASCII. */
+        map = map_t61;
+        break;
+    case PS_STRING_UTF8_STRING:
+        /* UTF-8 characters. */
+        clen = 0;
+        break;
+    case PS_STRING_UTF16_STRING:
     case PS_STRING_BMP_STRING:
         /* UCS2 characters. */
         clen = 2;
@@ -865,20 +902,57 @@ PSPUBLIC int32 psToUtf8String(psPool_t *pool,
 
     /* Create dynamic buffer with initial size estimate being the same
        than input + termination character(s). */
-    err = psDynBufInit(pool, &out, input_len + 2) ? PS_SUCCESS : PS_MEM_FAIL;
+    err = psDynBufInit(pool, &out,
+                       ((input_len + 2) * oclen)) ? PS_SUCCESS : PS_MEM_FAIL;
     if (err != PS_SUCCESS)
     {
         return err;
     }
 
-    if (clen == 1)
+    if (clen == 0)
+    {
+        /* UTF-8: */
+        while(psParseBufCanReadUtf8(&in))
+        {
+            unsigned int chr = psParseBufReadUtf8(&in);
+            if (oclen == 1)
+            {
+                (void) psDynBufAppendUtf8(&out, chr);
+            }
+            else if (oclen == 2)
+            {
+                (void) psDynBufAppendUtf16(&out, chr);
+            }    
+            else /* oclen == 4 */
+            {
+                (void) psDynBufAppendUtf32(&out, chr);
+            }
+        }
+    }
+    else if (clen == 1)
     {
         while (psParseCanRead(&in, 1))
         {
-            int8_t chr = (int8_t) *in.buf.start;
-            if (chr >= 1)
+            unsigned short chr = (unsigned short) *in.buf.start;
+
+            if (map)
             {
-                (void) psDynBufAppendChar(&out, (char) chr);
+                chr = map[chr];
+            }
+            if ((chr >= 1 && chr <= 127) || (map && chr >= 1))
+            {
+                if (oclen == 1)
+                {
+                    (void) psDynBufAppendUtf8(&out, chr);
+                }
+                else
+                {
+                    if (oclen == 4)
+                    {
+                        (void) psDynBufAppendUtf16(&out, 0);
+                    }
+                    (void) psDynBufAppendUtf16(&out, chr);
+                }
             }
             else
             {
@@ -900,8 +974,50 @@ PSPUBLIC int32 psToUtf8String(psPool_t *pool,
             chr |= a[1];
             if (chr != 0 && (chr < 0xd800 || chr > 0xdfff))
             {
-                /* ASCII */
-                (void) psDynBufAppendUtf8(&out, chr);
+                /* ASCII or other page 0 characters. */
+                if (oclen == 1)
+                {
+                    (void) psDynBufAppendUtf8(&out, chr);
+                }
+                else if (oclen == 2)
+                {
+                    (void) psDynBufAppendUtf16(&out, chr);
+                }    
+                else /* oclen == 4 */
+                {
+                    (void) psDynBufAppendUtf32(&out, chr);
+                }
+            }
+            else if ((chr >= 0xd800 && chr <= 0xdbff) &&
+                     input_type == PS_STRING_UTF16_STRING &&
+                     psParseCanRead(&in, 4))
+            {
+                /* surrogates. */
+                unsigned char b[2];
+                unsigned int c;
+                memcpy(b, in.buf.start + 2, 2);
+
+                c = (chr & 0x3FF) << 10;
+                c |= ((b[0] & 0x3) << 8) | b[1];
+                if (b[0] < 0xDC || b[0] > 0xDF)
+                {
+                    /* Invalid code point third byte needs to be 0xDC..0xDF. */
+                    err = PS_LIMIT_FAIL;
+                }
+                if (oclen == 1)
+                {
+                    (void) psDynBufAppendUtf8(&out, c + 0x010000);
+                }
+                else if (oclen == 2)
+                {
+                    (void) psDynBufAppendUtf16(&out, c + 0x010000);
+                }    
+                else /* oclen == 4 */
+                {
+                    (void) psDynBufAppendUtf32(&out, c + 0x010000);
+                }
+                psParseBufSkipBytes(&in, a, 2);
+                memcpy(a, b, 2);
             }
             else
             {
@@ -917,17 +1033,17 @@ PSPUBLIC int32 psToUtf8String(psPool_t *pool,
         output_len = &ignored_size;
     }
 
-    /* Append terminating \0 or \0\0. */
-    psDynBufAppendChar(&out, 0);
+    /* Append terminating \0 or \0\0. x oclen */
+    psDynBufAppendOctets(&out, bytes0, oclen);
     if ((opts & PS_STRING_DUAL_NIL) != 0)
     {
-        psDynBufAppendChar(&out, 0);
+        psDynBufAppendOctets(&out, bytes0, oclen);
     }
 
     if (err == PS_SUCCESS)
     {
         *output = psDynBufDetach(&out, output_len);
-        *output_len -= (opts & PS_STRING_DUAL_NIL) ? 2 : 1;
+        *output_len -= (opts & PS_STRING_DUAL_NIL) ? 2 * oclen : oclen;
         if (*output == NULL)
         {
             return PS_MEM_FAIL;
@@ -938,6 +1054,36 @@ PSPUBLIC int32 psToUtf8String(psPool_t *pool,
         psDynBufUninit(&out);
     }
     return err;
+}
+
+PSPUBLIC int32 psToUtf8String(psPool_t *pool,
+    const unsigned char *input, size_t input_len,
+    psStringType_t input_type,
+    unsigned char **output, size_t *output_len,
+    int opts)
+{
+    return psToUtfXString(pool, input, input_len, input_type,
+                          output, output_len, 1, opts);
+}
+
+PSPUBLIC int32 psToUtf16String(psPool_t *pool,
+    const unsigned char *input, size_t input_len,
+    psStringType_t input_type,
+    unsigned char **output, size_t *output_len,
+    int opts)
+{
+    return psToUtfXString(pool, input, input_len, input_type,
+                          output, output_len, 2, opts);
+}
+
+PSPUBLIC int32 psToUtf32String(psPool_t *pool,
+    const unsigned char *input, size_t input_len,
+    psStringType_t input_type,
+    unsigned char **output, size_t *output_len,
+    int opts)
+{
+    return psToUtfXString(pool, input, input_len, input_type,
+                          output, output_len, 4, opts);
 }
 
 /******************************************************************************/

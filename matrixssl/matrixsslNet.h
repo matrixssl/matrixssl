@@ -36,13 +36,32 @@ typedef struct matrixSslInteract
     size_t receive_len_left;
     unsigned char ch2[2];
     int32 prev_rc;
+    int32 last_encoded_pt_bytes;
     psBool_t handshake_complete;
+    psBool_t send_close_notify;
+    /* State variables for processing input as TLS records. */
+    psBool_t no_readahead; /* read all input (false) or TLS records (true). */
+    unsigned int recleft; /* bytes left in record. */
+    unsigned char rechdr[5]; /* The latest received record header. */
+    unsigned char rechdrlen; /* The length of the latest received
+                                record header. */
+    unsigned char hdrread; /* Reading record header bytes. */
+    unsigned char recvretry; /* Should retry receive, with record content. */
+#ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+    /* Need this for the extra call to matrixSslReceivedData,
+       to be performed after new client cert and key have been
+       loaded. */
+    size_t num_last_read_transferred;
+#endif
 } matrixSslInteract_t;
 
 /* Lower-level API for interacting with MatrixSSL API. */
 void matrixSslInteractBegin(matrixSslInteract_t *i, ssl_t *ssl,
                             psSocket_t *sock);
 int32 matrixSslInteract(matrixSslInteract_t *i, int can_send, int can_receive);
+int32 matrixSslInteract3(matrixSslInteract_t *i,
+                         int can_send_net, int can_receive_net,
+                         int can_receive_local);
 int32 matrixSslInteractHandshake(matrixSslInteract_t *i,
                                  int can_send, int can_receive);
 size_t matrixSslInteractReadLeft(matrixSslInteract_t *i);
@@ -59,6 +78,9 @@ void matrixSslInteractClose(matrixSslInteract_t *i);
 void matrixSslInteractCloseErr(matrixSslInteract_t *i, int32 status);
 int32 matrixSslInteractSendCloseNotify(matrixSslInteract_t *i);
 int32 matrixSslInteractReceiveCloseNotify(matrixSslInteract_t *i);
+void matrixSslInteractSetReadahead(matrixSslInteract_t *i,
+                                   psBool_t readahead_on);
+
 # ifdef USE_CLIENT_SIDE_SSL
 int32 matrixSslInteractBeginConnected(matrixSslInteract_t *msi_p,
                                       const char *hostname, const char *port,

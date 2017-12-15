@@ -433,12 +433,12 @@ int do_dialog_client(const char *host, const char *port)
 }
 
 /* The MatrixSSL certificate validation callback. */
+# ifdef USE_CLIENT_SIDE_SSL
 static int32 ssl_cert_auth(ssl_t *ssl, psX509Cert_t *cert, int32 alert)
 {
     return MATRIXSSL_SUCCESS;
 }
 
-# ifdef USE_CLIENT_SIDE_SSL
 static int32 extensionCb(ssl_t *ssl, uint16_t extType, uint8_t extLen, void *e)
 {
 
@@ -642,14 +642,12 @@ int do_dialog_server(const char *host, const char *port)
     return 2;
 }
 
-# ifdef USE_STATELESS_SESSION_TICKETS
+# if defined(USE_SERVER_SIDE_SSL) && defined(USE_STATELESS_SESSION_TICKETS)
 static int32 sessTicketCb(void *keys, unsigned char name[16], short found);
 
 static unsigned char sessTicketSymKey[32] = { 0 };
 static unsigned char sessTicketMacKey[32] = { 0 };
-# endif
 
-# ifdef USE_STATELESS_SESSION_TICKETS
 int32 sessTicketCb(void *keys, unsigned char name[16], short found)
 {
     if (found)
@@ -661,7 +659,7 @@ int32 sessTicketCb(void *keys, unsigned char name[16], short found)
     return matrixSslLoadSessionTicketKeys((sslKeys_t *) keys, name,
         sessTicketSymKey, 32, sessTicketMacKey, 32);
 }
-# endif
+# endif /* USE_SERVER_SIDE_SSL && USE_STATELESS_SESSION_TICKETS */
 
 # ifdef USE_SERVER_SIDE_SSL
 int do_dialog_server_tls(const char *host, const char *port,

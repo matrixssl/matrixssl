@@ -193,7 +193,7 @@ extern int32_t pstm_to_unsigned_bin(psPool_t *pool, const pstm_int *a,
                                     unsigned char *b);
 extern int32_t pstm_to_unsigned_bin_nr(psPool_t *pool, const pstm_int *a,
                                        unsigned char *b);
-#  ifdef USE_ECC
+#  if defined(USE_ECC) || defined(USE_CERT_GEN)
 extern int32_t pstm_read_radix(psPool_t *pool, pstm_int *a,
                                const char *buf, psSize_t len, uint8_t radix);
 #  endif

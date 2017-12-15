@@ -39,8 +39,8 @@
 #include "coreApi.h"
 #include "osdep.h"
 
-/* Omit debug printouts. */
-#define debugf(...) do { } while (0)
+#include "psLog.h" /* SafeZone/Matrix common logging framework */
+#define debugf(x, ...) PS_LOGF_TRACE(CORE_PSBUF, x ,##__VA_ARGS__ )
 
 /* This address is indicator for static allocations pool, and does not
    need to point to any valid pool. The pool cannot be NULL, because
@@ -371,9 +371,11 @@ static void *psDynBufGrow(psDynBuf_t *db, size_t head_sz, size_t tail_sz)
                            tailroom + tail_sz;
 
             debugf("Sub Grown: sub @ pos=%d, %zd bytes (%zd+%zd+%zd)\n",
-                (int) (db->buf.buf - db->master->buf.start),
-                db->buf.size, db->buf.start - db->buf.buf,
-                db->buf.end - db->buf.start, db->buf.buf + db->buf.size - db->buf.end);
+                   (int) (db->buf.buf - db->master->buf.start),
+                   (psSizeL_t) db->buf.size,
+                   db->buf.start - db->buf.buf,
+                   db->buf.end - db->buf.start,
+                   db->buf.buf + db->buf.size - db->buf.end);
 
 #ifdef PSBUF_DEBUG_WITH_MEMSET
             /* For debugging: */
@@ -440,7 +442,7 @@ void *psDynBufAppendUtf8(psDynBuf_t *db, int chr)
     unsigned int ch = (unsigned int) chr;
 
     /* Do not encode characters outside valid UTF-8 range. */
-    if (ch > 0x1FFFF)
+    if (ch > 0x10FFFF)
     {
         db->err++;
         return NULL;
@@ -489,6 +491,55 @@ void *psDynBufAppendUtf8(psDynBuf_t *db, int chr)
     return enc;
 }
 
+void *psDynBufAppendUtf16(psDynBuf_t *db, int chr)
+{
+    unsigned int ch = (unsigned int) chr;
+    unsigned char cha[4];
+    unsigned int chl = 2;
+
+    if (ch > 0xFFFF)
+    {
+        /* Do not encode characters outside valid UTF-16 range. */
+        if (ch > 0x10FFFF)
+        {
+            db->err++;
+            return NULL;
+        }
+        ch -= 0x10000;
+        chl = 4;
+
+        /* Encode low surrogate. */
+        cha[2] = 0xDC + (3 & (unsigned char) (ch >> 8));
+        cha[3] = (unsigned char) (ch & 255);
+
+        /* Start encoding high surrogate. */
+        ch >>= 10;
+        ch += 0xD800;
+    }
+
+    cha[0] = (unsigned char) (ch >> 8);
+    cha[1] = (unsigned char) (ch & 255);
+    return psDynBufAppendOctets(db, cha, chl);
+}
+
+void *psDynBufAppendUtf32(psDynBuf_t *db, int chr)
+{
+    unsigned int ch = (unsigned int) chr;
+    unsigned char cha[4];
+
+    /* Do not encode characters outside valid UCS-4 range (31 bits). */
+    if (ch > 0x7FFFFFFF)
+    {
+        db->err++;
+        return NULL;
+    }
+
+    cha[0] = (unsigned char) (ch >> 24);
+    cha[1] = (unsigned char) (ch >> 16);
+    cha[2] = (unsigned char) (ch >> 8);
+    cha[3] = (unsigned char) (ch & 255);
+    return psDynBufAppendOctets(db, cha, 4);
+}
 
 void psDynBufReservePrepend(psDynBuf_t *db, size_t sz)
 {
@@ -837,7 +888,8 @@ size_t psParseBufTrySkipBytes(psParseBuf_t *pb,
     size_t skip_bytes = 0;
 
     if (psParseCanRead(pb, numbytes) &&
-        memcmp(bytes, pb->buf.start, numbytes) == 0)
+        (bytes == NULL ||
+         memcmp(bytes, pb->buf.start, numbytes) == 0))
     {
         skip_bytes = numbytes;
     }
@@ -1085,6 +1137,78 @@ void psParseBufCancel(psParseBuf_t *pb)
     pb->master = NULL;
     pb->err = 0;
     pb->pool = NULL;
+}
+
+static int psParseBufCanReadUtf8Bytes(const psParseBuf_t *pb)
+{
+    unsigned char chr0;
+    int bytes = 0;
+
+    if (!psParseCanRead(pb, 1))
+    {
+        return 0;
+    }
+    chr0 = (unsigned char) *(pb->buf.start);
+    bytes = chr0 <= 0x7F ? 1 :
+        chr0 <= 0xBF ? 0 :
+        chr0 <= 0xDF ? 2 :
+        chr0 <= 0xEF ? 3 :
+        chr0 <= 0xF7 ? 4 : 0;
+
+    if (bytes)
+    {
+        return psParseCanRead(pb, bytes) ? bytes : 0;
+    }
+    return 0;
+}
+
+int psParseBufCanReadUtf8(const psParseBuf_t *pb)
+{
+    return !!psParseBufCanReadUtf8Bytes(pb);
+}
+
+unsigned int psParseBufReadUtf8(psParseBuf_t *pb)
+{
+    int bytes;
+    unsigned char a[4];
+
+    bytes = psParseBufCanReadUtf8Bytes(pb);
+    if (bytes == 0)
+    {
+        pb->err = 1;
+        return 0;
+    }
+    memcpy(a, pb->buf.start, bytes);
+    pb->buf.start += bytes;
+
+    switch(bytes)
+    {
+    case 1:
+        return a[0];
+    case 2:
+        if ((a[1] & 0700) != 0200)
+        {
+            break;
+        }
+        return ((a[0] & 0077) << 6) | (a[1] & 0077);
+    case 3:
+        if ((a[1] & 0700) != 0200 || (a[2] & 0700) != 0200)
+        {
+            break;
+        }
+        return ((a[0] & 0x0F) << 12) | ((a[1] & 0077) << 6) | (a[2] & 0077);
+    case 4:
+        if ((a[1] & 0700) != 0200 || (a[2] & 0700) != 0200 ||
+            (a[3] & 0700) != 0200)
+        {
+            break;
+        }
+        return ((a[0] & 0007) << 18) | ((a[1] & 0077) << 12) |
+            ((a[2] & 0077) << 6) | (a[3] & 0077);
+    }
+    /* Unable to parse UTF-8 encoding. */
+    pb->err = 1;
+    return 0;
 }
 
 /* end of file psbuf.c */

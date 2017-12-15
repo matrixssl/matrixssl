@@ -125,7 +125,7 @@
     TLS clients and servers. These cipher suites are not allowed in FIPS
     mode of operation.
 */
-/* #define USE_CHACHA20_POLY1305 */
+/* #define USE_CHACHA20_POLY1305_IETF */
 
 /** @security 3DES is still relatively secure, however is deprecated for TLS */
 /* #define USE_3DES */
@@ -231,7 +231,20 @@
  */
 /* #define ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE */
 #  endif
+/**
+   Enable OCSP response and request handling.
+*/
 /* #define USE_OCSP  *//**< @pre USE_SHA1 */
+#  ifdef USE_OCSP
+#    define USE_OCSP_RESPONSE
+#    define USE_OCSP_REQUEST
+#  elif defined(USE_X509) && defined(USE_SHA1)
+/**
+   Enable parsing and writing of OCSP responses. This is enough
+   to support OCSP stapling.
+*/
+#    define USE_OCSP_RESPONSE /**< @pre USE_SHA1 */
+#endif /* USE_OCSP */
 
 /******************************************************************************/
 /**

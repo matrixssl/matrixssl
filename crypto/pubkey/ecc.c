@@ -3098,7 +3098,6 @@ int32_t psEccDsaSign(psPool_t *pool, const psEccKey_t *privKey,
     int32_t err = PS_MEM_FAIL;
     psSize_t olen, rLen, sLen;
     uint32_t rflag, sflag, sanity;
-    unsigned char *negative;
 
     rflag = sflag = 0;
 
@@ -3212,18 +3211,11 @@ int32_t psEccDsaSign(psPool_t *pool, const psEccKey_t *privKey,
 
     /* If r or s has the high bit set, the ASN.1 encoding should include
         a leading 0x0 byte to prevent it from being "negative". */
-    negative = (unsigned char *) r.dp;
-    if (negative[rLen - 1] & 0x80)
-    {
-        rLen++;
-        rflag = 1;
-    }
-    negative = (unsigned char *) s.dp;
-    if (negative[sLen - 1] & 0x80)   /* GOOD ONE */
-    {
-        sLen++;
-        sflag = 1;
-    }
+    /* We check high bit by checking if number of bits is multiple of 8. */
+    rflag = (pstm_count_bits(&r) & 7) == 0;
+    sflag = (pstm_count_bits(&s) & 7) == 0;
+    rLen += rflag;
+    sLen += sflag;
     olen = 6 + rLen + sLen;
 
     /* Handle lengths longer than 128.. but still only handling up to 256 */
@@ -3294,7 +3286,7 @@ int32_t psEccDsaSign(psPool_t *pool, const psEccKey_t *privKey,
     }
     if ((err = pstm_to_unsigned_bin(pool, &s, sig)) != PSTM_OKAY)
     {
-        goto error;
+        goto errnokey;
     }
     *siglen += sLen + 2;
     err = PS_SUCCESS;

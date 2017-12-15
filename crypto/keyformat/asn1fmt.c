@@ -32,14 +32,15 @@
  */
 /******************************************************************************/
 
-#if !defined USE_X509 && !defined USE_OCSP
+#if !defined USE_X509 && !defined USE_OCSP_RESPONSE
 # include "../cryptoImpl.h" /* MatrixSSL API interface and configuration. */
 #endif
 
-#if (defined USE_X509 && defined USE_FULL_CERT_PARSE) || defined USE_OCSP
+#if (defined USE_X509 && defined USE_FULL_CERT_PARSE) || defined USE_OCSP_RESPONSE
 
 # include <stdio.h>   /* for snprintf() */
 # include <string.h>  /* for strlen() */
+#include "core/psPrnf.h"
 
 /* Constants used in OID formatting code. */
 # define OID_STR_BUF_LEN (129 * 4) /* Temporary string length. */
@@ -335,6 +336,408 @@ char *asnFormatOid(psPool_t *pool,
     return out;
 }
 # endif /* NO_ASN_FORMAT_OID */
+
+struct asnFormatTagInfo
+{
+    const char *str_short;
+    const char *str_long;
+    unsigned char constructed;
+    unsigned char omit;
+    unsigned char string8bit;
+};
+
+static struct asnFormatTagInfo asnFormatTagInfo[128] =
+{
+    { "END", "End-Of-Contents", 0, 0, 0 },
+    { "BOOL", "BOOLEAN", 0, 1, 0 },
+    { "INT", "INTEGER", 0, 1, 0 },
+    { "BITS", "BIT STRING", 0, 0, 0 },
+    { "OCTETS", "OCTET STRING", 0, 0, 0 },
+    { "NULL", "NULL", 0, 0, 0 },
+    { "OID", "OBJECT IDENTIFIER", 0, 1, 0 },
+    { "Obj", "ObjectDescriptor", 0, 0, 0 },
+    { "INST", "INSTANCE OF", 0, 0, 0 },
+    { "REAL", "REAL", 0, 1, 0 },
+    { "ENUM", "ENUMERATED", 0, 0, 0 },
+    { "EMB", "EMBEDDED PDV", 0, 0, 0 },
+    { "UTF8", "UTF8String", 0, 0, 1 },
+    { "REL-OID", "RELATIVE-OID", 0, 0, 0 },
+    { "Uni[14]", "Universal[14]", 0, 0, 0 },
+    { "Uni[15]", "Universal[15]", 0, 0, 0 },
+    { "SEQ", "SEQUENCE", 1, 0, 0 },
+    { "SET", "SET", 1, 0, 0 },
+    { "Num", "NumericString", 0, 0, 1 },
+    { "Print", "PrintableString", 0, 1, 1 },
+    { "T.61", "TeletexString", 0, 1, 1 },
+    { "VID", "VideotexString", 0, 1, 1 },
+    { "ASCII", "IA5String", 0, 0, 1 },
+    { "UTCTime", "UTCTime", 0, 1, 1 },
+    { "GenTime", "GeneralizedTime", 0, 1, 1 },
+    { "Graphic", "GraphicString", 0, 0, 1 },
+    { "Visible", "VisibleString", 0, 0, 1 },
+    { "Gen", "GeneralString", 0, 0, 1 },
+    { "UTF-32", "UniversalString", 0, 0, 0 },
+    { "STR", "CHARACTER STRING", 0, 0, 1 },
+    { "BMP", "BMP STRING", 0, 0, 1 },
+    { "Uni[31]", "Universal[31]", 0, 0, 1 },
+    { "App[0]", "Application[0]", 1, 0, 0 },
+    { "App[1]", "Application[1]", 1, 0, 0 },
+    { "App[2]", "Application[2]", 1, 0, 0 },
+    { "App[3]", "Application[3]", 1, 0, 0 },
+    { "App[4]", "Application[4]", 1, 0, 0 },
+    { "App[5]", "Application[5]", 1, 0, 0 },
+    { "App[6]", "Application[6]", 1, 0, 0 },
+    { "App[7]", "Application[7]", 1, 0, 0 },
+    { "App[8]", "Application[8]", 1, 0, 0 },
+    { "App[9]", "Application[9]", 1, 0, 0 },
+    { "App[10]", "Application[10]", 1, 0, 0 },
+    { "App[11]", "Application[11]", 1, 0, 0 },
+    { "App[12]", "Application[12]", 1, 0, 0 },
+    { "App[13]", "Application[13]", 1, 0, 0 },
+    { "App[14]", "Application[14]", 1, 0, 0 },
+    { "App[15]", "Application[15]", 1, 0, 0 },
+    { "App[16]", "Application[16]", 1, 0, 0 },
+    { "App[17]", "Application[17]", 1, 0, 0 },
+    { "App[18]", "Application[18]", 1, 0, 0 },
+    { "App[19]", "Application[19]", 1, 0, 0 },
+    { "App[20]", "Application[20]", 1, 0, 0 },
+    { "App[21]", "Application[21]", 1, 0, 0 },
+    { "App[22]", "Application[22]", 1, 0, 0 },
+    { "App[23]", "Application[23]", 1, 0, 0 },
+    { "App[24]", "Application[24]", 1, 0, 0 },
+    { "App[25]", "Application[25]", 1, 0, 0 },
+    { "App[26]", "Application[26]", 1, 0, 0 },
+    { "App[27]", "Application[27]", 1, 0, 0 },
+    { "App[28]", "Application[28]", 1, 0, 0 },
+    { "App[29]", "Application[29]", 1, 0, 0 },
+    { "App[30]", "Application[30]", 1, 0, 0 },
+    { "App[31]", "Application[31]", 1, 0, 0 },
+    { "Cont[0]", "Context-Specific[0]", 1, 0, 0 },
+    { "Cont[1]", "Context-Specific[1]", 1, 0, 0 },
+    { "Cont[2]", "Context-Specific[2]", 1, 0, 0 },
+    { "Cont[3]", "Context-Specific[3]", 1, 0, 0 },
+    { "Cont[4]", "Context-Specific[4]", 1, 0, 0 },
+    { "Cont[5]", "Context-Specific[5]", 1, 0, 0 },
+    { "Cont[6]", "Context-Specific[6]", 1, 0, 0 },
+    { "Cont[7]", "Context-Specific[7]", 1, 0, 0 },
+    { "Cont[8]", "Context-Specific[8]", 1, 0, 0 },
+    { "Cont[9]", "Context-Specific[9]", 1, 0, 0 },
+    { "Cont[10]", "Context-Specific[10]", 1, 0, 0 },
+    { "Cont[11]", "Context-Specific[11]", 1, 0, 0 },
+    { "Cont[12]", "Context-Specific[12]", 1, 0, 0 },
+    { "Cont[13]", "Context-Specific[13]", 1, 0, 0 },
+    { "Cont[14]", "Context-Specific[14]", 1, 0, 0 },
+    { "Cont[15]", "Context-Specific[15]", 1, 0, 0 },
+    { "Cont[16]", "Context-Specific[16]", 1, 0, 0 },
+    { "Cont[17]", "Context-Specific[17]", 1, 0, 0 },
+    { "Cont[18]", "Context-Specific[18]", 1, 0, 0 },
+    { "Cont[19]", "Context-Specific[19]", 1, 0, 0 },
+    { "Cont[20]", "Context-Specific[20]", 1, 0, 0 },
+    { "Cont[21]", "Context-Specific[21]", 1, 0, 0 },
+    { "Cont[22]", "Context-Specific[22]", 1, 0, 0 },
+    { "Cont[23]", "Context-Specific[23]", 1, 0, 0 },
+    { "Cont[24]", "Context-Specific[24]", 1, 0, 0 },
+    { "Cont[25]", "Context-Specific[25]", 1, 0, 0 },
+    { "Cont[26]", "Context-Specific[26]", 1, 0, 0 },
+    { "Cont[27]", "Context-Specific[27]", 1, 0, 0 },
+    { "Cont[28]", "Context-Specific[28]", 1, 0, 0 },
+    { "Cont[29]", "Context-Specific[29]", 1, 0, 0 },
+    { "Cont[30]", "Context-Specific[30]", 1, 0, 0 },
+    { "Cont[31]", "Context-Specific[31]", 1, 0, 0 },
+    { "Priv[0]", "Private[0]", 1, 0, 0 },
+    { "Priv[1]", "Private[1]", 1, 0, 0 },
+    { "Priv[2]", "Private[2]", 1, 0, 0 },
+    { "Priv[3]", "Private[3]", 1, 0, 0 },
+    { "Priv[4]", "Private[4]", 1, 0, 0 },
+    { "Priv[5]", "Private[5]", 1, 0, 0 },
+    { "Priv[6]", "Private[6]", 1, 0, 0 },
+    { "Priv[7]", "Private[7]", 1, 0, 0 },
+    { "Priv[8]", "Private[8]", 1, 0, 0 },
+    { "Priv[9]", "Private[9]", 1, 0, 0 },
+    { "Priv[10]", "Private[10]", 1, 0, 0 },
+    { "Priv[11]", "Private[11]", 1, 0, 0 },
+    { "Priv[12]", "Private[12]", 1, 0, 0 },
+    { "Priv[13]", "Private[13]", 1, 0, 0 },
+    { "Priv[14]", "Private[14]", 1, 0, 0 },
+    { "Priv[15]", "Private[15]", 1, 0, 0 },
+    { "Priv[16]", "Private[16]", 1, 0, 0 },
+    { "Priv[17]", "Private[17]", 1, 0, 0 },
+    { "Priv[18]", "Private[18]", 1, 0, 0 },
+    { "Priv[19]", "Private[19]", 1, 0, 0 },
+    { "Priv[20]", "Private[20]", 1, 0, 0 },
+    { "Priv[21]", "Private[21]", 1, 0, 0 },
+    { "Priv[22]", "Private[22]", 1, 0, 0 },
+    { "Priv[23]", "Private[23]", 1, 0, 0 },
+    { "Priv[24]", "Private[24]", 1, 0, 0 },
+    { "Priv[25]", "Private[25]", 1, 0, 0 },
+    { "Priv[26]", "Private[26]", 1, 0, 0 },
+    { "Priv[27]", "Private[27]", 1, 0, 0 },
+    { "Priv[28]", "Private[28]", 1, 0, 0 },
+    { "Priv[29]", "Private[29]", 1, 0, 0 },
+    { "Priv[30]", "Private[30]", 1, 0, 0 },
+    { "Priv[31]", "Private[31]", 1, 0, 0 }
+};
+
+static unsigned char idx(unsigned char tag)
+{
+    unsigned char idx = (tag & 31) | ((tag & 192) >> 1);
+    return idx;
+}
+
+const char *asnFormatTagId(unsigned char tag)
+{
+    return asnFormatTagInfo[idx(tag)].str_short;
+}
+
+const char *asnFormatTagIdLong(unsigned char tag)
+{
+    return asnFormatTagInfo[idx(tag)].str_long;
+}
+
+static char *internalStrdup(psPool_t *pool, const char *string)
+{
+    size_t len;
+    char *new_str;
+
+    if (string == NULL)
+    {
+        return NULL;
+    }
+    len = strlen(string) + 1;
+    new_str = psMalloc(pool, len);
+    if (new_str)
+    {
+        memcpy(new_str, string, len);
+    }
+    return new_str;
+}
+
+
+char *asnFormatDer(psPool_t *pool,
+                   const unsigned char *Der_p,
+                   size_t DerLen,
+                   size_t MaxElements,
+                   size_t MaxDepth,
+                   size_t MaxElementOutput,
+                   unsigned char Flags)
+{
+    size_t i;
+    psParseBuf_t pb;
+    psParseBuf_t sub;
+    psDynBuf_t str;
+    size_t endlen;
+    size_t sz;
+    size_t MaxElementOutputD2;
+
+    if (MaxElements == 0)
+    {
+        MaxElements = (size_t) -1;
+    }
+
+    if (MaxDepth == 0)
+    {
+        MaxDepth = (size_t) -1;
+    }
+
+    if (MaxElementOutput == 0)
+    {
+        MaxElementOutput = (size_t) -1;
+    }
+    MaxElementOutputD2 = MaxElementOutput / 2;
+
+    if (DerLen < 1)
+    {
+        return internalStrdup(pool, "[length = 0]");
+    }
+    
+    if (psParseBufFromStaticData(&pb, Der_p, DerLen) != PS_SUCCESS)
+    {
+        return internalStrdup(pool, "[ASN.1 Parser Failure]");
+    }
+    psDynBufInit(pool, &str, 80);
+    for(i = 0; i < MaxElements; i++)
+    {
+        unsigned char tagid[1];
+        const char *tagstr;
+        int has_content;
+        size_t content_len;
+        int printed;
+        int negative = 0;
+        const unsigned char *content;
+        const unsigned char *tagdata;
+
+        if (!psParseCanRead(&pb, 1))
+        {
+            break; /* All elements read. */
+        }
+
+        sz = 1;
+        (void) psParseBufCopyN(&pb, 1, tagid, &sz);
+        tagdata = psBufGetData(&pb.buf);
+        
+        if (sz != 1 || !psParseBufTryReadTagSub(&pb, &sub, tagid[0]))
+        {
+            psDynBufAppendStr(&str, "[unparseable data]");
+            break; /* All elements read up-to error. */
+        }
+
+        if (i > 0)
+        {
+            psDynBufAppendStr(&str, ", ");
+        }
+
+        tagstr = asnFormatTagId(tagid[0]);
+        has_content = psParseCanRead(&sub, 1);
+        content = psBufGetData(&sub.buf);
+        content_len = psBufGetDataSize(&sub.buf);
+        printed = 0;
+
+        /* Formatting: tag specific. */
+        switch (tagid[0])
+        {
+        case 1:
+            if (content_len == 1 && content[0] == 0xff)
+            {
+                psDynBufAppendStrf(&str, "%s(true)", tagstr);
+                printed = 1;
+            }
+
+            if (content_len == 1 && content[0] == 0x00)
+            {
+                psDynBufAppendStrf(&str, "%s(false)", tagstr);
+                printed = 1;
+            }
+            break;
+        case 2:
+            if (content_len > 0 && (content[0] & 0x80) != 0)
+            {
+                negative = 1;
+            }
+            /* FALL-THROUGH */
+        case 4:
+            if (content_len > 0 && content_len <= MaxElementOutputD2)
+            {
+                /* This is a number or other sequence of hex. */
+                PS_PRNF_CTX;
+                char *tmp_str = psAsprnf(pool, PSF,
+                                         PSA_HEX(content, content_len));
+                if (tmp_str)
+                {
+                    psDynBufAppendStrf(&str, "%s(%s0x%s)",
+                                       tagstr, negative ? "-" : "", tmp_str);
+                    psFree(tmp_str, pool);
+                    printed = 1;
+                }
+            }
+            break;
+        case 3:
+            if (content_len > 1 && content_len <= MaxElementOutputD2)
+            {
+                /* Print bit string as hex sequence. */
+                PS_PRNF_CTX;
+                char *tmp_str = psAsprnf(pool, PSF,
+                                         PSA_HEX(content + 1, content_len - 1));
+                if (tmp_str)
+                {
+                    if (content[0] != 0)
+                    {
+                        psDynBufAppendStrf(&str, "%s(0x%s[padding=%u])",
+                                           tagstr, tmp_str, content[0]);
+                    }
+                    else
+                    {
+                        psDynBufAppendStrf(&str, "%s(0x%s)",
+                                           tagstr, tmp_str);
+                    }
+                    psFree(tmp_str, pool);
+                    printed = 1;
+                }
+            }
+            break;
+        case 5:
+            /* NULL needs to be used without any content.
+               Omit "(empty)" in that case. */
+            if (content_len == 0)
+            {
+                psDynBufAppendStr(&str, tagstr);
+                printed = 1;
+            }
+            break;
+        case 6:
+            if (content_len > 0 && content_len <= MaxElementOutputD2)
+            {
+                /* OID: Pass formatter also tag id and tag length. */
+                size_t hlen = content - tagdata;
+                char *tmp_str = asnFormatOid(pool, tagdata, hlen + content_len);
+                if (tmp_str)
+                {
+                    psDynBufAppendStrf(&str, "%s(%s)", tagstr, tmp_str);
+                    psFree(tmp_str, pool);
+                    printed = 1;
+                }
+            }
+            break;
+        default:
+            /* Constructed encodings perform recursion. */
+            if ((tagid[0] & 32) == 32 && content_len > 0 && MaxDepth > 1)
+            {
+                char *tmp_str = asnFormatDer(pool,
+                                             content,
+                                             content_len,
+                                             0,
+                                             MaxDepth - 1,
+                                             MaxElementOutput,
+                                             Flags);
+                if (tmp_str)
+                {
+                    psDynBufAppendStrf(&str, "%s(%s)", tagstr, tmp_str);
+                    psFree(tmp_str, pool);
+                    printed = 1;
+                }
+                break;
+            }
+
+            /* Generic handling for 8-bit strings. */
+            if (asnFormatTagInfo[idx(tagid[0])].string8bit &&
+                content_len <= MaxElementOutput)
+            {
+                /* This is 8bit string. */
+                PS_PRNF_CTX;
+                char *tmp_str = psAsprnf(pool, PSF,
+                                         PSA_SSTR((const char *)content,
+                                                  content_len));
+                if (tmp_str)
+                {
+                    psDynBufAppendStrf(&str, "%s(\"%s\")", tagstr, tmp_str);
+                    psFree(tmp_str, pool);
+                    printed = 1;
+                }
+            }
+        }
+
+        /* Last resort: Indicate number of bytes. */
+        if (!printed)
+        {
+            psDynBufAppendStrf(&str, "%s(%s)",
+                               tagstr, has_content? "..." : "empty");
+        }
+        (void)psParseBufFinish(&sub);
+    }
+    endlen = 0;
+    while(psParseCanRead(&pb, 1))
+    {
+        psParseBufSkipBytes(&pb, NULL, 1);
+        endlen++;
+    }
+    if (endlen > 0)
+    {
+        psDynBufAppendStrf(&str, "[%llu unprocessed bytes]",
+                           (unsigned long long) endlen);
+    }
+    (void)psParseBufFinish(&pb);
+    psDynBufAppendChar(&str, 0); /* Add terminating NUL character. */
+    return psDynBufDetach(&str, &sz);
+}
 
 #endif  /* compilation selector: full X.509 or OCSP enabled */
 

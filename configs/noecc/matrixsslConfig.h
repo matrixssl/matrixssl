@@ -83,8 +83,7 @@ extern "C" {
 /* #define USE_TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384  *//**< @security NIST_MAY */
 /* #define USE_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256  *//**< @security NIST_SHOULD */
 /* #define USE_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384  *//**< @security NIST_SHOULD */
-/** CHACHA20-POLY1305 cipher suites according to old draft.
-    Do not enable except for compatibility with obsolete software. */
+/** CHACHA20-POLY1305 cipher suites according to RFC 7905. */
 /* #define USE_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 */
 
 /** Ephemeral ECC DH keys, RSA certificates */
@@ -95,8 +94,7 @@ extern "C" {
 /* #define USE_TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384  *//**< @security NIST_MAY */
 /* #define USE_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256  *//**< @security NIST_SHOULD */
 /* #define USE_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384  *//**< @security NIST_SHOULD */
-/** CHACHA20-POLY1305 cipher suites according to old draft.
-    Do not enable except for compatibility with obsolete software. */
+/** CHACHA20-POLY1305 cipher suites according to RFC 7905. */
 /* #define USE_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 */
 
 /** Ephemeral Diffie-Hellman ciphersuites, with RSA certificates */
@@ -211,6 +209,24 @@ extern "C" {
 
 /******************************************************************************/
 /**
+    Allow the server to parse SSL 2.0 ClientHello messages even when the
+    server does not actually support SSL 2.0. As per RFC 5246, E.2:
+
+    "... even TLS servers that do not support SSL 2.0 MAY accept version
+    2.0 CLIENT-HELLO messages."
+
+    This option is for compatibility with clients that support
+    SSL 2.0 but are ready to negotiate a higher version such as TLS 1.0.
+    Note that enabling this option will only allow parsing of the SSL 2.0
+    ClientHellos; it will not enable support for the SSL 2.0 protocol.
+    Only 32-byte challenges in the SSL 2.0 ClientHello are supported.
+*/
+#   ifdef USE_SERVER_SIDE_SSL
+/* #define ALLOW_SSLV2_CLIENT_HELLO_PARSE */
+#   endif
+
+/******************************************************************************/
+/**
     Client certificate authentication
  */
 #   define USE_CLIENT_AUTH
@@ -229,7 +245,16 @@ extern "C" {
  */
 /* #define USE_EXT_EXAMPLE_MODULE */
 #    endif
-#   endif
+
+/**
+   Enable loading of a new client certificate and private key
+   in response to a CertificateRequest message from a server. This feature
+   allows the client program to e.g. select a client certificate
+   whose issuer is included in the server's list of trusted CAs
+   that was received in the CertificateRequest message.
+*/
+/* #define USE_EXT_CLIENT_CERT_KEY_LOADING */
+#   endif /* USE_CLIENT_AUTH */
 
 /**
     Enable if the server should send an empty CertificateRequest message if
@@ -283,11 +308,11 @@ extern "C" {
     The "must staple" terminology is typically associated with certificates
     at the X.509 layer but it is a good description of what is being required
     of the server at the TLS level.
-    @pre USE_OCSP must be enbled at the crypto level and the client application
-    must use the OCSPstapling session option at run time for this setting to
-    have any effect
+    @pre USE_OCSP_RESPONSE must be enabled at the crypto level and the client
+    application must use the OCSPstapling session option at run time for this
+    setting to have any effect
  */
-#   ifdef USE_OCSP
+#   ifdef USE_OCSP_RESPONSE
 #    define USE_OCSP_MUST_STAPLE /**< @security NIST_SHALL */
 #   endif
 
@@ -303,6 +328,21 @@ extern "C" {
     feature is disabled by default.
  */
 /* #define USE_REHANDSHAKING */
+
+/******************************************************************************//**
+    False Start support for Chrome and Firefox browsers.
+    @see https://tools.ietf.org/html/rfc7918
+
+    Some versions of Firefox browser and Chrome browser include support for
+    False Start. This flag will enable server side support on MatrixSSL
+    operating as server for client using false start feature.
+
+    @note April 2012: Google has announced this feature will be removed in
+    version 20 of their browser due to industry compatibility issues.
+    However because there are other browsers using the feature, this feature
+    is often recommendable to enable for maximal browser compatibility.
+ */
+#   define USE_SERVER_SIDE_FALSE_START_SUPPORT
 
 /******************************************************************************/
 /**

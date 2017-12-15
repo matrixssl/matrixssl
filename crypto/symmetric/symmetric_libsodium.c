@@ -213,221 +213,240 @@ int32_t psAesDecryptGCM(psAesGcm_t *ctx,
 
 /******************************************************************************/
 
-#ifdef USE_LIBSODIUM_CHACHA20_POLY1305
+#ifdef USE_LIBSODIUM_CHACHA20_POLY1305_IETF
 /*********************************************************************************/
 /* chacha20-poly1305 AEAD low-level implementation, based on libsodium library   */
-/* Refer to the following spec:                                                                                                  */
-/* https://tools.ietf.org/html/rfc7539 $2.8 AEAD Construction                                    */
-/*                                                                                                                                                               */
-/*      !!! Note that if CHACHA20POLY1305_IETF is defined than the nonce must be     */
-/*       96bits, if CHACHA20POLY1305_IETF not defined the nonce must be 64bits   */
+/* For details, see                                                              */
+/* https://tools.ietf.org/html/rfc7539 $2.8 AEAD Construction                    */
 /*********************************************************************************/
-/**
-    Initialize an chacha20 poly1305 context. Put the provided key in the context
-    structure
 
-    @param ctx Pointer on the cipher context structure. This structure holds the key, nonce & aad...
-    @param key The algo's key
-    @param keylen The key's length
-
-    @return PS_SUCCESS if success
-            PS_FAIL in case of key length problem
-
- */
-int32_t psChacha20Poly1305Init(psChacha20Poly1305_t *ctx,
-    const unsigned char key[crypto_aead_chacha20poly1305_KEYBYTES], uint8_t keylen)
+/* Initialize psChacha20Poly1305Ietf for use. */
+psRes_t psChacha20Poly1305IetfInit(
+        psChacha20Poly1305Ietf_t *ctx,
+        const unsigned char key[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_KEYBYTES)])
 {
-    if (keylen != crypto_aead_chacha20poly1305_KEYBYTES)
-    {
-        psTraceCrypto("FAIL: libsodium-chacha20-poly1305 not supporting this key length");
-        psAssert(0);
-        return PS_FAIL;
-    }
-    memset(ctx, 0x0, sizeof(psChacha20Poly1305_t));
     /* Copy the key */
-    memcpy(ctx->key, key, crypto_aead_chacha20poly1305_KEYBYTES);
+    memcpy(ctx->key, key, PS_CHACHA20POLY1305_IETF_KEYBYTES);
 
     return PS_SUCCESS;
 }
 
 /******************************************************************************/
-/**
-    Clear the provided context structure
-    @param ctx context structure
+/* Clear the provided context structure
  */
-void psChacha20Poly1305Clear(psChacha20Poly1305_t *ctx)
+void psChacha20Poly1305IetfClear(psChacha20Poly1305Ietf_t *ctx)
 {
-    memset_s(ctx, sizeof(psChacha20Poly1305_t), 0x0, sizeof(psChacha20Poly1305_t));
+    memset_s(ctx,
+             sizeof(psChacha20Poly1305Ietf_t),
+             0x0,
+             sizeof(psChacha20Poly1305Ietf_t));
 }
 
-/******************************************************************************/
-/**
-    Specifiy the IV and additional data to an chacha20 poly1305 context that was
-    created with psChacha20Poly1305Init.
-
-
-    @param ctx Pointer on the cipher context structure. This structure holds the key, nonce & aad...
-    @param IV pointer on the provided IV
-            (called nonce if referring to https://tools.ietf.org/html/draft-ietf-tls-chacha20-poly1305-03)
-    @param aad pointer on buffer holding additional data, as specified in
-
- */
-void psChacha20Poly1305Ready(psChacha20Poly1305_t *ctx,
-    const unsigned char *IV,
-    const unsigned char *aad, psSize_t aadLen)
+psResSize_t psChacha20Poly1305IetfEncryptDetached(
+        psChacha20Poly1305Ietf_t *Context_p,
+        const unsigned char *Plaintext_p,
+        psSizeL_t PlaintextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSize_t AadNBytes,
+        unsigned char *Ciphertext_p,
+        unsigned char Mac_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_ABYTES)])
 {
-    /* --- Set up context structure ---// */
+    int ret;
 
-    /* Set up IV */
-# ifdef CHACHA20POLY1305_IETF
-    memset(ctx->IV, 0, crypto_aead_chacha20poly1305_IETF_NPUBBYTES);
-    memcpy(ctx->IV, IV, crypto_aead_chacha20poly1305_IETF_NPUBBYTES);
-# else
-    memset(ctx->IV, 0, crypto_aead_chacha20poly1305_NPUBBYTES);
-    memcpy(ctx->IV, IV, crypto_aead_chacha20poly1305_NPUBBYTES);
-# endif
-
-    if (aadLen > sizeof(ctx->Aad))
+    /* Check input is not too large for this API. */
+    if (PlaintextNBytes > (psSizeL_t)PS_RES_SIZE_OK_MAX)
     {
-        psTraceCrypto("FAIL: size issue with libsodium-chacha20-poly1305 additionnal data");
-        psAssert(0);
+        return PS_ARG_FAIL;
     }
+    
+    ret = crypto_aead_chacha20poly1305_ietf_encrypt_detached(
+            Ciphertext_p,
+            Mac_p,
+            NULL,
+            (const unsigned char *)Plaintext_p,
+            (unsigned long long)PlaintextNBytes,
+            (const unsigned char *)Aad_p,
+            (unsigned long long)AadNBytes,
+            NULL,
+            (const unsigned char *)Iv_p,
+            (const unsigned char *)Context_p->key);
 
-    /* Set up additional data */
-    memcpy(ctx->Aad, aad, aadLen);
-    ctx->AadLen = aadLen;
-}
-
-/******************************************************************************/
-/*
-        Public chacha20 poly1305 encrypt function.
-        This will perform the encryption and compute the authentication tag at the
-        same time. In the output pointer (ct), only the encrypted text is present, the
-        tag should be fetched with psChacha20Poly1305GetTag
-
-    @param ctx Pointer on the cipher context structure. This structure holds the key, nonce & aad...
-    @param pt pointer on the text to encrypt
-    @param ct pointer on encrypted text, output of this function
-    @param len length of the text to encrypt
- */
-void psChacha20Poly1305Encrypt(psChacha20Poly1305_t *ctx, const unsigned char *pt, unsigned char *ct, uint32_t len)
-{
-    unsigned long long ciphertext_len;
-    unsigned char *resultEncryption;
-
-    /* Allocate mem to store ciphertext and tag */
-    resultEncryption = psMalloc(NULL, len + sizeof(ctx->Tag));
-
-    /* libsodium will put the cipher text and the tag in the result. */
-    /* resultEncryption = cipherText || tag */
-# ifdef CHACHA20POLY1305_IETF
-    crypto_aead_chacha20poly1305_ietf_encrypt(resultEncryption, &ciphertext_len,
-        (const unsigned char *) pt, (unsigned long long) len,
-        (const unsigned char *) ctx->Aad, (unsigned long long) ctx->AadLen,
-        NULL, (const unsigned char *) ctx->IV, (const unsigned char *) ctx->key);
-# else
-    crypto_aead_chacha20poly1305_encrypt(resultEncryption, &ciphertext_len,
-        (const unsigned char *) pt, (unsigned long long) len,
-        (const unsigned char *) ctx->Aad, (unsigned long long) ctx->AadLen,
-        NULL, (const unsigned char *) ctx->IV, (const unsigned char *) ctx->key);
-# endif
-
-    /* Copy the authentication tag in context to be able to retrieve it later */
-    memcpy(ctx->Tag, (resultEncryption + len), sizeof(ctx->Tag));
-
-    /* Copy the ciphertext in destination */
-    memcpy(ct, resultEncryption, len);
-
-    psFree(resultEncryption, NULL);
-}
-
-/************************************************************************************/
-/*
-   After encryption this function is used to retrieve the authentication tag
-    @param ctx Pointer on the cipher context structure. This structure holds the key, nonce & aad...
-    @param tagBytesLen length of tag to retrieve
-    @param tag the provided buffer to hold the AEAD' authentication tag
- */
-void psChacha20Poly1305GetTag(psChacha20Poly1305_t *ctx, uint8_t tagBytesLen, unsigned char tag[crypto_aead_chacha20poly1305_ABYTES])
-{
-    memcpy(tag, ctx->Tag, tagBytesLen);
-}
-
-/************************************************************************************/
-/*
-   Just does the chacha20 poly1305 decrypt portion.  Doesn't expect the tag to be
-   at the end of the ct.  User will invoke psChacha20Poly1305GetTag seperately
-                !!! Currently not available with libsodium      !!!!!
- */
-void psChacha20Poly1305DecryptTagless(psChacha20Poly1305_t *ctx,
-    const unsigned char *ct, unsigned char *pt,
-    uint32_t len)
-{
-    /* Not possible with libsodium. */
-    psAssert(0);
-}
-
-/******************************************************************************/
-/*
-    Decrypt function using libsodium library. This function will perform
-    itself the tag comparaison.
-    So the provided cipherText must hold: cipher text || tag .
-    The provided length (ctLen) must reflect this.
-
-    @param ctx Pointer on the cipher context structure. This structure holds the key, nonce & aad...
-    @param ct pointer on: (cipherText || AEAD-Tag)
-    @param ctLen length of data pointed by ct (so encrypted data + tag)
-    @param pt pointer on decrypted data
-    @param ptLen length of encrypted data
-
-    @return length of decrypted data in case of success.
-            PS_ARG_FAIL in case of parameter problem
-            PS_AUTH_FAIL in case of problem during tag's authentication check or
-                        during decryption operation
- */
-int32_t psChacha20Poly1305Decrypt(psChacha20Poly1305_t *ctx,
-    const unsigned char *ct, uint32_t ctLen,
-    unsigned char *pt, uint32_t ptLen)
-{
-    unsigned long long decrypted_len;
-
-    if ((ctLen - ptLen) != crypto_aead_chacha20poly1305_ABYTES)
+    if (ret == 0)
     {
-        psTraceCrypto("FAIL: Cipher text must include the tag\n");
+        return (psResSize_t) PlaintextNBytes;
+    }
+    return PS_FAIL;
+}
+
+
+psResSize_t psChacha20Poly1305IetfDecryptDetached(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char *Ciphertext_p,
+        psSizeL_t CiphertextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        const unsigned char Mac_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_ABYTES)],
+        unsigned char *Plaintext_p)
+{
+    psSizeL_t plaintextNBytes = CiphertextNBytes; /* Plaintext length is the same than ciphertext length. */
+
+    /* Check input is not too large for this API. */
+    if (plaintextNBytes > (psSizeL_t)(psResSize_t)PS_RES_SIZE_OK_MAX)
+    {
         return PS_ARG_FAIL;
     }
 
-# ifdef CHACHA20POLY1305_IETF
-    if (crypto_aead_chacha20poly1305_ietf_decrypt(pt, &decrypted_len, NULL,
-            ct, (unsigned long long) ctLen,
-            (const unsigned char *) ctx->Aad, (unsigned long long) ctx->AadLen,
-            (const unsigned char *) ctx->IV, (const unsigned char *) ctx->key) != 0)
-    {
-
-        psTraceCrypto("chacha20 poly1305 AEAD didn't authenticate\n");
-        return PS_AUTH_FAIL;
-    }
-# else
-    if (crypto_aead_chacha20poly1305_decrypt(pt, &decrypted_len, NULL,
-            ct, (unsigned long long) ctLen,
-            (const unsigned char *) ctx->Aad, (unsigned long long) ctx->AadLen,
-            (const unsigned char *) ctx->IV,
-            (const unsigned char *) ctx->key) != 0)
+    if (crypto_aead_chacha20poly1305_ietf_decrypt_detached(
+                Plaintext_p,
+                NULL,
+                Ciphertext_p,
+                (unsigned long long)CiphertextNBytes,
+                (const unsigned char *)Mac_p,
+                (const unsigned char *)Aad_p,
+                (unsigned long long)AadNBytes,
+                (const unsigned char *)Iv_p,
+                (const unsigned char *)Context_p->key) != 0)
     {
         psTraceCrypto("chacha20 poly1305 AEAD didn't authenticate\n");
         return PS_AUTH_FAIL;
     }
-# endif
-    if (decrypted_len != ptLen)
-    {
-        psTraceCrypto("Problem during chacha20 poly1305 AEAD decryption\n");
-        return PS_AUTH_FAIL;
-    }
 
-    return decrypted_len;
+    return (psResSize_t)plaintextNBytes;
 }
 
-/************************************************************************************/
+/******************************************************************************/
+/*
+        Chacha20 poly1305 Ietf encryption function (ciphertext + mac in one sequence.)
+ */
+psResSize_t psChacha20Poly1305IetfEncrypt(
+        psChacha20Poly1305Ietf_t *Context_p,
+        const unsigned char *Plaintext_p,
+        psSizeL_t PlaintextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        unsigned char Ciphertext_p[PS_EXACTLY_EXPR(PlaintextLen + PS_CHACHA20POLY1305_IETF_ABYTES)])
+{
+#ifdef USE_PS_CRYPTO_AEAD_CHACHA20POLY1305_IETF_ENCRYPT
+    unsigned long long ciphertextNBytes = 0ULL;
+    psResSize_t ret;
 
-#endif /* USE_LIBSODIUM_CHACHA20_POLY1305 */
+    /* Check input is not too large for this API. */
+    if ((PlaintextNBytes + PS_CHACHA20POLY1305_IETF_ABYTES) >
+        (psSizeL_t)PS_RES_SIZE_OK_MAX)
+    {
+        return PS_ARG_FAIL;
+    }
+    
+    ret = crypto_aead_chacha20poly1305_ietf_encrypt(
+            Ciphertext_p,
+            &ciphertextNBytes,
+            (const unsigned char *)Plaintext_p,
+            (unsigned long long)PlaintextNBytes,
+            (const unsigned char *)Aad_p,
+            (unsigned long long)AadNBytes,
+            NULL,
+            (const unsigned char *)Iv_p,
+            (const unsigned char *)Context_p->key);
 
+    if (ret == 0)
+    {
+        return (psResSize_t) ciphertextNBytes;
+    }
+    return PS_FAIL;
+#else
+    psSizeL_t ciphertextNBytes =
+        PlaintextNBytes + PS_CHACHA20POLY1305_IETF_ABYTES;
+    psResSize_t ret;
+
+    /* Check input is not too large for this API. */
+    if (PlaintextNBytes > (psSizeL_t)PS_RES_SIZE_OK_MAX ||
+        ciphertextNBytes > (psSizeL_t)PS_RES_SIZE_OK_MAX)
+    {
+        return PS_ARG_FAIL;
+    }
+    
+    ret = psChacha20Poly1305IetfEncryptDetached(
+            Context_p,
+            Plaintext_p,
+            PlaintextNBytes,
+            Iv_p,
+            Aad_p,
+            AadNBytes,
+            Ciphertext_p,
+            Ciphertext_p + PlaintextNBytes);
+
+    if (ret >= 0)
+    {
+        ret += PS_CHACHA20POLY1305_IETF_ABYTES;
+    }
+    return ret;
+#endif
+}
+
+/******************************************************************************/
+/*
+    Decrypt data using chach20-poly1305 authenticated encryption function.
+ */
+psResSize_t psChacha20Poly1305IetfDecrypt(
+        psChacha20Poly1305Ietf_t Context_p[PS_EXACTLY(1)],
+        const unsigned char Ciphertext_p[PS_EXACTLY_EXPR(CiphertextNBytes)],
+        psSizeL_t CiphertextNBytes,
+        const unsigned char Iv_p[PS_EXACTLY(PS_CHACHA20POLY1305_IETF_NPUBBYTES)],
+        const unsigned char *Aad_p,
+        psSizeL_t AadNBytes,
+        unsigned char *Plaintext_p)
+{
+#ifdef USE_PS_CRYPTO_AEAD_CHACHA20POLY1305_IETF_DECRYPT
+    /* Old path, which can be enabled by setting USE_PS_CRYPTO_AEAD_CHACHA20POLY1305_IETF_DECRYPT. */
+    psSizeL_t plaintextNBytes = CiphertextNBytes - PS_CHACHA20POLY1305_IETF_ABYTES;
+    if (CiphertextNBytes < PS_CHACHA20POLY1305_IETF_ABYTES)
+    {
+        return PS_ARG_FAIL;
+    }
+    /* Check input is not too large for this API. */
+    if (plaintextNBytes > (psSizeL_t)(psResSize_t)PS_RES_SIZE_OK_MAX)
+    {
+        return PS_ARG_FAIL;
+    }
+
+    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+                Plaintext_p,
+                NULL,
+                NULL,
+                Ciphertext_p,
+                (unsigned long long)CiphertextNBytes,
+                (const unsigned char *)Aad_p,
+                (unsigned long long)AadNBytes,
+                (const unsigned char *)Iv_p,
+                (const unsigned char *)Context_p->key) != 0)
+    {
+        psTraceCrypto("chacha20 poly1305 AEAD didn't authenticate\n");
+        return PS_AUTH_FAIL;
+    }
+
+    return (psResSize_t)plaintextNBytes;
+#else
+    psSizeL_t plaintextNBytes;
+
+    /* Ensure input is not too short. */
+    if (CiphertextNBytes < PS_CHACHA20POLY1305_IETF_ABYTES)
+    {
+        return PS_ARG_FAIL;
+    }
+
+    plaintextNBytes = CiphertextNBytes - PS_CHACHA20POLY1305_IETF_ABYTES;
+    return psChacha20Poly1305IetfDecryptDetached(
+            Context_p,
+            Ciphertext_p,
+            plaintextNBytes,
+            Iv_p,
+            Aad_p,
+            AadNBytes,
+            Ciphertext_p + plaintextNBytes,
+            Plaintext_p);
+#endif
+}
+#endif /* USE_LIBSODIUM_CHACHA20_POLY1305_IETF */

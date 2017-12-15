@@ -841,7 +841,8 @@ L_NEXT_ECC:
 
 # ifdef REQUIRE_DH_PARAMS
 L_NEXT_DH:
-        if (spec->type == CS_DHE_RSA || spec->type == CS_DHE_PSK)
+        if (spec->type == CS_DHE_RSA || spec->type == CS_DHE_PSK
+            || spec->type == CS_DH_ANON)
         {
             switch (DH_SIZE)
             {

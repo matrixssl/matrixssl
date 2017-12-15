@@ -781,7 +781,7 @@ static void galois_counter(psAesGcm_t *ctx, unsigned char *dst,
     /* Handle remainder */
     if (partial_len != 0)
     {
-        unsigned int partial[16];
+        unsigned char partial[16];
         memset(partial, 0x00, 16);
         memcpy(partial, src + (n * 16), partial_len);
 

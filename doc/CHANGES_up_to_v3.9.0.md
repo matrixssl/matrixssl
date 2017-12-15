@@ -533,7 +533,7 @@ MatrixSSL now has support for ChaCha20-Poly1305 cipher suites compatible with RF
 The supported cipher suites are defined for TLS 1.2 and can be enabled at compile time.
 
 _cryptoConfig.h_
-: `USE_CHACHA20_POLY1305`
+: `USE_CHACHA20_POLY1305_IETF`
 
 _matrixsslConfig.h_
 : `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256`

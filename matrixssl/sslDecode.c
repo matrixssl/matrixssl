@@ -148,6 +148,18 @@ int32 matrixSslDecode(ssl_t *ssl, unsigned char **buf, uint32 *len,
     p = pend = mac = ctStart = NULL;
     padLen = 0;
 
+#ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+    if (ssl->extClientCertKeyStateFlags ==
+            EXT_CLIENT_CERT_KEY_STATE_GOT_CERT_KEY_UPDATE)
+    {
+        /* Client program has loaded new client cert and keys based on
+           the server's CertificateRequest message. We have already parsed
+           the server's last flight entirely. Now skip directly to writing
+           the response. Reset extClientCertKey state. */
+        ssl->extClientCertKeyStateFlags = EXT_CLIENT_CERT_KEY_STATE_INIT;
+        goto encodeResponse;
+    }
+#endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
 # ifdef USE_EXT_CERTIFICATE_VERIFY_SIGNING
     if (ssl->hwflags & SSL_HWFLAGS_PENDING_PKA_W ||
         ssl->hwflags & SSL_HWFLAGS_PENDING_FLIGHT_W)
@@ -291,11 +303,19 @@ decodeMore:
     }
     else
     {
+#if defined(USE_INTERCEPTOR) || defined(ALLOW_SSLV2_CLIENT_HELLO_PARSE)
+        ssl->rec.type = SSL_RECORD_TYPE_HANDSHAKE;
+        ssl->rec.majVer = 2;
+        ssl->rec.minVer = 0;
+        ssl->rec.len = (*c & 0x7f) << 8; c++;
+        ssl->rec.len += *c; c++;
+#else
         /* OpenSSL 0.9.8 will send a SSLv2 CLIENT_HELLO.  Use the -no_ssl2
             option when running a 0.9.8 client to prevent this */
         ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
         psTraceInfo("SSLv2 records not supported\n");
         goto encodeResponse;
+#endif
     }
 /*
     Validate the various record headers.  The type must be valid,
@@ -1192,15 +1212,13 @@ ADVANCE_TO_APP_DATA:
                 special record type in the specs).  This will just be set
                 between CCS parse and FINISHED parse */
             ssl->parsedCCS = 1;
+            /*
+              Expect epoch to increment after successful CCS parse
+            */
+            incrTwoByte(ssl, ssl->expectedEpoch, 0);
         }
-/*
-        Expect epoch to increment after successful CCS parse
- */
-        incrTwoByte(ssl, ssl->expectedEpoch, 0);
 #endif  /* USE_DTLS */
 
-        *remaining = *len - (c - origbuf);
-        *buf = c;
 /*
         If we're expecting finished, then this is the right place to get
         this record.  It is really part of the handshake but it has its
@@ -1307,6 +1325,8 @@ ADVANCE_TO_APP_DATA:
 #endif
         }
         ssl->decState = SSL_HS_CCC;
+        *remaining = *len - (c - origbuf);
+        *buf = c;
         return MATRIXSSL_SUCCESS;
 
     case SSL_RECORD_TYPE_ALERT:
@@ -1398,7 +1418,19 @@ ADVANCE_TO_APP_DATA:
             *remaining = *len - (c - origbuf);
             *buf = c;
             return MATRIXSSL_SUCCESS;
-
+#ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+        case PS_PENDING:
+            if (matrixSslNeedClientCert(ssl))
+            {
+                /*
+                  Do not create the response flight just yet. Instead,
+                  return to the client application to give it a chance
+                  to load a new client cert and key if desired.
+                */
+                psTraceInfo("matrixSslDecode returning PS_PENDING\n");
+                return PS_PENDING;
+            }
+#endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
 #ifdef USE_DTLS
         case DTLS_RETRANSMIT:
             /* The idea here is to only return retransmit if
@@ -2041,7 +2073,7 @@ parseHandshake:
 
 #endif  /* USE_STATELESS_SESSION_TICKETS */
 
-#ifdef USE_OCSP
+#ifdef USE_OCSP_RESPONSE
         /*      Another possible mismatch is server didn't send the optional
             CERTIFICATE_STATUS message.  Unfortunate this was not specified
             to be strictly handled in the status_request extensions */
@@ -2075,7 +2107,7 @@ parseHandshake:
             }
 # endif /* USE_OCSP_MUST_STAPLE */
         }
-#endif  /* USE_OCSP */
+#endif  /* USE_OCSP_RESPONSE */
 
 #ifdef USE_PSK_CIPHER_SUITE
 /*
@@ -2520,6 +2552,11 @@ SKIP_HSHEADER_PARSE:
             writing of CLIENT_HELLO will properly move the state along itself */
         ssl->decState = SSL_HS_HELLO_REQUEST;
         rc = SSL_PROCESS_DATA;
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+        /* Reinitialize the state of the on-demand client cert and key loading
+           feature for the re-handshake. */
+        ssl->extClientCertKeyStateFlags = EXT_CLIENT_CERT_KEY_STATE_INIT;
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
         break;
 
 /******************************************************************************/
@@ -2555,7 +2592,7 @@ SKIP_HSHEADER_PARSE:
 
 #ifdef USE_CLIENT_SIDE_SSL
 /******************************************************************************/
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
     case SSL_HS_CERTIFICATE_STATUS:
         psTraceHs(">>> Client parsing CERTIFICATE_STATUS message\n");
         rc = parseCertificateStatus(ssl, hsLen, &c, end);
@@ -2564,7 +2601,7 @@ SKIP_HSHEADER_PARSE:
             return rc;
         }
         break;
-# endif /* USE_OCSP */
+# endif /* USE_OCSP_RESPONSE */
 
 /******************************************************************************/
 
@@ -2666,6 +2703,12 @@ SKIP_HSHEADER_PARSE:
         {
             return rc;
         }
+#   ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+        /* Note: we must have parsed both CertificateRequest and ServerHelloDone
+           before proceeding to new client cert and key loading state. */
+        ssl->extClientCertKeyStateFlags |=
+            EXT_CLIENT_CERT_KEY_STATE_GOT_SERVER_HELLO_DONE;
+#   endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
         break;
 
 
@@ -2680,6 +2723,13 @@ SKIP_HSHEADER_PARSE:
         {
             return rc;
         }
+#   ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+        /* Note: we must have parsed both CertificateRequest and ServerHelloDone
+           before proceeding to new client cert and key loading state. */
+        ssl->extClientCertKeyStateFlags |=
+            EXT_CLIENT_CERT_KEY_STATE_GOT_CERTIFICATE_REQUEST;
+#   endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
+
         break;
 # endif /* !USE_ONLY_PSK_CIPHER_SUITE */
 #endif  /* USE_CLIENT_SIDE_SSL */
@@ -2804,6 +2854,21 @@ SKIP_HSHEADER_PARSE:
     {
         goto parseHandshake;
     }
+
+# ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+    if ((ssl->extClientCertKeyStateFlags &
+                EXT_CLIENT_CERT_KEY_STATE_GOT_CERTIFICATE_REQUEST) &&
+        (ssl->extClientCertKeyStateFlags &
+                EXT_CLIENT_CERT_KEY_STATE_GOT_SERVER_HELLO_DONE))
+    {
+        psTraceInfo("Received CertificateRequest flight\n");
+        psTraceInfo("Now returning PS_PENDING to get client cert and key\n");
+        ssl->extClientCertKeyStateFlags =
+            EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE;
+        return PS_PENDING;
+    }
+# endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
+
     return rc;
 }
 

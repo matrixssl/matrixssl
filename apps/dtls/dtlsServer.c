@@ -854,7 +854,7 @@ int main(int argc, char **argv)
                 const char *addrstr;
                 addrstr = getaddrstring((struct sockaddr *) &inaddr, 1);
                 psTraceIntDtls("Read %d bytes ", recvLen);
-                psTraceStrDtls("from %s\n", (char *) addrstr);
+                _psTraceStr("from %s\n", (char *) addrstr);
                 psFree(addrstr, NULL);
             }
 # endif

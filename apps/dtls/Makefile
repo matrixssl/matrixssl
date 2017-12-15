@@ -35,6 +35,9 @@ STATIC:=\
 	$(MATRIXSSL_ROOT)/crypto/libcrypt_s.a \
 	$(MATRIXSSL_ROOT)/core/libcore_s.a
 
+STATIC_CLIENT:=\
+	$(MATRIXSSL_ROOT)/apps/common/client_common_s.a
+
 CIPHER_OPTION=ID_RSA # The default cipher option
 CFLAGS+=-D$(CIPHER_OPTION)
 
@@ -53,7 +56,7 @@ $(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile $(wildcard *.h)
 $(SERVER_EXE): $(SERVER_SRC:.c=.o) $(STATIC)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-$(CLIENT_EXE): $(CLIENT_SRC:.c=.o) $(STATIC)
+$(CLIENT_EXE): $(CLIENT_SRC:.c=.o) $(STATIC) $(STATIC_CLIENT)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:

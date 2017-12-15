@@ -47,13 +47,13 @@ static const psCipher16_t cipherlist_default[] = { 47 };
 
 # define logMessage(l, t, ...) do { printf(#l " " #t ": " __VA_ARGS__); printf("\n"); } while (0) /* Log_Verbose, TAG, "Wrote %d bytes", transferred */
 
+# ifdef USE_CLIENT_SIDE_SSL
 /* The MatrixSSL certificate validation callback. */
 static int32 ssl_cert_auth_default(ssl_t *ssl, psX509Cert_t *cert, int32 alert)
 {
     return MATRIXSSL_SUCCESS;
 }
 
-# ifdef USE_CLIENT_SIDE_SSL
 static int32 extensionCb(ssl_t *ssl, uint16_t extType, uint8_t extLen, void *e)
 {
     if (extType == EXT_SNI)

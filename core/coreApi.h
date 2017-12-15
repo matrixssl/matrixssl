@@ -50,6 +50,58 @@ extern "C" {
 
 /******************************************************************************/
 /*
+    macros for function definitions.
+ */
+# ifndef PS_C99
+#  if defined(__cplusplus) || !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#   define PS_C99(X)
+#  else
+/** C99 only code.
+  Produce output for compiler that is only processed if compiler is in C99
+  mode or later. This macro can be used to use security enhancing constructs
+  in C99 without losing backwards compatibility with ANSI-C or C++. */
+#   define PS_C99(X) X
+#  endif
+# endif
+#ifndef PS_AT_LEAST
+/** Pointer needs to point at least x items.
+    Usage of this macro enhances interface with known restrictions on
+    intended amount of input elements. The macro is intended for compiler
+    guidance and documentation.
+ */
+#define PS_AT_LEAST(x) PS_C99(static) x
+#endif /* PS_AT_LEAST */
+#ifndef PS_AT_LEAST_EXPR
+/** Pointer needs to point at least x items.
+    Usage of this macro enhances interface with known restrictions on
+    intended amount of input elements. The macro is intended for compiler
+    guidance and documentation.
+
+    The limit is expressed as expression of other inputs to the function.
+
+    @note: Due to implementation, the value of expr needs to be at least 1. */
+#define PS_AT_LEAST_EXPR(x) PS_C99(static) 1
+#endif /* PS_AT_LEAST_EXPR */
+#ifndef PS_EXACTLY
+/** Pointer needs to point exactly x items.
+    Usage of this macro enhances interface with known restrictions on
+    intended amount of input elements. The macro is intended for compiler
+    guidance and documentation.
+ */
+#define PS_EXACTLY(x) PS_C99(static) x
+#endif /* PS_EXACTLY */
+#ifndef PS_EXACTLY_EXPR
+/** Pointer needs to point exactly x items.
+    Usage of this macro enhances interface with known restrictions on
+    intended amount of input elements. The macro is intended for compiler
+    guidance and documentation.
+
+    @note: Due to implementation, the value of expr needs to be at least 1. */
+#define PS_EXACTLY_EXPR(x) PS_C99(static) 1
+#endif /* PS_EXACTLY_EXPR */
+
+/******************************************************************************/
+/*
     psCore return codes
  */
 # define PS_CORE_IS_OPEN     1
@@ -290,9 +342,14 @@ typedef enum
     PS_STRING_GENERAL_STRING = 27,
     PS_STRING_UNIVERSAL_STRING = 28,
     PS_STRING_CHARACTER_STRING = 29,
-    PS_STRING_BMP_STRING = 30,
+    PS_STRING_BMP_STRING = 30, /* This is BMP (Basic Multilingual Plane)
+                                  string, i.e. 2 byte characters only.
+                                  Use #PS_STRING_UTF16_STRING instead if
+                                  any UTF-16 encoding is allowed. */
     PS_STRING_CHAR_STRING = 256,  /* Input is represented as C string. */
     PS_STRING_WCHAR_STRING = 257, /* Input is represented as wchar_t string. */
+    PS_STRING_UTF16_STRING = 258,  /* Input is represented as UTF-16 encoding.
+                                    */
 } psStringType_t;
 
 /* Option for strictly checking input to UTF8 String.
@@ -315,6 +372,40 @@ typedef enum
     strlen() to obtain length of the string instead.
  */
 PSPUBLIC int32 psToUtf8String(psPool_t *pool,
+                              const unsigned char *input, size_t input_len,
+                              psStringType_t input_type,
+                              unsigned char **output, size_t *output_len,
+                              int opts);
+
+/*
+    Helper function for usual string conversions.
+    The current version allows conversion of
+    PS_STRING_NUMERIC_STRING, PS_STRING_PRINTABLE_STRING, PS_STRING_BMP_STRING
+    to UTF-16 (BE). This function produces unsigned char (generic octet string)
+    output for compatibility with other functions although the output length
+    is always multiple of two.
+    The string will have terminating \0\0.
+    output_len will be written string length not counting terminating \0\0.
+    output_len can be provided as NULL.
+ */
+PSPUBLIC int32 psToUtf16String(psPool_t *pool,
+                              const unsigned char *input, size_t input_len,
+                              psStringType_t input_type,
+                              unsigned char **output, size_t *output_len,
+                              int opts);
+
+/*
+    Helper function for usual string conversions.
+    The current version allows conversion of
+    PS_STRING_NUMERIC_STRING, PS_STRING_PRINTABLE_STRING, PS_STRING_BMP_STRING
+    to UTF-32 (BE). This function produces unsigned char (generic octet string)
+    output for compatibility with other functions although the output length
+    is always multiple of four.
+    The string will have terminating \0\0\0\0.
+    output_len will be written string length not counting terminating \0\0\0\0.
+    output_len can be provided as NULL.
+ */
+PSPUBLIC int32 psToUtf32String(psPool_t *pool,
                               const unsigned char *input, size_t input_len,
                               psStringType_t input_type,
                               unsigned char **output, size_t *output_len,

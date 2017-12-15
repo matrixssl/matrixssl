@@ -664,6 +664,7 @@ static int32 matrixSslLoadKeyMaterial(sslKeys_t *keys, const char *certFile,
         if (keys->cert->authFailFlags)
         {
             psAssert(keys->cert->authFailFlags == PS_CERT_AUTH_FAIL_DATE_FLAG);
+            psTraceStrInfo("Certificate out-of-date: %s\n", (char *)certFile);
 #    ifdef POSIX /* TODO - implement date check on WIN32, etc. */
             psX509FreeCert(keys->cert);
             keys->cert = NULL;
@@ -776,6 +777,7 @@ static int32 matrixSslLoadKeyMaterial(sslKeys_t *keys, const char *certFile,
                 /* This should be the only no err, FailFlags case currently */
                 psAssert(keys->CAcerts->authFailFlags ==
                     PS_CERT_AUTH_FAIL_DATE_FLAG);
+                psTraceStrInfo("Certificate out-of-date: %s\n", (char *)CAfile);
 #   ifdef POSIX /* TODO - implement date check on WIN32, etc. */
                 psX509FreeCert(keys->CAcerts);
                 keys->CAcerts = NULL;
@@ -1078,23 +1080,26 @@ static int32 matrixSslLoadKeyMaterialMem(sslKeys_t *keys,
 ca_load_failed:
 #endif /* ALLOW_CA_BUNDLE_PARTIAL_PARSE */
 
-# if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
     if (err < 0)
     {
+#   if defined(USE_SERVER_SIDE_SSL) || defined(USE_CLIENT_AUTH)
         psClearPubKey(&keys->privKey);
         psX509FreeCert(keys->cert);
+        keys->cert = NULL;
+#   endif
+#   if defined(USE_CLIENT_SIDE_SSL) || defined(USE_CLIENT_AUTH)
         psX509FreeCert(keys->CAcerts);
-        keys->cert = keys->CAcerts = NULL;
+        keys->CAcerts = NULL;
+#   endif
         return err;
     }
-# endif
 
     return PS_SUCCESS;
 }
 #endif /* USE_RSA || USE_ECC */
 
 
-#if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+#if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
 int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
     const unsigned char *OCSPResponseBuf, psSize_t OCSPResponseBufLen)
 {
@@ -1123,7 +1128,7 @@ int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
     memcpy(keys->OCSPResponseBuf, OCSPResponseBuf, OCSPResponseBufLen);
     return PS_SUCCESS;
 }
-#endif /* USE_OCSP && USE_SERVER_SIDE_SSL */
+#endif /* USE_OCSP_RESPONSE && USE_SERVER_SIDE_SSL */
 
 
 #if defined(USE_SCT) && defined(USE_SERVER_SIDE_SSL)
@@ -1238,7 +1243,7 @@ void matrixSslDeleteKeys(sslKeys_t *keys)
     /* Remainder of structure is cleared below */
 #endif
 
-#if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+#if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
     if (keys->OCSPResponseBuf != NULL)
     {
         psFree(keys->OCSPResponseBuf, keys->pool);
@@ -1363,6 +1368,161 @@ int32 matrixSslLoadDhParamsMem(sslKeys_t *keys,  const unsigned char *dhBin,
         &keys->dhParams);
 }
 #endif /* REQUIRE_DH_PARAMS */
+
+psBool_t matrixSslTlsVersionRangeSupported(int32_t low,
+        int32_t high)
+{
+    if (low < MIN_ENABLED_TLS_VER)
+    {
+        psTraceIntInfo("Minimum of version range not supported " \
+                "by config: %d\n", low);
+        return PS_FALSE;
+    }
+    if (high > MAX_ENABLED_TLS_VER)
+    {
+        psTraceIntInfo("Maximum of version range not supported " \
+                "by config: %d\n", high);
+        return PS_FALSE;
+    }
+    if (low > high)
+    {
+        psTraceInfo("Invalid version range: low > high\n");
+        return PS_FALSE;
+    }
+
+    return PS_TRUE;
+}
+
+#ifdef USE_CLIENT_SIDE_SSL
+static
+int32 tlsVerToVersionFlag(int32_t ver)
+{
+    switch (ver)
+    {
+    case tls_v_1_2:
+        return SSL_FLAGS_TLS_1_2;
+    case tls_v_1_1:
+        return SSL_FLAGS_TLS_1_1;
+    case tls_v_1_0:
+        return SSL_FLAGS_TLS_1_0;
+    }
+
+    return 0;
+}
+
+int32_t matrixSslSessOptsSetClientTlsVersionRange(sslSessOpts_t *options,
+        int32_t low, int32_t high)
+{
+    if (options == NULL)
+    {
+        return PS_ARG_FAIL;
+    }
+    if (!matrixSslTlsVersionRangeSupported(low, high))
+    {
+        psTraceInfo("Please enable more versions in matrixsslConfig.h.\n");
+        return PS_ARG_FAIL;
+    }
+    if (low < tls_v_1_0)
+    {
+        psTraceInfo("matrixSslSessOptsSetClientTlsVersionRange only " \
+                "supports TLS 1.0 to TLS 1.2. SSL 3.0 is not supported\n");
+        return PS_ARG_FAIL;
+    }
+
+    if (low == high)
+    {
+        /* Single version. */
+        options->clientRejectVersionDowngrade = 1;
+    }
+    else
+    {
+        if (low > tls_v_1_0)
+        {
+            /* Range: TLS 1.1 - TLS 1.2. */
+#        ifdef USE_TLS_1_0_TOGGLE
+            options->disableTls1_0 = PS_TRUE;
+#        else
+            psTraceInfo("Need USE_TLS_1_0_TOGGLE for this version range\n");
+            return PS_UNSUPPORTED_FAIL;
+#        endif /* USE_TLS_1_0_TOGGLE */
+        }
+    }
+
+    /* Always put the highest version we support to ClientHello.client_version,
+       as recommended by the RFC. */
+    options->versionFlag = tlsVerToVersionFlag(high);
+
+    return PS_SUCCESS;
+}
+#endif /* USE_CLIENT_SIDE_SSL */
+
+#ifdef USE_SERVER_SIDE_SSL
+int32_t matrixSslSessOptsSetServerTlsVersionRange(sslSessOpts_t *options,
+        int32_t low, int32_t high)
+{
+    if (options == NULL)
+    {
+        return PS_ARG_FAIL;
+    }
+    if (!matrixSslTlsVersionRangeSupported(low, high))
+    {
+        psTraceInfo("Please enable more versions in matrixsslConfig.h.\n");
+        return PS_ARG_FAIL;
+    }
+    if (low < tls_v_1_0)
+    {
+        psTraceInfo("matrixSslSessOptsSetServerTlsVersionRange only " \
+                "supports TLS 1.0 to TLS 1.2. SSL 3.0 is not supported\n");
+        return PS_ARG_FAIL;
+    }
+
+    if (low == high)
+    {
+        /* Single version. */
+        if (low == tls_v_1_2)
+        {
+            options->versionFlag = SSL_FLAGS_TLS_1_2;
+        }
+        else if (low == tls_v_1_1)
+        {
+            options->versionFlag = SSL_FLAGS_TLS_1_1;
+        }
+        else if (low == tls_v_1_0)
+        {
+            options->versionFlag = SSL_FLAGS_TLS_1_0;
+        }
+        else
+        {
+            return PS_ARG_FAIL;
+        }
+    }
+    else
+    {
+        /* Version range. */
+        options->versionFlag = 0;
+        if (low > tls_v_1_0)
+        {
+#        ifdef USE_TLS_1_0_TOGGLE
+            options->disableTls1_0 = PS_TRUE;
+#        else
+            psTraceInfo("Need USE_TLS_1_0_TOGGLE for this version range\n");
+            return PS_UNSUPPORTED_FAIL;
+#        endif /* USE_TLS_1_0_TOGGLE */
+        }
+        if (high < tls_v_1_2)
+        {
+#        ifdef USE_TLS_1_2_TOGGLE
+            options->serverDisableTls1_2 = PS_TRUE;
+#        else
+            psTraceInfo("Need USE_TLS_1_2_TOGGLE for this version range\n");
+            return PS_UNSUPPORTED_FAIL;
+#        endif /* USE_TLS_1_2_TOGGLE */
+        }
+    }
+
+    return PS_SUCCESS;
+}
+#endif /* USE_SERVER_SIDE_SSL */
 
 /******************************************************************************/
 /*
@@ -2087,199 +2247,174 @@ void matrixSslPrintHSDetails(ssl_t *ssl)
     if (ssl->hsState == SSL_HS_DONE)
     {
         psTraceInfo("\n");
-        if (ssl->minVer == SSL3_MIN_VER)
-        {
-            psTraceInfo("SSL 3.0 ");
-        }
-        else if (ssl->minVer == TLS_MIN_VER)
-        {
-            psTraceInfo("TLS 1.0 ");
-        }
-        else if (ssl->minVer == TLS_1_1_MIN_VER)
-        {
-            psTraceInfo("TLS 1.1 ");
-        }
-        else if (ssl->minVer == TLS_1_2_MIN_VER)
-        {
-            psTraceInfo("TLS 1.2 ");
-        }
-# ifdef USE_DTLS
-        else if (ssl->minVer == DTLS_1_2_MIN_VER)
-        {
-            psTraceInfo("DTLS 1.2 ");
-        }
-        else if (ssl->minVer == DTLS_MIN_VER)
-        {
-            psTraceInfo("DTLS 1.0 ");
-        }
-# endif
-        psTraceInfo("connection established: ");
+        psTracePrintProtocolVersion(NULL, ssl->majVer, ssl->minVer, 0);
+        _psTrace(" connection established: ");
         switch (ssl->cipher->ident)
         {
         case SSL_RSA_WITH_NULL_MD5:
-            psTraceInfo("SSL_RSA_WITH_NULL_MD5\n");
+            _psTrace("SSL_RSA_WITH_NULL_MD5\n");
             break;
         case SSL_RSA_WITH_NULL_SHA:
-            psTraceInfo("SSL_RSA_WITH_NULL_SHA\n");
+            _psTrace("SSL_RSA_WITH_NULL_SHA\n");
             break;
         case SSL_RSA_WITH_RC4_128_MD5:
-            psTraceInfo("SSL_RSA_WITH_RC4_128_MD5\n");
+            _psTrace("SSL_RSA_WITH_RC4_128_MD5\n");
             break;
         case SSL_RSA_WITH_RC4_128_SHA:
-            psTraceInfo("SSL_RSA_WITH_RC4_128_SHA\n");
+            _psTrace("SSL_RSA_WITH_RC4_128_SHA\n");
             break;
         case SSL_RSA_WITH_3DES_EDE_CBC_SHA:
-            psTraceInfo("SSL_RSA_WITH_3DES_EDE_CBC_SHA\n");
+            _psTrace("SSL_RSA_WITH_3DES_EDE_CBC_SHA\n");
             break;
         case TLS_RSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_RSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_RSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_RSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_RSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_RSA_WITH_AES_256_CBC_SHA\n");
             break;
         case SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA:
-            psTraceInfo("SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA\n");
+            _psTrace("SSL_DHE_RSA_WITH_3DES_EDE_CBC_SHA\n");
             break;
         case SSL_DH_anon_WITH_RC4_128_MD5:
-            psTraceInfo("SSL_DH_anon_WITH_RC4_128_MD5\n");
+            _psTrace("SSL_DH_anon_WITH_RC4_128_MD5\n");
             break;
         case SSL_DH_anon_WITH_3DES_EDE_CBC_SHA:
-            psTraceInfo("SSL_DH_anon_WITH_3DES_EDE_CBC_SHA\n");
+            _psTrace("SSL_DH_anon_WITH_3DES_EDE_CBC_SHA\n");
             break;
         case TLS_DHE_RSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_DHE_RSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_DHE_RSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_DHE_RSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_DHE_RSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_DHE_RSA_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_DHE_RSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_DHE_RSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_DHE_RSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_DHE_RSA_WITH_AES_256_CBC_SHA256:
-            psTraceInfo("TLS_DHE_RSA_WITH_AES_256_CBC_SHA256\n");
+            _psTrace("TLS_DHE_RSA_WITH_AES_256_CBC_SHA256\n");
             break;
         case TLS_DH_anon_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_DH_anon_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_DH_anon_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_DH_anon_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_DH_anon_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_DH_anon_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_RSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_RSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_RSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_RSA_WITH_AES_256_CBC_SHA256:
-            psTraceInfo("TLS_RSA_WITH_AES_256_CBC_SHA256\n");
+            _psTrace("TLS_RSA_WITH_AES_256_CBC_SHA256\n");
             break;
         case TLS_RSA_WITH_SEED_CBC_SHA:
-            psTraceInfo("TLS_RSA_WITH_SEED_CBC_SHA\n");
+            _psTrace("TLS_RSA_WITH_SEED_CBC_SHA\n");
             break;
         case TLS_RSA_WITH_IDEA_CBC_SHA:
-            psTraceInfo("TLS_RSA_WITH_IDEA_CBC_SHA\n");
+            _psTrace("TLS_RSA_WITH_IDEA_CBC_SHA\n");
             break;
         case TLS_PSK_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_PSK_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_PSK_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_PSK_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_PSK_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_PSK_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_PSK_WITH_AES_256_CBC_SHA384:
-            psTraceInfo("TLS_PSK_WITH_AES_256_CBC_SHA384\n");
+            _psTrace("TLS_PSK_WITH_AES_256_CBC_SHA384\n");
             break;
         case TLS_PSK_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_PSK_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_PSK_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_DHE_PSK_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_DHE_PSK_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_DHE_PSK_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_DHE_PSK_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_DHE_PSK_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_DHE_PSK_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n");
             break;
         case TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_128_CBC_SHA:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_128_CBC_SHA\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_128_CBC_SHA\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384\n");
             break;
         case TLS_ECDH_RSA_WITH_AES_256_CBC_SHA:
-            psTraceInfo("TLS_ECDH_RSA_WITH_AES_256_CBC_SHA\n");
+            _psTrace("TLS_ECDH_RSA_WITH_AES_256_CBC_SHA\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384\n");
             break;
         case TLS_RSA_WITH_AES_128_GCM_SHA256:
-            psTraceInfo("TLS_RSA_WITH_AES_128_GCM_SHA256\n");
+            _psTrace("TLS_RSA_WITH_AES_128_GCM_SHA256\n");
             break;
         case TLS_RSA_WITH_AES_256_GCM_SHA384:
-            psTraceInfo("TLS_RSA_WITH_AES_256_GCM_SHA384\n");
+            _psTrace("TLS_RSA_WITH_AES_256_GCM_SHA384\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256\n");
             break;
         case TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384:
-            psTraceInfo("TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384\n");
+            _psTrace("TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384\n");
             break;
         case TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:
-            psTraceInfo("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n");
+            _psTrace("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n");
             break;
         case TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
-            psTraceInfo("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n");
+            _psTrace("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n");
             break;
         default:
             psTraceIntInfo("!!!! DEFINE ME %d !!!!\n", ssl->cipher->ident);
@@ -2297,6 +2432,49 @@ int32_t matrixSslHandshakeIsComplete(const ssl_t *ssl)
 {
     return (ssl->hsState == SSL_HS_DONE) ? PS_TRUE : PS_FALSE;
 }
+
+# ifdef ENABLE_SECURE_REHANDSHAKES
+/**
+   Return PS_TRUE when a secure renegotiation is in progress.
+   return PS_FALSE otherwise.
+
+   Return PS_TRUE when we have written a non-empty renegotiation_info
+   extension into our ClientHello or ServerHello. This can happen
+   only when empty renegotiation_infos or the
+   TLS_EMPTY_RENEGOTIATION_INFO_SCSV ciphersuites were exchanged
+   during the initial handshake, indicating that both sides support
+   secure renegotiation.
+
+   The situation where we, as the client, have parsed HelloRequest,
+   but have not sent our renegotiating ClientHello yet, should not
+   happen, because matrixSslDecode will call matrixSslEncodeClientHello
+   directly after parsing a HelloRequest. Thus, it should not be
+   possible that this function will be called between HelloRequest
+   parsing and ClientHello sending (in which case it would incorrectly
+   return PS_FALSE).
+
+#ifdef TODO
+   Check the reset logic for ssl->secureRenegotiationInProgress.
+   Currently we set it to PS_FALSE after sending or receiving the
+   final handshake message.
+#endif
+
+   @return PS_TRUE when a secure renegotiation is in progress.
+   @return PS_FALSE when no secure renegotiation is in progress.
+*/
+psBool_t matrixSslRehandshaking(const ssl_t *ssl)
+{
+    if (ssl->flags & SSL_FLAGS_ERROR)
+    {
+        /* Fatal alerts mean the handshake is over. */
+        return PS_FALSE;
+    }
+    else
+    {
+        return ssl->secureRenegotiationInProgress;
+    }
+}
+# endif /* ENABLE_SECURE_REHANDSHAKES */
 
 #if defined(USE_CLIENT_SIDE_SSL) || defined(USE_CLIENT_AUTH)
 /******************************************************************************/
@@ -3242,6 +3420,20 @@ int32 matrixServerSetKeysSNI(ssl_t *ssl, char *host, int32 hostLen)
  */
 void sslResetContext(ssl_t *ssl)
 {
+#ifdef USE_X509
+    int32_t bFlagsToKeep = 0;
+
+    /* Most bFlags are cleared below. However, some options we wish
+       to retain for the rehandshake. */
+    if (ssl->bFlags & BFLAG_KEEP_PEER_CERTS)
+    {
+        bFlagsToKeep |= BFLAG_KEEP_PEER_CERTS;
+    }
+    if (ssl->bFlags & BFLAG_KEEP_PEER_CERT_DER)
+    {
+        bFlagsToKeep |= BFLAG_KEEP_PEER_CERT_DER;
+    }
+#endif
 #ifdef USE_CLIENT_SIDE_SSL
     if (!(ssl->flags & SSL_FLAGS_SERVER))
     {
@@ -3288,6 +3480,10 @@ void sslResetContext(ssl_t *ssl)
     }
 #endif
     ssl->bFlags = 0;  /* Reset buffer control */
+
+#ifdef USE_X509
+    ssl->bFlags |= bFlagsToKeep;
+#endif
 }
 
 #ifdef USE_CERT_VALIDATE
@@ -3456,6 +3652,28 @@ int32 matrixValidateCertsExt(psPool_t *pool, psX509Cert_t *subjectCerts,
     }
 
     *foundIssuer = NULL;
+
+    if (opts->flags & VCERTS_FLAG_REVALIDATE_DATES)
+    {
+        sc = subjectCerts;
+        while(sc)
+        {
+            rc = validateDateRange(sc);
+            if (rc < 0)
+            {
+                psTraceCrypto("Could not parse certificate date\n");
+                return PS_PARSE_FAIL;
+            }
+            if (sc->authFailFlags & PS_CERT_AUTH_FAIL_DATE_FLAG)
+            {
+                psTraceCrypto("Certificate date validation failed\n");
+                sc->authStatus = PS_CERT_AUTH_FAIL_EXTENSION;
+                return PS_CERT_AUTH_FAIL_EXTENSION;
+            }
+            sc = sc->next;
+        }
+    }
+
 /*
     Case #1 is no issuing cert.  Going to want to check that the final
     subject cert presented is a SelfSigned CA
@@ -3556,6 +3774,23 @@ int32 matrixValidateCertsExt(psPool_t *pool, psX509Cert_t *subjectCerts,
                     psTraceInfo("Authentication failed due to X.509 pathLen\n");
                     rc = sc->authStatus = PS_CERT_AUTH_FAIL_PATH_LEN;
                     return rc;
+                }
+            }
+
+            if (opts->flags & VCERTS_FLAG_REVALIDATE_DATES)
+            {
+                /* Re-validate the date of the issuer cert also. */
+                rc = validateDateRange(ic);
+                if (rc < 0)
+                {
+                    psTraceCrypto("Could not parse certificate date\n");
+                    return PS_PARSE_FAIL;
+                }
+                if (ic->authFailFlags & PS_CERT_AUTH_FAIL_DATE_FLAG)
+                {
+                    psTraceCrypto("Issuer cert out of date\n");
+                    sc->authStatus = PS_CERT_AUTH_FAIL_EXTENSION;
+                    return PS_CERT_AUTH_FAIL_EXTENSION;
                 }
             }
 

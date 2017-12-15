@@ -80,6 +80,9 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
     ssl->reqMajVer = *c; c++;
     ssl->reqMinVer = *c; c++;
 
+    psTracePrintProtocolVersion("Parsed ClientHello.client_version",
+            ssl->reqMajVer, ssl->reqMinVer, 1);
+
 # ifndef USE_SSL_PROTOCOL_VERSIONS_OTHER_THAN_3
     /* RFC 5246 Suggests to accept all RSA minor versions, but only
        major version 0x03 (SSLv3, TLS 1.0, TLS 1.1, TLS 1.2, TLS 1.3 etc) */
@@ -145,8 +148,12 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
         if (compareMin >= TLS_MIN_VER)
         {
 #  ifndef DISABLE_TLS_1_0
-            ssl->minVer = TLS_MIN_VER;
-            ssl->flags |= SSL_FLAGS_TLS;
+            /* Allow TLS 1.0, unless specifically disabled. */
+            if (!ssl->disable_tls_1_0)
+            {
+                ssl->minVer = TLS_MIN_VER;
+                ssl->flags |= SSL_FLAGS_TLS;
+            }
 #  endif
 #  ifdef USE_TLS_1_1 /* TLS_1_1 */
             if (compareMin >= TLS_1_1_MIN_VER)
@@ -157,11 +164,19 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
 #   endif
             }
 #   ifdef USE_TLS_1_2
-            if (compareMin == TLS_1_2_MIN_VER)
+#    ifdef USE_TLS_1_2_TOGGLE
+            /* Prefer TLS 1.2, unless specifically disabled. */
+            if (!ssl->disable_tls_1_2)
             {
-                ssl->minVer = TLS_1_2_MIN_VER;
-                ssl->flags |= SSL_FLAGS_TLS_1_2 | SSL_FLAGS_TLS_1_1 | SSL_FLAGS_TLS;
+#    endif /* USE_TLS_1_2_TOGGLE */
+                if (compareMin == TLS_1_2_MIN_VER)
+                {
+                    ssl->minVer = TLS_1_2_MIN_VER;
+                    ssl->flags |= SSL_FLAGS_TLS_1_2 | SSL_FLAGS_TLS_1_1 | SSL_FLAGS_TLS;
+                }
+#    ifdef USE_TLS_1_2_TOGGLE
             }
+#    endif /* USE_TLS_1_2_TOGGLE */
 #    ifdef USE_DTLS
             if (ssl->flags & SSL_FLAGS_DTLS)
             {
@@ -206,11 +221,19 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
             }
             ssl->minVer = DTLS_MIN_VER;
 #   ifdef USE_TLS_1_2
-            if (compareMin == DTLS_1_2_MIN_VER)
+#    ifdef USE_TLS_1_2_TOGGLE
+            /* Prefer TLS 1.2, unless specifically disabled. */
+            if (!ssl->disable_tls_1_2)
             {
-                ssl->flags |= SSL_FLAGS_TLS_1_2 | SSL_FLAGS_TLS_1_1 | SSL_FLAGS_TLS;
-                ssl->minVer = DTLS_1_2_MIN_VER;
+#    endif /* USE_TLS_1_2_TOGGLE */
+                if (compareMin == DTLS_1_2_MIN_VER)
+                {
+                    ssl->flags |= SSL_FLAGS_TLS_1_2 | SSL_FLAGS_TLS_1_1 | SSL_FLAGS_TLS;
+                    ssl->minVer = DTLS_1_2_MIN_VER;
+                }
+#    ifdef USE_TLS_1_2_TOGGLE
             }
+#    endif /* USE_TLS_1_2_TOGGLE */
 #    ifdef USE_DTLS
             if (ssl->flags & SSL_FLAGS_DTLS)
             {
@@ -504,9 +527,88 @@ int32 parseClientHello(ssl_t *ssl, unsigned char **cp, unsigned char *end)
     }
     else
     {
+#if defined(USE_INTERCEPTOR) || defined(ALLOW_SSLV2_CLIENT_HELLO_PARSE)
+        /*      Parse a SSLv2 ClientHello message.  The same information is
+            conveyed but the order and format is different.
+            First get the cipher suite length, session id length and challenge
+            (client random) length - all two byte values, network byte order */
+        uint32_t challengeLen;
+        psTraceInfo("Parsing SSLv2 ClientHello\n");
+        if (end - c < 6)
+        {
+            ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
+            psTraceInfo("Can't parse hello message\n");
+            return MATRIXSSL_ERROR;
+        }
+        suiteLen = *c << 8; c++;
+        suiteLen += *c; c++;
+        if (suiteLen == 0 || suiteLen % 3 != 0)
+        {
+            ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
+            psTraceInfo("Can't parse hello message\n");
+            return MATRIXSSL_ERROR;
+        }
+        ssl->sessionIdLen = *c << 8; c++;
+        ssl->sessionIdLen += *c; c++;
+        /* A resumed session would use a SSLv3 ClientHello, not SSLv2. */
+        if (ssl->sessionIdLen != 0)
+        {
+            ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
+            psTraceInfo("Bad resumption request\n");
+            return MATRIXSSL_ERROR;
+        }
+        challengeLen = *c << 8; c++;
+        challengeLen += *c; c++;
+#ifdef ALLOW_SSLV2_CLIENT_HELLO_PARSE
+        if (challengeLen != 32) /* Allow only 32-bit, as per RFC 2246, E.2. */
+#else
+        if (challengeLen < 16 || challengeLen > 32)
+#endif
+        {
+            psTraceInfo("Bad challenge length\n");
+            ssl->err = SSL_ALERT_DECODE_ERROR;
+            return MATRIXSSL_ERROR;
+        }
+        /* Validate the three lengths that were just sent to us, don't
+            want any buffer overflows while parsing the remaining data */
+        if ((uint32) (end - c) != suiteLen + ssl->sessionIdLen +
+            challengeLen)
+        {
+            ssl->err = SSL_ALERT_DECODE_ERROR;
+            psTraceInfo("Malformed SSLv2 clientHello\n");
+            return MATRIXSSL_ERROR;
+        }
+        /* Parse the cipher suite list similar to the SSLv3 method, except
+            each suite is 3 bytes, instead of two bytes.  We define the suite
+            as an integer value, so either method works for lookup.
+            We don't support session resumption from V2 handshakes, so don't
+            need to worry about matching resumed cipher suite. */
+        suiteStart = c;
+        while (c < (suiteStart + suiteLen))
+        {
+            cipher = *c << 16; c++;
+            cipher += *c << 8; c++;
+            cipher += *c; c++;
+            /* NOT CHOOSING SUITE HERE ANY LONGER*/
+        }
+        /*      We don't allow session IDs for v2 ClientHellos */
+        if (ssl->sessionIdLen > 0)
+        {
+            ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
+            psTraceInfo("SSLv2 sessions not allowed\n");
+            return MATRIXSSL_ERROR;
+        }
+        /*      The client random (between 16 and 32 bytes) fills the least
+            significant bytes in the (always) 32 byte SSLv3 client random */
+        memset(ssl->sec.clientRandom, 0x0, SSL_HS_RANDOM_SIZE);
+        memcpy(ssl->sec.clientRandom + (SSL_HS_RANDOM_SIZE - challengeLen),
+            c, challengeLen);
+        c += challengeLen;
+# else
         ssl->err = SSL_ALERT_ILLEGAL_PARAMETER;
         psTraceInfo("SSLV2 CLIENT_HELLO not supported.\n");
         return MATRIXSSL_ERROR;
+# endif
     }
 
     /*  ClientHello should be the only one in the record. */
@@ -1365,6 +1467,8 @@ int32 parseCertificateVerify(ssl_t *ssl,
         }
         hashSigAlg = HASH_SIG_MASK(c[0], c[1]);
 
+        psTracePrintSigAlgs(hashSigAlg, "Peer CertificateVerify\n");
+
         /* The server-sent algorithms has to be one of the ones we sent in
            our ClientHello extension */
         if (!(ssl->hashSigAlg & hashSigAlg))
@@ -1593,6 +1697,9 @@ int32 parseServerHello(ssl_t *ssl, int32 hsLen, unsigned char **cp,
     }
     ssl->reqMajVer = *c; c++;
     ssl->reqMinVer = *c; c++;
+    psTracePrintProtocolVersion("Parsed ServerHello.server_version",
+            ssl->reqMajVer, ssl->reqMinVer, 1);
+
     if (ssl->reqMajVer != ssl->majVer)
     {
         ssl->err = SSL_ALERT_PROTOCOL_VERSION;
@@ -1668,9 +1775,18 @@ int32 parseServerHello(ssl_t *ssl, int32 hsLen, unsigned char **cp,
                 psTraceInfo("Server wants to talk TLS1.0 but it's disabled\n");
                 return MATRIXSSL_ERROR;
 #   else
-                ssl->reqMinVer = ssl->minVer;
-                ssl->minVer = TLS_MIN_VER;
-                ssl->flags &= ~SSL_FLAGS_TLS_1_1;
+                if (ssl->disable_tls_1_0)
+                {
+                    ssl->err = SSL_ALERT_PROTOCOL_VERSION;
+                    psTraceInfo("Server wants to talk TLS1.0 but it's disabled\n");
+                    return MATRIXSSL_ERROR;
+                }
+                else
+                {
+                    ssl->reqMinVer = ssl->minVer;
+                    ssl->minVer = TLS_MIN_VER;
+                    ssl->flags &= ~SSL_FLAGS_TLS_1_1;
+                }
 #   endif
             }
             else
@@ -1881,7 +1997,7 @@ PROTOCOL_DETERMINED:
         next handshake message or if it is extension data */
     if (c != end && ((int32) hsLen > (c - extData)))
     {
-        rc = parseServerHelloExtensions(ssl, hsLen, extData, &c, c - end);
+        rc = parseServerHelloExtensions(ssl, hsLen, extData, &c, end - c);
         if (rc < 0)
         {
             /* Alerts will already have been set inside */
@@ -2640,7 +2756,7 @@ int32 parseServerKeyExchange(ssl_t *ssl,
     return PS_SUCCESS;
 }
 
-# ifdef USE_OCSP
+# ifdef USE_OCSP_RESPONSE
 int32 parseCertificateStatus(ssl_t *ssl, int32 hsLen, unsigned char **cp,
     unsigned char *end)
 {
@@ -2727,7 +2843,7 @@ int32 parseCertificateStatus(ssl_t *ssl, int32 hsLen, unsigned char **cp,
     ssl->decState = SSL_HS_CERTIFICATE_STATUS;
     return PS_SUCCESS;
 }
-# endif /* USE_OCSP */
+# endif /* USE_OCSP_RESPONSE */
 
 /******************************************************************************/
 
@@ -2827,9 +2943,6 @@ int32 parseCertificateRequest(ssl_t *ssl, int32 hsLen, unsigned char **cp,
     uint32 certLen;
 #  ifdef USE_TLS_1_2
     uint32 sigAlgMatch;
-#   ifdef USE_CLIENT_AUTH
-    uint32 hashSigAlg;
-#   endif
 #  endif
     unsigned char *c;
 
@@ -2877,37 +2990,29 @@ int32 parseCertificateRequest(ssl_t *ssl, int32 hsLen, unsigned char **cp,
             return MATRIXSSL_ERROR;
         }
 #   ifdef USE_CLIENT_AUTH
-        /* Going to adhere to this supported_signature_algorithm to
-            be compliant with the spec.  This is now the first line
-            of testing about what certificates the server will accept.
-            If any of our certs do not use a signature algorithm
-            that the server supports we will flag that here which will
-            ultimately result in an empty CERTIFICATE message and
-            no CERTIFICATE_VERIFY message.  We're going to convert
-            MD5 to use SHA1 instead though.
-
-            Start by building a bitmap of supported algs */
-        hashSigAlg = 0;
+        /* Parse supported_signature_algorithms list. */
+        ssl->serverSigAlgs = 0;
         while (certChainLen >= 2)
         {
             i = HASH_SIG_MASK(c[0], c[1]);
-            /* Our own ssl->hashSigAlg is the list we support.  So choose
-                from those only */
-            if (ssl->hashSigAlg & i)
-            {
-                hashSigAlg |= i;
-            }
+            ssl->serverSigAlgs |= i;
             c += 2;
             certChainLen -= 2;
         }
-        /* RFC: The end-entity certificate provided by the client MUST
-            contain a key that is compatible with certificate_types.
-            If the key is a signature key, it MUST be usable with some
-            hash/signature algorithm pair in supported_signature_algorithms.
+        psTracePrintSigAlgs(ssl->serverSigAlgs, "Peer CertificateRequest");
 
-            So not only do we have to check the signature algorithm, we
-            have to check the pub key type as well. */
-        sigAlgMatch = 1; /* de-flag if we hit unsupported one */
+        /*
+          RFC 5246, section 7.4.4:
+          "Any certificates provided by the client MUST be signed using a
+          hash/signature algorithm pair found in
+          supported_signature_algorithms."
+
+          Check our certificate chain and set sigAlgMatch to 0 if we
+          find a cert whose sigAlg is not supported by the server.
+          sigAlgMatch==0 will result in us sending an empty Certificate
+          message later, as required by RFC 5246.
+        */
+        sigAlgMatch = 1;
         if (ssl->keys == NULL || ssl->keys->cert == NULL)
         {
             sigAlgMatch = 0;
@@ -2917,100 +3022,11 @@ int32 parseCertificateRequest(ssl_t *ssl, int32 hsLen, unsigned char **cp,
             cert = ssl->keys->cert;
             while (cert)
             {
-                if (cert->pubKeyAlgorithm == OID_RSA_KEY_ALG)
+                if (!peerSupportsSigAlg(cert->sigAlgorithm,
+                                ssl->serverSigAlgs))
                 {
-                    if (!(hashSigAlg & HASH_SIG_SHA1_RSA_MASK) &&
-#    ifdef USE_SHA384
-                        !(hashSigAlg & HASH_SIG_SHA384_RSA_MASK) &&
-#    endif
-                        !(hashSigAlg & HASH_SIG_SHA256_RSA_MASK) &&
-                        !(hashSigAlg & HASH_SIG_MD5_RSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
+                    sigAlgMatch = 0;
                 }
-                if (cert->sigAlgorithm == OID_SHA1_RSA_SIG ||
-                    cert->sigAlgorithm == OID_MD5_RSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA1_RSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-                if (cert->sigAlgorithm == OID_SHA256_RSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA256_RSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#    ifdef USE_SHA384
-                if (cert->sigAlgorithm == OID_SHA384_RSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA384_RSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#    endif
-#    ifdef USE_SHA512
-                if (cert->sigAlgorithm == OID_SHA512_RSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA512_RSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#    endif
-#    ifdef USE_ECC
-                if (cert->pubKeyAlgorithm == OID_ECDSA_KEY_ALG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA1_ECDSA_MASK) &&
-#     ifdef USE_SHA384
-                        !(hashSigAlg & HASH_SIG_SHA384_ECDSA_MASK) &&
-#     endif
-#     ifdef USE_SHA512
-                        !(hashSigAlg & HASH_SIG_SHA512_ECDSA_MASK) &&
-#     endif
-                        !(hashSigAlg & HASH_SIG_SHA256_ECDSA_MASK) &&
-                        !(hashSigAlg & HASH_SIG_SHA1_ECDSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-                if (cert->sigAlgorithm == OID_SHA1_ECDSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA1_ECDSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-                if (cert->sigAlgorithm == OID_SHA256_ECDSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA256_ECDSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#     ifdef USE_SHA384
-                if (cert->sigAlgorithm == OID_SHA384_ECDSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA384_ECDSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#     endif
-#     ifdef USE_SHA512
-                if (cert->sigAlgorithm == OID_SHA512_ECDSA_SIG)
-                {
-                    if (!(hashSigAlg & HASH_SIG_SHA512_ECDSA_MASK))
-                    {
-                        sigAlgMatch = 0;
-                    }
-                }
-#     endif
-#    endif      /* USE_ECC */
                 cert = cert->next;
             }
         }
@@ -3182,13 +3198,19 @@ int32 parseFinished(ssl_t *ssl, int32 hsLen,
         }
         else
         {
+#ifdef ENABLE_SECURE_REHANDSHAKES
+            /* We're the server and we are doing a resumed (i.e. abbreviated)
+               handshake. The Finished message we just parsed was the final
+               handshake message. */
+            ssl->secureRenegotiationInProgress = PS_FALSE;
+#endif
 #ifdef USE_SSL_INFORMATIONAL_TRACE
             /* Server side resumed completion */
             matrixSslPrintHSDetails(ssl);
 #endif
         }
     }
-    else
+    else /* We are the client. */
     {
 #ifdef USE_STATELESS_SESSION_TICKETS
         /* Now that FINISHED is verified, we can mark the ticket as
@@ -3204,6 +3226,12 @@ int32 parseFinished(ssl_t *ssl, int32 hsLen,
         }
         else
         {
+#ifdef ENABLE_SECURE_REHANDSHAKES
+            /* We are the client and were doing a full handshake.
+               The Finished message we just parsed was the final
+               handshake message. */
+            ssl->secureRenegotiationInProgress = PS_FALSE;
+#endif
 #ifdef USE_SSL_INFORMATIONAL_TRACE
             /* Client side standard completion */
             matrixSslPrintHSDetails(ssl);
@@ -3319,7 +3347,7 @@ int32 parseCertificate(ssl_t *ssl, unsigned char **cp, unsigned char *end)
     certChainLen = *c << 16; c++;
     certChainLen |= *c << 8; c++;
     certChainLen |= *c; c++;
-    if (certChainLen == 0)
+    if (certChainLen < 3)
     {
 #  ifdef SERVER_WILL_ACCEPT_EMPTY_CLIENT_CERT_MSG
         if (ssl->flags & SSL_FLAGS_SERVER)
@@ -3665,7 +3693,7 @@ STRAIGHT_TO_USER_CALLBACK:
     }
     else if (rc < 0)
     {
-        psTraceIntInfo("User certificate callback had an internal error\n", rc);
+        psTraceIntInfo("User certificate callback had an internal error (rc=%d)\n", rc);
         ssl->err = SSL_ALERT_INTERNAL_ERROR;
         return MATRIXSSL_ERROR;
     }
@@ -3695,7 +3723,7 @@ STRAIGHT_TO_USER_CALLBACK:
             ssl->hsState = SSL_HS_SERVER_KEY_EXCHANGE;
         }
 #  endif /* USE_DHE_CIPHER_SUITE */
-#  ifdef USE_OCSP
+#  ifdef USE_OCSP_RESPONSE
         /* State management for OCSP use.  Testing if we received a
             status_request from the server to set next expected state */
         if (ssl->extFlags.status_request || ssl->extFlags.status_request_v2)
@@ -3708,7 +3736,7 @@ STRAIGHT_TO_USER_CALLBACK:
                 sent a "status_request" extension in the server hello message */
             ssl->hsState = SSL_HS_CERTIFICATE_STATUS;
         }
-#  endif
+#  endif /* USE_OCSP_RESPONSE */
     }
     *cp = c;
     ssl->decState = SSL_HS_CERTIFICATE;

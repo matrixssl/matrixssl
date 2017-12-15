@@ -129,7 +129,7 @@ PSPUBLIC int32  matrixSslLoadPkcs12(sslKeys_t *keys,
                                     const unsigned char *importPass, int32 ipasslen,
                                     const unsigned char *macPass, int32 mpasslen,
                                     int32 flags);
-# if defined(USE_OCSP) && defined(USE_SERVER_SIDE_SSL)
+# if defined(USE_OCSP_RESPONSE) && defined(USE_SERVER_SIDE_SSL)
 PSPUBLIC int32_t matrixSslLoadOCSPResponse(sslKeys_t *keys,
                                            const unsigned char *OCSPResponseBuf,
                                            psSize_t OCSPResponseBufLen);
@@ -161,6 +161,9 @@ PSPUBLIC int32  matrixSslProcessedData(ssl_t *ssl,
                                        unsigned char **ptbuf, uint32 *ptlen);
 PSPUBLIC int32  matrixSslEncodeClosureAlert(ssl_t *ssl);
 PSPUBLIC void   matrixSslDeleteSession(ssl_t *ssl);
+
+PSPUBLIC psBool_t matrixSslTlsVersionRangeSupported(int32_t low,
+        int32_t high);
 
 /******************************************************************************/
 /*
@@ -197,6 +200,8 @@ PSPUBLIC int32  matrixSslLoadHelloExtension(tlsExtension_t *extension,
 PSPUBLIC void   matrixSslDeleteHelloExtension(tlsExtension_t *extension);
 PSPUBLIC int32  matrixSslCreateSNIext(psPool_t *pool, unsigned char *host,
                                       int32 hostLen, unsigned char **extOut, int32 *extLen);
+PSPUBLIC int32_t matrixSslSessOptsSetClientTlsVersionRange(sslSessOpts_t *options,
+        int32_t low, int32_t high);
 #  ifdef USE_ALPN
 PSPUBLIC int32 matrixSslCreateALPNext(psPool_t *pool, int32 protoCount,
                                       unsigned char *proto[], int32 protoLen[],
@@ -316,6 +321,33 @@ PSPUBLIC int32_t matrixSslGetPubKeySize(ssl_t *ssl);
  */
 PSPUBLIC int32_t matrixSslSetCvSignature(ssl_t *ssl, const unsigned char *sig, const size_t sig_len);
 #  endif /* USE_EXT_CERTIFICATE_VERIFY_SIGNING */
+
+#ifdef USE_EXT_CLIENT_CERT_KEY_LOADING
+/*
+  Note: these flags, stored in ssl->extClientCertKeyStateFlags,
+  define the state of the "external client cert loading
+  feature". These are mutually exclusive, except
+  for GOT_CERTIFICATE_REQUEST and GOT_SERVER_HELLO_DONE.
+  This is because we try to prepare for the case where
+  these HS messages are decoded in different calls to
+  matrixSslReceivedData.
+*/
+#define EXT_CLIENT_CERT_KEY_STATE_INIT 0
+#define EXT_CLIENT_CERT_KEY_STATE_GOT_CERTIFICATE_REQUEST 1
+#define EXT_CLIENT_CERT_KEY_STATE_GOT_SERVER_HELLO_DONE 2
+#define EXT_CLIENT_CERT_KEY_STATE_WAIT_FOR_CERT_KEY_UPDATE 4
+#define EXT_CLIENT_CERT_KEY_STATE_GOT_CERT_KEY_UPDATE 8
+
+/** Returns PS_TRUE when the client program should load a new client cert. */
+PSPUBLIC int32_t matrixSslNeedClientCert(ssl_t *ssl);
+
+/** Returns PS_TRUE when the client program should load a new priv key. */
+PSPUBLIC int32_t matrixSslNeedClientPrivKey(ssl_t *ssl);
+
+/** Client program should call these after updating ssl->keys. */
+PSPUBLIC int32_t matrixSslClientCertUpdated(ssl_t *ssl);
+PSPUBLIC int32_t matrixSslClientPrivKeyUpdated(ssl_t *ssl);
+#endif /* USE_EXT_CLIENT_CERT_KEY_LOADING */
 # endif  /* USE_CLIENT_SIDE_SSL */
 /******************************************************************************/
 
@@ -331,6 +363,8 @@ PSPUBLIC int32_t matrixSslNewServer(ssl_t **ssl,
                                     sslSessOpts_t *options);
 PSPUBLIC int32 matrixSslSetCipherSuiteEnabledStatus(ssl_t *ssl, psCipher16_t cipherId,
                                                     uint32 status);
+PSPUBLIC int32_t matrixSslSessOptsSetServerTlsVersionRange(sslSessOpts_t *options,
+        int32_t low, int32_t high);
 PSPUBLIC void matrixSslRegisterSNICallback(ssl_t *ssl,
                                            void (*sni_cb)(void *ssl, char *hostname, int32 hostnameLen,
                                                sslKeys_t **newKeys));
