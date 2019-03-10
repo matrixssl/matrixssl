@@ -1,0 +1,6 @@
+This directory implements X25519 key agreement primitives for SafeZone CL/SL. The implementation consists of software from
+libsodium 1.0.16.
+
+The software has been modified to use psSodium and SLCrypto prefixes
+for functions to ensure it does not use the same function names than
+libsodium (and therefore potentially conflict with libsodium).

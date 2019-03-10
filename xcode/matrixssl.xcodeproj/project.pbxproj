@@ -21,6 +21,7 @@
 		DD1144541B8D2F7A00721CD4 /* matrixssllib.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = matrixssllib.h; path = ../matrixssl/matrixssllib.h; sourceTree = "<group>"; };
 		DD1144551B8D2F7A00721CD4 /* prf.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = prf.c; path = ../matrixssl/prf.c; sourceTree = "<group>"; };
 		DD1144561B8D2F7A00721CD4 /* psk.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = psk.c; path = ../matrixssl/psk.c; sourceTree = "<group>"; };
+		DD1144571B8D2F7A00721CD4 /* resumption.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = resumption.c; path = ../matrixssl/resumption.c; sourceTree = "<group>"; };
 		DD1144581B8D2F7A00721CD4 /* sslDecode.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sslDecode.c; path = ../matrixssl/sslDecode.c; sourceTree = "<group>"; };
 		DD1144591B8D2F7A00721CD4 /* sslEncode.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sslEncode.c; path = ../matrixssl/sslEncode.c; sourceTree = "<group>"; };
 		DD11445A1B8D2F7A00721CD4 /* sslv3.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sslv3.c; path = ../matrixssl/sslv3.c; sourceTree = "<group>"; };
@@ -32,9 +33,9 @@
 		DD11443F1B8D2EE600721CD4 = {
 			isa = PBXGroup;
 			children = (
+				877FACC11BF5470600BF8B70 /* matrixsslCheck.h */,
 				DD11444F1B8D2F7A00721CD4 /* Makefile */,
 				DD1144531B8D2F7A00721CD4 /* matrixsslConfig.h */,
-				877FACC11BF5470600BF8B70 /* matrixsslCheck.h */,
 				DD1144521B8D2F7A00721CD4 /* matrixsslApi.h */,
 				DD1144541B8D2F7A00721CD4 /* matrixssllib.h */,
 				DD11444A1B8D2F7A00721CD4 /* cipherSuite.c */,
@@ -46,6 +47,7 @@
 				DD1144511B8D2F7A00721CD4 /* matrixsslApi.c */,
 				DD1144551B8D2F7A00721CD4 /* prf.c */,
 				DD1144561B8D2F7A00721CD4 /* psk.c */,
+				DD1144571B8D2F7A00721CD4 /* resumption.c */,
 				DD1144581B8D2F7A00721CD4 /* sslDecode.c */,
 				DD1144591B8D2F7A00721CD4 /* sslEncode.c */,
 				DD11445A1B8D2F7A00721CD4 /* sslv3.c */,
@@ -138,7 +140,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -174,7 +176,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 			};

@@ -41,6 +41,8 @@
 #                         non-FIPS Mode of operation.
 # make all-combined       Compile MatrixSSL FIPS Edition allowing run-time
 #                         selection of FIPS or non-FIPS mode.
+# make all-openssl-compat A configuration specially tailored for use
+#                         with the OpenSSL compatibility layer.
 # make all-combined-default-nonfips  The same than make all combined, but
 #                         non-FIPS mode is the default.
 #
@@ -51,12 +53,21 @@ util: all-utils
 
 CONFIG_EXTRA_DEPENDENCIES=
 
+CORE_CONFIG_DIR=core/config
+CORE_CONFIG_FILE=$(CORE_CONFIG_DIR)/coreConfig.h
+
+# ! -e $(CORE_CONFIG_FILE) ] || ! cmp -s $(1)/coreConfig.h $(CORE_CONFIG_FILE)
+define apply_core_config
+@if [ ! -e $(CORE_CONFIG_FILE) ] || ! cmp -s $(1)/coreConfig.h $(CORE_CONFIG_FILE); then cp $(1)/coreConfig.h $(CORE_CONFIG_FILE); echo cp $(1)/coreConfig.h $(CORE_CONFIG_FILE); echo WARNING: Applied new configuration also to core. You may need to recompile the core.;fi
+endef
+
+# ! -e $(CORE_CONFIG_FILE) ] || ! cmp -s $(1)/coreConfig.h $(CORE_CONFIG_FILE)
+define apply_core_config_non_exist
+@if [ ! -e $(CORE_CONFIG_FILE) ]; then cp $(1)/coreConfig.h $(CORE_CONFIG_FILE); echo cp $(1)/coreConfig.h $(CORE_CONFIG_FILE); echo WARNING: Applied new configuration also to core. You may need to recompile the core.;fi
+endef
+
 # Use default config if no config is being used.
 check-config: $(CONFIG_EXTRA_DEPENDENCIES)
-	@if [ ! -e core/coreConfig.h ];then \
-		cp configs/default/coreConfig.h core/coreConfig.h;\
-		echo NOTE: Using default configuration from configs/default/coreConfig.h.;\
-	fi
 	@if [ ! -e crypto/cryptoConfig.h ];then \
 		cp configs/default/cryptoConfig.h crypto/cryptoConfig.h;\
 		echo NOTE: Using default configuration from configs/default/cryptoConfig.h.;\
@@ -65,6 +76,7 @@ check-config: $(CONFIG_EXTRA_DEPENDENCIES)
 		cp configs/default/matrixsslConfig.h matrixssl/matrixsslConfig.h;\
 		echo NOTE: Using default configuration from configs/default/matrixsslConfig.h.;\
 	fi
+	$(call apply_core_config_non_exist,configs/default)
 
 clean-config:
 	rm -f core/coreConfig.h crypto/cryptoConfig.h matrixssl/matrixsslConfig.h
@@ -72,26 +84,26 @@ clean-config:
 # Apply any of pre-existing configurations from configs directory
 %-config: configs/% $(CONFIG_EXTRA_DEPENDENCIES)
 	@echo Using $</*Config.h.
-	cp $</coreConfig.h core/coreConfig.h
 	cp $</cryptoConfig.h crypto/cryptoConfig.h
 	cp $</matrixsslConfig.h matrixssl/matrixsslConfig.h
+	$(call apply_core_config,$<)
 
 # Set non-fips configuration (standard configuration for MatrixSSL commercial)
 # and build all libraries
 all-nonfips:
-	make nonfips-config
+	$(MAKE) nonfips-config
 	$(MAKE) --directory=core
 	$(MAKE) --directory=crypto
 	$(MAKE) --directory=matrixssl
-	if [ -e crypto/cms ]; then $(MAKE) --directory=crypto/cms;fi
-	if [ -e matrixssh ]; then if make --directory=crypto parse-config | grep -q '#define USE_AES_CTR' && make --directory=crypto parse-config | grep -q '#define USE_DH'; then $(MAKE) --directory=matrixssh;fi;fi
+	if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms;fi
+	if [ -e matrixssh ]; then if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_AES_CTR' && $(MAKE) --directory=crypto parse-config | grep -q '#define USE_DH'; then $(MAKE) --directory=matrixssh;fi;fi
 
 # Set non-fips configuration and build tests
 test-nonfips:
-	make nonfips-config
+	$(MAKE) nonfips-config
 	$(MAKE) --directory=crypto/test
 	$(MAKE) --directory=matrixssl/test
-	if [ -e crypto/cms ]; then $(MAKE) --directory=crypto/cms/test;fi
+	if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms;fi
 
 # Find out if MatrixSSL FIPS Edition is present
 ifeq (,$(wildcard configs/fips*/matrixsslConfig.h))
@@ -102,89 +114,104 @@ CONFIG_FIPS_AVAILABLE=1
 CONFIG_NONFIPS_PREFIX=nonfips-
 endif
 
+ifneq (,$(findstring -DUSE_EXT_EXAMPLE_MODULE, $(CFLAGS)))
+D_USE_EXT_EXAMPLE_MODULE=1
+else
+D_USE_EXT_EXAMPLE_MODULE=0
+endif
+
 # These are some examples of configuration selection targets for MatrixSSL.
 # You can instead apply any of any of configurations in configs directory with
 # make CONFIGNAME-config and then proceed with make all / make libs etc.
 
 # Omit ECC (Only support RSA and DH, using MatrixSSL stock crypto)
 all-noecc:
-	make $(CONFIG_NONFIPS_PREFIX)noecc-config
-	make all
+	$(MAKE) $(CONFIG_NONFIPS_PREFIX)noecc-config
+	$(MAKE) all
 
 # Only support RSA (MatrixSSL stock crypto)
 all-rsaonly:
-	make $(CONFIG_NONFIPS_PREFIX)rsaonly-config
-	make all
+	$(MAKE) $(CONFIG_NONFIPS_PREFIX)rsaonly-config
+	$(MAKE) all
 
 # Only support RSA (MatrixSSL stock crypto)
 all-psk:
-	make $(CONFIG_NONFIPS_PREFIX)psk-config
-	make all
+	$(MAKE) $(CONFIG_NONFIPS_PREFIX)psk-config
+	$(MAKE) all
 
 # A commonly recommended set of options for MatrixSSL using stock crypto,
 # for the most common TLS use cases. This configuration disables
 # DH and 3DES options in rare use (which is typically considered good for
 # security).
 all-tls:
-	make $(CONFIG_NONFIPS_PREFIX)tls-config
-	make all
+	$(MAKE) $(CONFIG_NONFIPS_PREFIX)tls-config
+	$(MAKE) all
 
 # These configurations are specific to FIPS version of MatrixSSL.
 # The targets are only available on MatrixSSL FIPS Edition.
 
 # Set fips only configuration and build all libraries
 all-fips:
-	make fipsonly-config
-	make all
+	$(MAKE) fipsonly-config
+	$(MAKE) all
 
 # Set nonfips only configuration and build all libraries
 all-cl-nonfips:
-	make cl-nonfips-config
-	make all
+	$(MAKE) cl-nonfips-config
+	$(MAKE) all
 
 # Set combined fips/nonfips configuration and build all libraries
 all-combined:
-	make combined-config
-	make all
+	$(MAKE) combined-config
+	$(MAKE) all
 
 # Set combined-default-nonfips configuration and build all libraries
 all-combined-default-nonfips:
-	make combined-default-nonfips-config
-	make all
+	$(MAKE) combined-default-nonfips-config
+	$(MAKE) all
 
 # Set combined fips/nonfips configuration with maximum algorithm
 # support, and build all libraries
 all-combined-fulltest:
-	make combined-fulltest-config
-	make all
+	$(MAKE) combined-fulltest-config
+	$(MAKE) all
+
+all-openssl-compat:
+	$(MAKE) openssl-compat-config
+	$(MAKE) all
 
 ifneq (,$(findstring clean,$(MAKECMDGOALS)))
   SUBARGS:=clean
 endif
 # Set fips only configuration and build tests
 test-fips:
-	make fipsonly-config
-	make test
+	$(MAKE) fipsonly-config
+	$(MAKE) test
 
 
 # Set combined fips/nonfips only configuration and build tests
 test-combined:
-	make combined-config
-	make test
+	$(MAKE) combined-config
+	$(MAKE) test
 
 # Set combined nonfips/fips configuration and build tests
 test-combined-default-nonfips:
-	make combined-default-nonfips-config
-	make test
+	$(MAKE) combined-default-nonfips-config
+	$(MAKE) test
 
 .PHONY: all libs tests apps clean
+
+ext:
+	if [ "$(D_USE_EXT_EXAMPLE_MODULE)" = "1" ]; then $(MAKE) --directory=ext/psext-example; \
+	elif $(MAKE) --directory=matrixssl parse-config | grep -q '#define USE_EXT_EXAMPLE_MODULE'; then $(MAKE) --directory=ext/psext-example; fi \
 
 # Add dependencies
 all: libs tests apps
 all: check-config
 libs: check-config
-tests: check-config libs
-apps: check-config libs
+tests: check-config libs ext
+apps: check-config libs ext
+ext: check-config libs
 all-utils: check-config
 
 # Alias
@@ -192,15 +219,15 @@ test: tests
 
 libs:
 	$(MAKE) --directory=core
-	if make --directory=crypto parse-config | grep -q -e '#define USE_FIPS_CRYPTO' -e '#define USE_CL_CRYPTO'; then $(MAKE) --directory=crypto-cl; else $(MAKE) --directory=crypto; fi
-	if make --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms;fi
+	if $(MAKE) --directory=crypto parse-config | grep -q -e '#define USE_FIPS_CRYPTO' -e '#define USE_CL_CRYPTO'; then $(MAKE) --directory=crypto-cl; else $(MAKE) --directory=crypto; fi
+	if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms;fi
 	$(MAKE) --directory=matrixssl
-	if [ -e matrixssh ]; then if make --directory=crypto parse-config | grep -q '#define USE_AES_CTR' && make --directory=crypto parse-config | grep -q '#define USE_DH'; then $(MAKE) --directory=matrixssh;fi;fi
+	if [ -e matrixssh ]; then if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_AES_CTR' && $(MAKE) --directory=crypto parse-config | grep -q '#define USE_DH'; then $(MAKE) --directory=matrixssh;fi;fi
 
 tests:
 	$(MAKE) --directory=crypto/test
 	$(MAKE) --directory=matrixssl/test
-	if make --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms/test;fi
+	if $(MAKE) --directory=crypto parse-config | grep -q '#define USE_CMS'; then $(MAKE) --directory=crypto/cms/test;fi
 
 # Note apps is also a direct subdirectory
 #ifdef MATRIXSSL_COMMERCIAL
@@ -214,8 +241,11 @@ apps_crypto:
 
 #endif /* MATRIXSSL_COMMERCIAL */
 
-apps: $(APPS_ADDITIONAL)
-	if make --directory=matrixssl parse-config | grep -q '#define USE_ZLIB_COMPRESSION'; then EXTRA_LDFLAGS=-lz $(MAKE) --directory=apps/ssl; else $(MAKE) --directory=apps/ssl; fi;
+apps_common:
+	$(MAKE) --directory=apps/common
+
+apps: apps_common $(APPS_ADDITIONAL)
+	$(MAKE) --directory=apps/ssl
 	$(MAKE) --directory=apps/dtls
 
 clean:
@@ -227,11 +257,16 @@ clean:
 	$(MAKE) clean --directory=matrixssl/test
 	if [ -e crypto-cl ]; then $(MAKE) clean --directory=crypto-cl;fi
 	if [ -e crypto/cms ]; then $(MAKE) clean --directory=crypto/cms;fi
+	$(MAKE) clean --directory=apps/common
 	$(MAKE) clean --directory=apps/ssl
 	$(MAKE) clean --directory=apps/dtls
 	if [ -e apps/crypto ];then $(MAKE) clean --directory=apps/crypto;fi
 	if [ -e crypto/cms/test ]; then $(MAKE) clean --directory=crypto/cms/test;fi
 	if [ -e matrixssh ]; then $(MAKE) clean --directory=matrixssh; fi
+	if [ -e ext/psext-example ]; then $(MAKE) clean --directory=ext/psext-example;fi
 
 clobber: clean clean-config
 
+# Always use common.mk for possible additional rules and processing.
+COMMON_MK_NO_TARGETS:=1
+include common.mk

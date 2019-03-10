@@ -14,6 +14,7 @@
 		DD1144231B8D2BCB00721CD4 /* Makefile */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.make; name = Makefile; path = ../core/Makefile; sourceTree = "<group>"; };
 		DD1144241B8D2BCB00721CD4 /* memset_s.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = memset_s.c; path = ../core/memset_s.c; sourceTree = "<group>"; };
 		DD1144251B8D2BCB00721CD4 /* osdep.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = osdep.h; path = ../core/osdep.h; sourceTree = "<group>"; };
+		DD1144271B8D2BCB00721CD4 /* psmalloc.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = psmalloc.c; path = ../core/psmalloc.c; sourceTree = "<group>"; };
 		DD1144281B8D2BCB00721CD4 /* psmalloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = psmalloc.h; path = ../core/psmalloc.h; sourceTree = "<group>"; };
 		DD7AB3B51B979F6F0047DE55 /* osdep.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = osdep.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -38,6 +39,7 @@
 				DD1144241B8D2BCB00721CD4 /* memset_s.c */,
 				DD1144221B8D2BCB00721CD4 /* list.h */,
 				DD1144281B8D2BCB00721CD4 /* psmalloc.h */,
+				DD1144271B8D2BCB00721CD4 /* psmalloc.c */,
 				DD1144251B8D2BCB00721CD4 /* osdep.h */,
 				DD7AB3B41B979F6F0047DE55 /* POSIX */,
 			);
@@ -127,7 +129,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -163,7 +165,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = "";
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 			};

@@ -1,0 +1,7 @@
+This directory implements chacha20-poly1305 autenticated encryption
+function for MatrixSSL. The implementation consists of software from
+libsodium 1.0.12.
+
+The software has been modified to use psSodium and psCrypto prefixes
+for functions to ensure it does not use the same function names than
+libsodium (and therefore potentially conflict with libsodium).

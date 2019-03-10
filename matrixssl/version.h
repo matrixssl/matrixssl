@@ -1,5 +1,5 @@
 /*
-    Copyright 2016 INSIDE Secure Corporation 
+    Copyright 2018 INSIDE Secure Corporation 
     This file is auto-generated
 */ 
 #ifndef _h_MATRIXSSL_VERSION
@@ -8,10 +8,10 @@
 extern "C" {
 #endif
 
-#define MATRIXSSL_VERSION      "3.8.7-OPEN"
-#define MATRIXSSL_VERSION_MAJOR 3
-#define MATRIXSSL_VERSION_MINOR 8
-#define MATRIXSSL_VERSION_PATCH 7
+#define MATRIXSSL_VERSION      "4.0.1-OPEN"
+#define MATRIXSSL_VERSION_MAJOR 4
+#define MATRIXSSL_VERSION_MINOR 0
+#define MATRIXSSL_VERSION_PATCH 1
 #define MATRIXSSL_VERSION_CODE "OPEN"
 
 #ifdef __cplusplus

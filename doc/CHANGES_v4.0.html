@@ -1,0 +1,143 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<h1 id="matrixssl-4.x-changelog">MatrixSSL 4.x changelog</h1>
+<h2 id="changes-between-4.0.0-and-4.0.1-november-2018">Changes between 4.0.0 and 4.0.1 [November 2018]</h2>
+<p>This version improves the security of RSA PKCS #1.5 signature verification and adds better support for run-time security configuration.</p>
+<ul>
+<li><p>TLS:</p>
+<ul>
+<li><p>Added a run-time security callback feature (matrixSslRegisterSecurityCallback). The security callback can allow or deny a cryptographic operation based on the operation type and the key size. Currently only authentication and key exchange operations are supported. The default security callback supports pre-defined security profiles (matrixSslSetSecurityProfile).</p></li>
+<li><p>Added an example security profile: WPA3 1.0 Enterprise 192-bit mode restrictions for EAP-TLS.</p></li>
+<li><p>Added support for the TLS_DHE_RSA_WITH_AES_256_GCM_SHA384 ciphersuite.</p></li>
+<li><p>Changed the way how protocol version IDs are stored internally and rewrote most of the version negotiation code. This is almost entirely an internal code refactoring. To the API user, the only visible change is that version selection APIs now take in an argument of type psProtocolVersion_t instead of int32_t. See the API reference guide for details.</p></li>
+<li><p>Refactored ServerKeyExchange signature generation and verification code.</p></li>
+</ul></li>
+<li><p>Crypto:</p>
+<ul>
+<li><p>Changed from a parsing-based to a comparison-based approach in DigestInfo validation when verifying RSA PKCS #1.5 signatures. There are no known practical attacks against the old code, but the comparison-based approach is theoretically more sound. Thanks to Sze Yiu Chau from Purdue University for pointing this out.</p></li>
+<li><p>(MatrixSSL FIPS Edition only:) Fix DH key exchange when using DH parameter files containing optional privateValueLength argument.</p></li>
+<li><p>psX509AuthenticateCert now uses the common psVerifySig API for signature verification. Previously, CRLs and certificates used different code paths for signature verification.</p></li>
+</ul></li>
+</ul>
+<h2 id="changes-between-3.9.5-and-4.0.0-august-2018">Changes between 3.9.5 and 4.0.0 [August 2018]</h2>
+<p>This version adds support for RFC 8446 (TLS 1.3), new APIs for configuring session options as well as fixes to security vulnerabilities.</p>
+<ul>
+<li><p>TLS:</p>
+<ul>
+<li>Added support for TLS 1.3 (RFC 8446 version) as well as draft versions 23, 24, 26 and 28.</li>
+<li>Supported TLS 1.3 handshake types:
+<ul>
+<li>Basic handshake with server authentication</li>
+<li>Incorrect DHE key share (HelloRetryRequest) handshake</li>
+<li>PSK handshake</li>
+<li>Resumed handshake</li>
+<li>0RTT data handshake</li>
+</ul></li>
+<li>Supported TLS 1.3 ciphersuites:
+<ul>
+<li>TLS_AES_128_GCM_SHA256</li>
+<li>TLS_AES_256_GCM_SHA384</li>
+<li>TLS_CHACHA20_POLY1305_SHA256</li>
+</ul></li>
+<li>Supported key exchange modes in TLS 1.3:
+<ul>
+<li>DHE with the ffdhe2048, ffdhe3072 and ffdhe4096 groups</li>
+<li>ECDHE with the P-256, P-384, P-521 and X25519 groups</li>
+<li>PSK with (EC)DHE</li>
+<li>PSK only</li>
+</ul></li>
+<li>Supported signature algorithms in TLS 1.3:
+<ul>
+<li>ECDSA with P-256, P-384 and P-521</li>
+<li>Ed25519</li>
+<li>RSASSA-PSS</li>
+<li>RSA PKCS #1.5 (certificates only)</li>
+</ul></li>
+<li>Supported PKI features in TLS 1.3:
+<ul>
+<li>X.509 certificates</li>
+<li>CRLs</li>
+<li>OCSP stapling</li>
+</ul></li>
+<li>Supported TLS 1.3 extensions:
+<ul>
+<li>supported_versions</li>
+<li>supported_groups</li>
+<li>key_share</li>
+<li>signature_algorithms</li>
+<li>signature_algorithms_cert</li>
+<li>server_name</li>
+<li>certificate_authorities</li>
+<li>cookie</li>
+<li>status_request</li>
+<li>max_fragment_length</li>
+</ul></li>
+<li>Support for TLS 1.3 record padding</li>
+<li>Fixed several client-side crashes and undefined behaviours on maliciously crafted server messages. The bugs were found using TLS-Attacker. Thanks to Robert Merget from the Ruhr-University Bochum for reporting these.</li>
+<li>Added the matrixSslSessOptsSetServerTlsVersions and matrixSslSessOptsSetClientTlsVersions APIs for selecting the supported protocol versions at run-time. Please consult the API reference for details.</li>
+<li>Added a couple of TLS 1.3 specific APIs:
+<ul>
+<li>matrixSslSessOptsSetSigAlgsCert</li>
+<li>matrixSslSessOptsSetKeyExGroups</li>
+<li>matrixSslGetEarlyDataStatus</li>
+<li>matrixSslGetMaxEarlyData</li>
+<li>matrixSslLoadTls13Psks</li>
+<li>matrixSslSetTls13BlockPadding</li>
+</ul></li>
+<li>Added an API for selecting supported signature algorithms: (usable in both TLS 1.3 and TLS 1.2):
+<ul>
+<li>matrixSslSessOptsSetSigAlgs</li>
+</ul></li>
+<li>Added new example configurations. The recommended configuration for using TLS 1.3 and below is tls13 (Commercial Edition) or nonfips-tls13 (FIPS Edition)</li>
+<li>Updated and improved the Developer Guide and the MatrixSSL APIs reference document.</li>
+<li>Improved the example client and server programs and fixed bugs.</li>
+<li>Resend user extensions (e.g. SNI) when responding to HelloRequest</li>
+<li>sslTest now allows specifying the ciphersuites and protocol versions to test via environment variables.</li>
+<li>Improvements to identity management, including support for loading multiple identities (key and cert pairs) during initialization and postponed key and cert loading. See the MatrixSSL Developer Guide for details.</li>
+<li>Refactored key loading and protocol version negotiation.</li>
+<li>Fixed server-side signature algorithm selection when the server certificate is signed with a different algorithm (RSA or ECDSA) than the public key contain therein.</li>
+<li>Much improved TLS-level debug prints and logging (tlsTrace.c). USE_SSL_HANDSHAKE_MSG_TRACE now consistently enables messages such as &quot;parsing/creating handshake message X or extension Y&quot;. USE_SSL_INFORMATIONAL_TRACE now prints out more details on the contents of handshake messages and extensions.</li>
+<li>Refactored public header files.</li>
+</ul></li>
+<li><p>Crypto:</p>
+<ul>
+<li>NCC Group'ss Keegan Ryan has found a side-channel attack affecting multiple cryptographic libraries. The &quot;ROHNP&quot; Key Extraction Side Channel (CVE-2018-0495) has been fixed.</li>
+<li>Added support for Ed25519 signatures in TLS 1.3</li>
+<li>Added support for ECDHE with X25519 in TLS 1.3</li>
+<li>Added algorithm-independent signature and verification APIs: psSign and psVerify.</li>
+<li>Source file reorganization. New new naming scheme aims for better consistency, clarity and makes it easier to ifdef out unneeded features.</li>
+<li>Added psEccWritePrivKeyMem and psEccWritePrivKeyFile the public crypto API</li>
+</ul></li>
+<li><p>X.509 and PKCS standards</p>
+<ul>
+<li>Fixed processing of indefinite expiration date (31.12.9999).</li>
+<li>Basic Constraints no longer unconditionally added when generating CSR data</li>
+<li>Session option for requesting subrange of allowed tls versions.</li>
+<li>Specify certificate validity dates when generating certificate.</li>
+<li>Support for reading PKCS #12 and CA certificates from memory (der encoded).</li>
+<li>Support for key usage encipher only and decipher only bits in generating certificate generation.</li>
+<li>Option for MD2/MD4/MD5 signatures compatibility on certificates.</li>
+<li>X.509 certificates allow NIL character at the end of GeneralName field. This is for compatibility with various other products.</li>
+<li>It is now possible to compile X.509 certificate and CSR generation code only ECC or RSA support for smaller footprint.</li>
+<li>Added Ed25519 specific functions such as psEd25519ParsePrivKey, psEd25519Sign, etc.</li>
+</ul></li>
+<li><p>Other changes</p>
+<ul>
+<li>Added export.mk, which generates example binary packaging of a previously compiled MatrixSSL package and includes two of the example applications within the package. This package shows how to export MatrixSSL includes and libraries outside the source tree keeping configuration with the includes.</li>
+</ul></li>
+<li><p>Known issues</p>
+<ul>
+<li>The TLS 1.3 code has not yet been fully optimized for footprint.</li>
+<li>If the client sends a TLS 1.3 ClientHello with X25519 as the key exchange group, the server downgrades to TLS 1.2 but still wishes to use X25519, the handshake will fail, because MatrixSSL does not yet support X25519 in TLS 1.2 and below.</li>
+</ul></li>
+</ul>
+</body>
+</html>

@@ -22,5 +22,7 @@ PSK/psk.h	# Pre-shared symmetric keys
 RSA/'bits'_RSA.*	# X.509 RSA Certificate, signed by _RSA_CA
 RSA/'bits'_RSA_KEY.*	# RSA Private Key corresponding with Certificate
 RSA/'bits'_RSA_CA.*		# X.509 Self-Signed RSA Certificate Authority
+RSA/2048_RSA_CA_SIGN.*	# Same as above, but with cert and CRL signing capabilities
+RSA/2048_RSA_CHAIN.pem  # 2048_RSA.pem and 2048_RSA_CA.pem concatenated
 RSA/ALL_RSA_CAS.*		# All _RSA_CA certificates concatenated
 

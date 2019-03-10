@@ -1,0 +1,617 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<h1 id="matrixssl-release-notes">MatrixSSL Release Notes</h1>
+<h2 id="changes-in-3.9.0">Changes in 3.9.0</h2>
+<blockquote>
+<p><strong>Version 3.9.0</strong> March 2017 (C) Copyright 2017 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>BUG FIXES SINCE 3.8.7b</li>
+</ol>
+<ul>
+<li>Fixed server-side handling of client authentication with Server Name Indication</li>
+<li>Constant Time Modular Exponentiation</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>NEW FEATURES SINCE 3.8.7b</li>
+</ol>
+<ul>
+<li>RFC 5280 Compliant Certificate Matching</li>
+<li>Certificate Validation Configuration Options</li>
+<li>Client Authentication using an External Security Token</li>
+<li>X.509 Generation Improvements (Commercial Edition Only)</li>
+<li>Added psX509GetOnelineDN API</li>
+<li>Added matrixValidateCertsExt API</li>
+<li>Support for RSA-MD2 and RSA-MD5 Signatures in CSR and CRL Parsing</li>
+<li>ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE Compatibility Option</li>
+</ul>
+<ol start="3" style="list-style-type: decimal">
+<li>OTHER CHANGES SINCE 3.8.7b</li>
+</ol>
+<ul>
+<li>Indent style changes</li>
+</ul>
+<h1 id="bug-fixes-since-3.8.7b">1. BUG FIXES SINCE 3.8.7b</h1>
+<h2 id="fixed-server-side-handling-of-client-authentication-with-server-name-indication">Fixed server-side handling of client authentication with Server Name Indication</h2>
+<p>This bug caused client authentication to fail when MatrixSSL was used as the server and the client was sending the Server Name Indication extension.</p>
+<h2 id="constant-time-modular-exponentiation">Constant Time Modular Exponentiation</h2>
+<p>It was reported by Andreas Zankl that Matrix Crypto implementation had a side-channel information leak via instruction cache. In response to the research, Matrix Crypto modular exponentiation was changed to use code that does not leak information via instruction cache and uses constant-time execution. The new code is slower. (Note: The SafeZone CL/CLS cryptography used in MatrixSSL FIPS Edition has been using constant time modular exponention before.)</p>
+<h1 id="new-features-since-3.8.7b">2. NEW FEATURES SINCE 3.8.7b</h1>
+<h2 id="rfc-5280-compliant-certificate-matching">RFC 5280 Compliant Certificate Matching</h2>
+<p>Matching certificate fields in MatrixSSL has been improved. MatrixSSL now implements the requirement from RFC 5280 that Subject Alternative Name is used for matching instead of subject Common Name if alternative name is available. Subject Alternative Name contain more precise information on the type of the field and thus avoids false positive field matches. MatrixSSL now allows RFC 5280 compliant matching of email addresses, where only domain name part is case insensitive. It is now possible to specify the type of name to match with new session options. See the Session Options section in the MatrixSSL APIs manual for details.</p>
+<p>The issues in certificate matching were reported by a team of researchers from Columbia University, consisting of Suphannee Sivakorn, George Argyros, Kexin Pei, Suman Jana and Angelos D. Keromytis.</p>
+<h2 id="certificate-validation-configuration-options">Certificate Validation Configuration Options</h2>
+<p>New session options have been added for configuring MatrixSSL's internal certificate validation process. These include options for specifying the field in the server certificate against which the expected server name should be matched, an option to limit the maximum certificate chain validation depth and options for retaining the peer certificate after processing. See the Session Options section in the MatrixSSL APIs manual for details.</p>
+<h2 id="client-authentication-using-an-external-security-token">Client Authentication using an External Security Token</h2>
+<p>MatrixSSL's external client authentication feature allows client-side private key operation in TLS client authentication, i.e. the signing of the handshake_messages hash in the CertificateVerify handshake message, to be offloaded from MatrixSSL to an external module such as a security or authentication token. See the MatrixSSL External Module Integration manual for details.</p>
+<h2 id="x.509-generation-improvements-commercial-edition-only">X.509 Generation Improvements (Commercial Edition Only)</h2>
+<p>Support has been added for encoding the netscape-comment certificate extension. The psParseCertReqBufExt API has been added. This version of psParseCertReqBufExt allows storing additional information from the parsed CSR. Another additional API is psX509SetPublicKey, which can be used to set the public key in a psCertConfig_t struct, before it is passed to the CSR or certificate encoding routines. See the MatrixSSL Certificates and Certificate Revocation Lists manual for details.</p>
+<h2 id="added-psx509getonelinedn-api">Added psX509GetOnelineDN API</h2>
+<p>The new psX509GetOnelineDN API can be used to generate a one-line string representation of a Distinguished Name.</p>
+<h2 id="added-matrixvalidatecertsext-api">Added matrixValidateCertsExt API</h2>
+<p>The new matrixValidateCertsExt API has an additional options struct argument for configuring some aspects of the certificate chain validation process. The old matrixValidateCerts API is now deprecated.</p>
+<h2 id="support-for-rsa-md2-and-rsa-md5-signatures-in-csr-and-crl-parsing">Support for RSA-MD2 and RSA-MD5 Signatures in CSR and CRL Parsing</h2>
+<p>Support for RSA-MD2 and RSA-MD5 signature verification has been added to CSR parsing, and support for RSA-MD2 signature verification has been added to CRL parsing. These insecure, legacy algorithms are disabled by default, but they can be enabled by defining USE_MD2 or USE_MD5.</p>
+<h2 id="allow_crl_issuers_without_keyusage-compatibility-option">ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE Compatibility Option</h2>
+<p>The ALLOW_CRL_ISSUERS_WITHOUT_KEYUSAGE build-time option allows CRL authentication to succeed even when signer CA's cert does not have the keyUsage extension and thus no cRLSign bit. This option is for compatibility with old CRL issuer certs. RFC 5280 requires CRL issuer certs to have the keyUsage extension and the cRLSign bit.</p>
+<h1 id="other-changes-since-3.8.7b">3. OTHER CHANGES SINCE 3.8.7b</h1>
+<h2 id="indent-style-changes">Indent style changes</h2>
+<p>Indent style has been changed and made more consistent accross source and header files.</p>
+<h2 id="changes-in-3.8.7b">Changes in 3.8.7b</h2>
+<blockquote>
+<p><strong>Version 3.8.7b</strong> January 2017 (C) Copyright 2017 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>BUG FIXES SINCE 3.8.7</li>
+</ol>
+<ul>
+<li>Fixed compile error if SHA224 was enabled.</li>
+<li>Fixed compile warning around HTTP2 alpn detection.</li>
+<li>Fixed issue where a cipher suite could be negotiated that did not match the authentication type for the keys.</li>
+</ul>
+<h1 id="bug-fixes-since-3.8.7">1. BUG FIXES SINCE 3.8.7</h1>
+<h2 id="fixed-issue-where-a-cipher-suite-could-be-negotiated-that-did-not-match-the-authentication-type-for-the-keys.">Fixed issue where a cipher suite could be negotiated that did not match the authentication type for the keys.</h2>
+<p>This manifested in the default apps/ssl/server.c example when Chrome was connected. It negotiated an ECDSA based cipher even though keys loaded by default were RSA keys.</p>
+<h2 id="changes-in-3.8.7">Changes in 3.8.7</h2>
+<blockquote>
+<p><strong>Version 3.8.7</strong> November 2016 (C) Copyright 2016 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>BUG FIXES SINCE 3.8.6</li>
+</ol>
+<ul>
+<li>Fixed Wrong Computation Results Bug In pstm.c Division</li>
+<li>Fixed Memory Corruption In psDhImportPubKey</li>
+<li>Fixed RSA Public Key Read Overflow</li>
+<li>X.509/CRL/OCSP Timestamp Validation</li>
+<li>Unix Year 2038 Problem Fix</li>
+<li>Stricter OID Comparison</li>
+<li>Multibyte String Handling</li>
+<li>Configuration Robustness Improvements</li>
+<li>X.509 Certificate Parsing Read Overflow</li>
+<li>PKCS #8 Buffer Read Overflow</li>
+<li>OCSP Bug Fixes</li>
+<li>Generic Bug Fixes For Test Programs</li>
+<li>Changes to Recommended Configurations</li>
+<li>psMutex Locking and Unlocking APIs Compiler Warnings Removed</li>
+<li>MD5 and SHA-1 Combined Digest Function</li>
+<li>Coverity Issues Fixed</li>
+<li>Yarrow Build Issues Fixed</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>NEW FEATURES SINCE 3.8.6</li>
+</ol>
+<ul>
+<li>SHA-512 for X.509 Certificates Improvements</li>
+<li>OCSP Improvements</li>
+<li>X.509 Certificate Domain Components</li>
+<li>New Configuration: Minimal PSK</li>
+</ul>
+<h1 id="bug-fixes-since-3.8.6">1. BUG FIXES SINCE 3.8.6</h1>
+<h2 id="fixed-wrong-computation-results-bug-in-pstm.c-division">Fixed Wrong Computation Results Bug In pstm.c Division</h2>
+<p>The bug could cause some big number mathematics to return wrong values when divisor and dividend are very far from each other. This issue is related to public key computation problems reported by Security Researcher <a href="https://hboeck.de/">Hanno Böck</a>.</p>
+<h2 id="fixed-memory-corruption-in-psdhimportpubkey">Fixed Memory Corruption In psDhImportPubKey</h2>
+<p>Importing Diffie-Hellman public key cleared some memory beyond end of the key. On some systems this bug may have caused memory corruption.</p>
+<h2 id="fixed-rsa-public-key-read-overflow">Fixed RSA Public Key Read Overflow</h2>
+<p>When importing RSA key from certificate, maliciously crafted RSA public key could cause read buffer overflow and crash.</p>
+<h2 id="x.509crlocsp-timestamp-validation">X.509/CRL/OCSP Timestamp Validation</h2>
+<p>MatrixSSL accepted some X.509 certificates with illegal timestamps, such as leap day in an ordinary year. In additional, some two digit years were parsed incorrectly. Timestamp parsing has been altered everywhere to use new psBrokenDownDate API, which correctly handles these corner cases. Some of X.509 time parsing issues were reported by Sze Yiu Chau.</p>
+<h2 id="unix-year-2038-problem-fix">Unix Year 2038 Problem Fix</h2>
+<p>On 32-bit Unix devices, time_t type, which is signed will overflow in 2038. A workaround was added that will allow timestamps and dates to be processed correctly by MatrixSSL on and after Tuesday 19 January 2038.</p>
+<h2 id="stricter-oid-comparison">Stricter OID Comparison</h2>
+<p>The OID comparison in MatrixSSL uses a simple non-cryptographic digest function, based on sum of bytes, which is not collision free. Comparison of OID binary representation was added to ensure unknown OIDs are not accidentally interpreted the same than some of existing OIDs. This issue was reported by Sze Yiu Chau.</p>
+<h2 id="multibyte-string-handling">Multibyte String Handling</h2>
+<p>The MatrixSSL now includes function to recode strings containing multibyte (BMPString) characters as UTF-8 strings. This handling is applied to X.509 certificate fields, such as Subject Name. This allows code using MatrixSSL to work with BMPString input without actually knowing the encoding used.</p>
+<h2 id="configuration-robustness-improvements">Configuration Robustness Improvements</h2>
+<p>MatrixSSL has been made more robust with configurations: changing configuration options is less likely to cause problems building the software.</p>
+<p>These improvements allow smaller configurations for embedded systems. (E.g. build without DTLS, or build only server-side or client-side support.)</p>
+<h2 id="x.509-certificate-parsing-read-overflow">X.509 Certificate Parsing Read Overflow</h2>
+<p>Fixed read overflow from X.509 certificate date handling and removed possible buffer read overflow in parseGeneralNames(). Without these fixes maliciously crafted X.509 certificate could cause software crash.</p>
+<h2 id="pkcs-8-buffer-read-overflow">PKCS #8 Buffer Read Overflow</h2>
+<p>Fixed reading overly large invalid PKCS #8 encoded private key. Without this fix, maliciously crafted PKCS #8 file could cause software crash.</p>
+<h2 id="ocsp-bug-fixes">OCSP Bug Fixes</h2>
+<p>In lieu of OCSP improvements, small bugs in OCSP implementation have been fixed. The most notable bug was a memory leak.</p>
+<h2 id="generic-bug-fixes-for-test-programs">Generic Bug Fixes For Test Programs</h2>
+<p>Removed some warnings and memory leaks from test programs. Made test programs confirm to Unix/POSIX return value scheme on relevant platforms.</p>
+<h2 id="changes-to-recommended-configurations">Changes to Recommended Configurations</h2>
+<p>The recommended configurations have been edited slightly. Most notably, the tracing is disabled by default on non-debug configurations.</p>
+<h2 id="psmutex-locking-and-unlocking-apis-compiler-warnings-removed">psMutex Locking and Unlocking APIs Compiler Warnings Removed</h2>
+<p>Removed return value from psLockMutex() and psUnlockMutex() APIs. This removes several warnings regarding return values not being used.</p>
+<h2 id="md5-and-sha-1-combined-digest-function">MD5 and SHA-1 Combined Digest Function</h2>
+<p>The MatrixSSL will now invoke combined MD5 and SHA-1 hash function <code>psMd5Sha1</code>, whenever possible instead of separate MD5 and SHA-1 hash functions.</p>
+<h2 id="coverity-issues-fixed">Coverity Issues Fixed</h2>
+<p>Implementation of <code>getTicketKeys</code> and <code>parseSSLHandshake</code> functions was changed to remove issues detected by Coverity.</p>
+<h2 id="yarrow-build-issues-fixed">Yarrow Build Issues Fixed</h2>
+<p>MatrixSSL comes with a version of Yarrow PRNG. Its use has been deprecated, but the PRNG continued to be shipped with MatrixSSL. Unfortunately, the latest versions of MatrixSSL had compilation errors in yarrow.c. Those errors have been fixed, and the source code file has been marked deprecated.</p>
+<h1 id="new-features-since-3.8.6">2. NEW FEATURES SINCE 3.8.6</h1>
+<h2 id="sha-512-for-x.509-certificates-improvements">SHA-512 for X.509 Certificates Improvements</h2>
+<p>MatrixSSL can use SHA-512 to sign self-signed certificate or certificate request. SHA-512 was already previously supported for verification of X.509 certificates. (This feature can be used only on MatrixSSL Commercial Edition.)</p>
+<h2 id="ocsp-improvements">OCSP Improvements</h2>
+<p>OCSP example application apps/crypto/ocsp.c (Commercial Edition Only) and MatrixSSL Developer Guide have been improved to give more documentation regarding OCSP request. OCSP request can now use requestorId feature and request status of list of certificates.</p>
+<h2 id="x.509-certificate-domain-components">X.509 Certificate Domain Components</h2>
+<p>Added Functions for obtaining contents of X.509 certificate Domain Component field(s).</p>
+<h2 id="new-configuration-minimal-psk">New Configuration: Minimal PSK</h2>
+<p>New configuration psk added. This configuration provides small footprint MatrixSSL build with only Pre-Shared Key and TLS 1.2 functionality using Matrix Crypto.</p>
+<h2 id="changes-in-3.8.6">Changes in 3.8.6</h2>
+<blockquote>
+<p><strong>Version 3.8.6</strong> October 2016 (C) Copyright 2016 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>BUG FIXES</li>
+</ol>
+<ul>
+<li>Critical parsing bug for X.509 certificates</li>
+<li>Critical TLS handshake parsing bugs</li>
+<li>4096 bit RSA key generation regression</li>
+<li>General cleanup of build</li>
+<li>MatrixSSH compatibility issue</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>FEATURES AND IMPROVEMENTS</li>
+</ol>
+<ul>
+<li>New configuration system for build options</li>
+<li><code>core/</code> changes</li>
+<li>X.509 parsing and generation</li>
+<li><code>crypto/</code> changes</li>
+<li>Removed OpenSSL API Emulation</li>
+</ul>
+<h1 id="bug-fixes">1 BUG FIXES</h1>
+<h2 id="critical-parsing-bug-for-x.509-certificates">Critical parsing bug for X.509 certificates</h2>
+<p>Security Researcher <a href="http://www.tripwire.com/state-of-security/contributors/craig-young/">Craig Young</a> reported two issues related to X.509 certificate parsing. An error in parsing a maliciously formatted Subject Alt Name field in a certificate could cause a crash due to a write beyond buffer and subsequent free of an unallocated block of memory. An error in parsing a maliciously formatted ASN.1 Bit Field primitive could cause a crash due to a memory read beyond allocated memory.</p>
+<h2 id="critical-tls-handshake-parsing-bugs">Critical TLS handshake parsing bugs</h2>
+<p>Security Researcher <a href="http://ivesk.hs-offenburg.de/">Andreas Walz</a> reported three issues related to processing the ClientHello message.</p>
+<ul>
+<li>The length of the TLS record was not being strictly checked against the length of the extensions field, so that additional unparsed data could be added between the end of extensions and the end of the record. This presents some level of uncertainty in how extensions may be interpreted and could present a security issue.</li>
+<li>ClientHello parsing was not verifying that a NULL compression suite was sent by the client, as required by the RFC. This did not present a security issue (NULL compression was always forced), but improves strict adherence to the specification.</li>
+<li>For TLS connections (not DTLS), the major version proposed in the ClientHello suggested by RFC 5246 to only allow the byte value <code>0x03</code>. Now the connection is terminated if a value other than this is suggested. Previously the suggested major version field was simply echoed back in the ServerHello message, and treated as <code>0x03</code>.</li>
+</ul>
+<h2 id="bit-rsa-key-generation-regression">4096 bit RSA key generation regression</h2>
+<p>In some cases RSA key generation of 4096 bit keys would fail and return with an error code. This regression issue has been fixed and key generation will once again succeed.</p>
+<h2 id="general-cleanup-of-build">General cleanup of build</h2>
+<p>Warnings across multiple platforms and compilers were fixed. Various compile time configuration combination build issues were fixed.</p>
+<h2 id="matrixssh-compatibility-issue">MatrixSSH compatibility issue</h2>
+<p>Newer versions of MatrixSSH server were incompatible with the PuTTY client. A fix has been included and enabled by default <code>USE_PUTTY_WORKAROUND</code>. <em>Note this does not affect the standard MatrixSSL codebase</em>.</p>
+<h1 id="features-and-improvements">2 FEATURES AND IMPROVEMENTS</h1>
+<h2 id="new-configuration-system-for-build-options">New configuration system for build options</h2>
+<p>A new top level directory <code>configs/</code> now holds several sets of configuration files for MatrixSSL to simplify configuration sets. This method also allows custom sets to be developed specific to a given use case (for example a RSA only build). The following three configuration files now are copied at build time from the <code>configs</code> directory:</p>
+<pre><code>core/coreConfig.h
+crypto/cryptoConfig.h
+matrixssl/matrixsslConfig.h</code></pre>
+<blockquote>
+<p><strong>The default configuration settings for MatrixSSL may have changed from your current settings. Please confirm all settings in these three files after updating.</strong></p>
+</blockquote>
+<p>From a fresh package, the build process is the same as before: simply type <code>make</code>. It will build the software using the default configuration options.</p>
+<p>To use a different configuration, for example <code>configs/noecc</code>:</p>
+<pre><code>$ make clean &amp;&amp; make all-noecc</code></pre>
+<p>Once a configuration is set, <code>make</code> and <code>make clean</code> will continue to use the same configuration unless a new one is selected as above.</p>
+<h2 id="core-changes"><code>core/</code> changes</h2>
+<ul>
+<li>Added warning helper macros</li>
+<li>Additional <code>PS_</code> return codes</li>
+<li>Buffer helper APIs in <code>psbuf.h</code></li>
+<li>Foundation for <code>PS_NETWORKING</code> support for sockets level API</li>
+<li><code>psMutex_t</code> API return code change, now returns <code>void</code> and will call <code>abort()</code> on POSIX platforms.</li>
+<li><code>test/</code> new self-test directory</li>
+<li>Change in default Linux compile options in <code>common.mk</code></li>
+</ul>
+<h2 id="x.509-parsing-and-generation">X.509 parsing and generation</h2>
+<p>Added additional field parsing support for X.509, including multiple OU support. Commercial release adds additional certificate creation support, as well as an API set and test suite for programmatically creating certificates. See <em>MatrixKeyAndCertGeneration.pdf</em> for full description.</p>
+<h2 id="crypto-changes"><code>crypto/</code> changes</h2>
+<ul>
+<li>Added <code>*PreInit()</code> APIs for hash functions for compatibility with FIPS library and hardware token requirements</li>
+<li>Added <code>psX509GetCertPublicKeyDer()</code> API</li>
+<li>Support <code>dsa_sig</code> OID for certificates`</li>
+<li>Support for <code>ASN_VISIBLE_STRING</code></li>
+<li>Moved CRL functionality into <code>keyformat/crl.c</code></li>
+<li>Support for parsing an implicitly encoded ECC key without a DER header, as sometimes encountered in the wild.</li>
+<li>Added PKCS#8 import</li>
+<li><code>ALLOW_VERSION_1_ROOT_CERT_PARSE</code> configuration option for loading legacy v1 certificates as trusted roots only (default not enabled). Loading as intermediate or leaf certificates is insecure and still not allowed.</li>
+</ul>
+<h2 id="removed-openssl-api-emulation">Removed OpenSSL API Emulation</h2>
+<ul>
+<li><code>opensslApi.c</code> and <code>opensslSocket.c</code> files removed temporarily in anticipation of moving to a more fully supported OpenSSL layer.</li>
+</ul>
+<h2 id="changes-in-3.8.5">Changes in 3.8.5</h2>
+<blockquote>
+<p><strong>Version 3.8.5</strong> September 2016 <em>Note: 3.8.5 was a limited customer release only.</em></p>
+</blockquote>
+<h2 id="changes-in-3.8.4">Changes in 3.8.4</h2>
+<blockquote>
+<p><strong>Version 3.8.4</strong> July 2016 (C) Copyright 2016 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>FEATURES AND IMPROVEMENTS</li>
+</ol>
+<ul>
+<li>Coverity coverage</li>
+<li>HTTP/2 restrictions via ALPN</li>
+<li>Enhanced example apps</li>
+<li>Process shared Session Cache</li>
+<li>Enhanced CRL and OCSP support</li>
+<li>Windows support for certificate date validation</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>BUG FIXES</li>
+</ol>
+<ul>
+<li>Critical parsing bug for RSA encrypted blobs</li>
+<li>Additional restrictions on bignum operations</li>
+<li>Fixed error in disabled cipher flags</li>
+<li>Fixed error in DTLS encoding</li>
+<li>SSLv3 only support fixed</li>
+<li>Assembly compatibility with more compilers</li>
+</ul>
+<h1 id="features-and-improvements-1">1 FEATURES AND IMPROVEMENTS</h1>
+<h2 id="coverity-coverage">Coverity coverage</h2>
+<p>MatrixSSL now has zero outstanding defects in <a href="https://scan.coverity.com/projects/matrixssl-matrixssl">Coverity Static Analysis</a>.</p>
+<h2 id="http2-restrictions-via-alpn">HTTP/2 restrictions via ALPN</h2>
+<p>MatrixSSL server code will automatically evaluate the ALPN extension and appropriately restrict the cipher suites and key exchange methods if the HTTP/2 protocol is being used. Per the <a href="https://tools.ietf.org/html/rfc7540#appendix-A">HTTP/2 spec</a>, only AEAD cipher suites and Ephemeral key exchange methods are allowed.</p>
+<h2 id="enhanced-example-apps">Enhanced example apps</h2>
+<p>Example applications now take additional command line options and also support CRL request and response generation.</p>
+<h2 id="process-shared-session-cache">Process shared Session Cache</h2>
+<p>Minimal support for a process-shared server session resumption cache is now supported via process-shared mutexes on Linux.</p>
+<h2 id="enhanced-crl-and-ocsp-support">Enhanced CRL and OCSP support</h2>
+<p>A new file <em>crypto/keyformat/crl.c</em> defines additional apis for more complex CRL (Certificate Revocation List) and OCSP support.</p>
+<h2 id="windows-support-for-certificate-date-validation">Windows support for certificate date validation</h2>
+<p>Previously only Posix based platforms were supported.</p>
+<h1 id="bug-fixes-1">2 BUG FIXES</h1>
+<h2 id="critical-parsing-bug-for-rsa-encrypted-blobs">Critical parsing bug for RSA encrypted blobs</h2>
+<p>Security Researcher <a href="https://hboeck.de/">Hanno Böck</a> reported several issues related to RSA and bignum operations. An error in parsing a maliciously formatted public key block could produce a remotely triggered crash in SSL server parsing. Additional restrictions on the values provided to RSA and DH operations were also added, although an exploit has not been found.</p>
+<h2 id="additional-restrictions-on-bignum-operations">Additional restrictions on bignum operations</h2>
+<p>The MatrixSSL bignum library, located in <em>crypto/math/</em> was optimized and reduced in size to support only key sizes and operations used by standard RSA, ECC and DH operations (those apis present in <em>crypto/cryptoApi.h</em>). Additional constraint checking has been added to the code to prevent unsupported key sizes and values. Users requiring generic bignum operations should take a look at libtomcrypt, GMP, Python or OpenSSL.</p>
+<h2 id="fixed-error-in-disabled-cipher-flags">Fixed error in disabled cipher flags</h2>
+<p>The optional disabling or enabling of specific ciphers at runtime per session was recently broken (now fixed) due to an errant flags calculation using <code>&lt;</code> instead of <code>&lt;&lt;</code>.</p>
+<h2 id="fixed-error-in-dtls-encoding">Fixed error in DTLS encoding</h2>
+<p>An error was returned if attempting to encode a DTLS message exactly the PMTU size.</p>
+<h2 id="sslv3-only-support-fixed">SSLv3 only support fixed</h2>
+<p>SSLv3 mode is not recommended for deployment, but had become broken in a recent build. It can now be enabled again.</p>
+<h2 id="assembly-compatibility-with-more-compilers">Assembly compatibility with more compilers</h2>
+<p>Fixed &quot;invalid register constraints&quot; error on some versions of GCC and LLVM for ARM, MIPS and x86_64.</p>
+<h2 id="changes-in-3.8.3">Changes in 3.8.3</h2>
+<blockquote>
+<p><strong>Version 3.8.3</strong> April 2016 (C) Copyright 2016 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>FEATURES AND IMPROVEMENTS</li>
+</ol>
+<ul>
+<li>Simplified Configuration Options</li>
+<li>DTLS Combined Package</li>
+<li>CHACHA20_POLY1305 Cipher Suites</li>
+<li>Libsodium Crypto Provider</li>
+<li>Extended Master Secret</li>
+<li>Online Certificate Status Protocol</li>
+<li>TLS Fallback SCSV</li>
+<li>Trusted CA Indication Extension</li>
+<li>Removed gmt_unix_time from client and server random</li>
+<li>Removed support for SSLv2 CLIENT_HELLO messages</li>
+<li>Ephemeral ECC Key Caching</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>BUG FIXES</li>
+</ol>
+<ul>
+<li>Support for parsing large certificate blobs</li>
+<li>X.509 certificate parse fix for issuerUniqueID and subjectUniqueID</li>
+<li>Diffie-Hellman public key exchange bug</li>
+<li>SHA512 based Server Key Exchange signatures</li>
+<li>Allow independent hashSigAlg identifiers in Certificate Request message</li>
+<li>Improvements to DTLS Cookie handling</li>
+<li>Fixed key type verification for chosen cipher suite</li>
+<li>Validation of RSA Signature Creation</li>
+<li>Side Channel Vulnerability on RSA Cipher Suites</li>
+<li>Access Violation on Malicious TLS Record</li>
+</ul>
+<h1 id="features-and-improvements-2">1 FEATURES AND IMPROVEMENTS</h1>
+<h2 id="simplified-configuration-options">Simplified Configuration Options</h2>
+<p>The configuration files <em>coreConfig.h</em>, <em>cryptoConfig.h</em> and <em>matrixsslConfig.h</em> have been simplified, and the default options have been changed to improve security and code size.</p>
+<ul>
+<li>Many of the insecure algorithms or deprecated options that can be enabled in <em>cryptoConfig.h</em> and <em>matrixsslConfig.h</em> have been moved into <em>cryptolib.h</em> and <em>matrixssllib.h</em>, respectively.<br />
+</li>
+<li>TLS 1.1 is now the default minimum TLS version compiled in. The new <code>USE_TLS_1_1_AND_ABOVE</code> setting enables this.</li>
+<li>Rehandshaking on an existing connection is now disabled completely by default with the <code>USE_REHANDSHAKING</code> configuration option.</li>
+</ul>
+<h2 id="dtls-combined-package">DTLS Combined Package</h2>
+<p>DTLS is now packaged with MatrixSSL, and can be enabled with the <code>USE_DTLS</code> configuration option. TLS and DTLS connections can be made simultaneously with the same application.</p>
+<h2 id="chacha20_poly1305-cipher-suites">CHACHA20_POLY1305 Cipher Suites</h2>
+<p>MatrixSSL now has support for ChaCha20-Poly1305 cipher suites compatible with RFC draft https://tools.ietf.org/html/draft-ietf-tls-chacha20-poly1305. The supported cipher suites are defined for TLS 1.2 and can be enabled at compile time.</p>
+<dl>
+<dt><em>cryptoConfig.h</em></dt>
+<dd><code>USE_CHACHA20_POLY1305_IETF</code>
+</dd>
+<dt><em>matrixsslConfig.h</em></dt>
+<dd><code>TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256</code> <code>TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256</code>
+</dd>
+</dl>
+<p>MatrixSSL must be linked with the libsodium library to provide implementation of the crypto primitives.</p>
+<h2 id="libsodium-crypto-provider">Libsodium Crypto Provider</h2>
+<p>MatrixSSL now includes a layer for crypto primitives to the <em>libsodium</em> crypto library, in addition to the <em>OpenSSL libcrypto</em> and the native (default) MatrixSSL crypto library. <em>libsodium</em> provides crypto primitives for ChaCha20 and Poly1305. In addition, enabling the layer will use <em>libsodium</em> primitives for SHA256/SHA384/SHA512 based hashes and AES-256-GCM ciphers that provide high performance on <em>Intel</em> platforms.</p>
+<blockquote>
+<p>As of this release, the current version of libsodium is available here: https://download.libsodium.org/libsodium/releases/libsodium-1.0.8.tar.gz To build libsodium, follow the instructions here: https://download.libsodium.org/doc/installation/index.html</p>
+</blockquote>
+<p>To enable in the MatrixSSL make system, enable the following and rebuild:</p>
+<dl>
+<dt><em>common.mk</em></dt>
+<dd><code>PS_LIBSODIUM:=1</code> <code>LIBSODIUM_ROOT:=</code><em>(path_to_libsodium_build)</em>
+</dd>
+</dl>
+<h2 id="extended-master-secret">Extended Master Secret</h2>
+<p>The “extended master secret” as specified in <a href="https://tools.ietf.org/html/rfc7627">RFC 7627</a> is an important security feature for TLS implementations that use session resumption. The extended master secret feature associates the internal TLS master secret directly to the connection context to prevent man-in-the-middle attacks during session resumption. One such attack is a synchronizing triple handshake as described in <a href="https://mitls.org/pages/attacks/3SHAKE">Triple Handshakes and Cookie Cutters: Breaking and Fixing Authentication over TLS</a>.</p>
+<p>See the <em>Extended Master Secret</em> section in the <em>MatrixSSL API</em> document for details.</p>
+<h2 id="online-certificate-status-protocol">Online Certificate Status Protocol</h2>
+<p>The Online Certificate Status Protocol (OCSP) is an alternative to the Certificate Revocation List (CRL) mechanism for performing certificate revocation tests on server keys. TLS integrates with OCSP in a mechanism known as “OCSP stapling”. This feature allows the client to request that the server provide a time-stamped OCSP response when presenting the X.509 certificate during the TLS handshake. The primary goal for this scheme is to allow resource constrained clients to perform certificate revocation tests without having to communicate with an OCSP Responder themselves.</p>
+<p>See the <em>OCSP Revocation</em> section in the <em>MatrixSSL API</em> document for details.</p>
+<h2 id="tls-fallback-scsv">TLS Fallback SCSV</h2>
+<p>The RFC for detecting version rollback attacks has been implemented per <a href="https://tools.ietf.org/html/rfc7507">RFC7507</a>. See the <em>MatrixSSL Developer’s Guide</em> for more information.</p>
+<h2 id="trusted-ca-indication-extension">Trusted CA Indication Extension</h2>
+<p>The Trusted CA Indication extension is specified in <a href="https://tools.ietf.org/html/rfc6066">RFC 6066</a>. This feature allows TLS clients to send their list of certificate authorities to servers in the <code>CLIENT_HELLO</code> message.<br />
+See the Trusted CA Indication section in the <em>MatrixSSL_API</em> document for details.</p>
+<h2 id="removed-gmt_unix_time-from-client-and-server-random">Removed gmt_unix_time from client and server random</h2>
+<p>The TLS RFC specifies that the first 4 bytes of the <code>CLIENT_HELLO</code> and <code>SERVER_HELLO</code> random values be the current platform time. Current best practices recommend using random data for all 32 bytes. MatrixSSL now uses all random data by default.</p>
+<h2 id="removed-support-for-sslv2-client_hello-messages">Removed support for SSLv2 CLIENT_HELLO messages</h2>
+<p>SSLv2 <code>CLIENT_HELLO</code> parsing was previously supported to maintain compatibility with very old TLS implementations. Although this does not present a security risk at this time, the code has been removed, and only modern TLS record header parsing is supported.</p>
+<h2 id="ephemeral-ecc-key-caching">Ephemeral ECC Key Caching</h2>
+<p>Previous versions of MatrixSSL generated new, unique ephemeral keys for each connection using <code>ECDHE_</code> cipher suites, as per NIST recommendations. Beginning with this version, ephemeral keys are cached and re-used for connections within a time frame of two hours and a maximum usage of 1000 times. This improves performance of ECDHE suites, and is inline with the configuration current web browsers. This feature can be configured in <em>matrixsslConfig.h</em>.</p>
+<h1 id="bug-fixes-2">2 BUG FIXES</h1>
+<h2 id="support-for-parsing-large-certificate-blobs">Support for parsing large certificate blobs</h2>
+<p>Certificate collections larger than 64KB were not being parsed correctly after a change to some data types (32 bit to 16 bit) in the parsing code. This bug is now fixed and large collections of certificates are now parsing correctly.</p>
+<h2 id="x.509-certificate-parse-fix-for-issueruniqueid-and-subjectuniqueid">X.509 certificate parse fix for issuerUniqueID and subjectUniqueID</h2>
+<p>Previous MatrixSSL versions could not parse these rarely encountered members of X.509 certificates.</p>
+<h2 id="diffie-hellman-public-key-exchange-bug">Diffie-Hellman public key exchange bug</h2>
+<p>MatrixSSL clients would not successfully handshake with servers that sent Diffie-Hellman public keys that were not the same byte length as the DH group Prime parameter. Clients will now successfully handshake with servers that provide shorter length public keys.</p>
+<h2 id="sha512-based-server-key-exchange-signatures">SHA512 based Server Key Exchange signatures</h2>
+<p>SHA512 was not supported for <code>SERVER_KEY_EXCHANGE</code> messages in previous versions.</p>
+<h2 id="allow-independent-hashsigalg-identifiers-in-certificate-request-message">Allow independent hashSigAlg identifiers in Certificate Request message</h2>
+<p>Previous client versions of MatrixSSL would not allow servers to send signature algorithm identifiers that were not already specified by the client in the <code>CLIENT_HELLO</code> message. Now, the client will correctly allow the server to send an independent list of supported algorithms and the client will look for matches from that list.</p>
+<h2 id="improvements-to-dtls-cookie-handling">Improvements to DTLS Cookie handling</h2>
+<p>HMAC-SHA1 or HMAC-SHA256 are now used to generate the DTLS cookie, and additional checking is done on the cookie for Denial-of-Service prevention.</p>
+<h2 id="fixed-key-type-verification-for-chosen-cipher-suite">Fixed key type verification for chosen cipher suite</h2>
+<p>An internal verification function that determined whether the server key type was correct for the chosen cipher suite has now been fixed. Previous versions would sometimes incorrectly determine the server was using the wrong key type if the server was using a certificate chain where parent certificates did not use the same key type. This bug resulted in a failed handshake and is now fixed.</p>
+<h2 id="validation-of-rsa-signature-creation">Validation of RSA Signature Creation</h2>
+<p>An internal RSA validation of created signatures has been added to the library in the <code>psRsaEncryptPriv()</code> function.</p>
+<p>Security researcher Florian Weimer has shown it is possible for RSA private key information to leak under some special failure circumstances. Information on the exploit can be found here: https://people.redhat.com/~fweimer/rsa-crt-leaks.pdf</p>
+<p>The potential leak is only possible if a <code>DHE_RSA</code> based cipher suite is supported on the server side. This is the only handshake combination in which an RSA signature is sent over the wire (during the <code>SERVER_KEY_EXCHANGE</code> message). The signature itself must have been incorrectly generated for the exploit to be possible.</p>
+<p>The additional signature validation test will now cause the TLS handshake to fail prior to a faulty signature being sent to the client.</p>
+<h2 id="side-channel-vulnerability-on-rsa-cipher-suites">Side Channel Vulnerability on RSA Cipher Suites</h2>
+<p>A Bleichenbacher variant attack, where certain information is leaked from the results of a RSA private key operation has been reported by a security researcher. The code has been updated to error without providing any information on the premaster contents. Thank you to Juraj Somorovsky, author of <a href="https://github.com/RUB-NDS/TLS-Attacker">TLS-Attacker</a> &gt; Note that other side channel attacks may still be possible as MatrixSSL non-FIPS crypto is not always constant-time.</p>
+<h2 id="access-violation-on-malicious-tls-record">Access Violation on Malicious TLS Record</h2>
+<p>TLS cipher suites with CBC mode in TLS 1.1 and 1.2 could have an access violation (read beyond memory) with a maliciously crafted message. Thank you to Juraj Somorovsky, author of <a href="https://github.com/RUB-NDS/TLS-Attacker">TLS-Attacker</a></p>
+<h1 id="known-issues">3 KNOWN ISSUES</h1>
+<ul>
+<li><em>Microsoft Windows</em> targets do not support certificate date validation currently. Users requiring this feature can use Windows APIs to get and parse the current date, using the POSIX implementation as a reference.</li>
+<li><em>Arm</em> platforms linking with some versions of <em>OpenSSL</em> <code>libcrypto</code> library may have errors in AES-CBC cipher suites due to the library's inability to handle in-situ encryption within the same block.</li>
+</ul>
+<h2 id="changes-in-3.8.2">Changes in 3.8.2</h2>
+<blockquote>
+<p><strong>Version 3.8.2</strong> December 2015 (C) Copyright 2015 INSIDE Secure - All Rights Reserved</p>
+</blockquote>
+<ol style="list-style-type: decimal">
+<li>FILE/API REORGANIZATION</li>
+</ol>
+<ul>
+<li>File Locations</li>
+<li>Crypto API</li>
+</ul>
+<ol start="2" style="list-style-type: decimal">
+<li>SECURITY IMPROVEMENTS</li>
+</ol>
+<ul>
+<li>Simplified Configuration</li>
+<li>Deprecated Ciphers</li>
+<li>Deprecated TLS Features</li>
+<li>Key Strength</li>
+<li>Ephemeral Cipher Suites Enabled by Default</li>
+<li>ECC Curve List</li>
+<li>Reordered cipher suite preferences</li>
+<li>memset_s()</li>
+<li>Handshake State Machine Improvements</li>
+</ul>
+<ol start="3" style="list-style-type: decimal">
+<li>FEATURES AND IMPROVEMENTS</li>
+</ol>
+<ul>
+<li>DTLS Protocol Included</li>
+<li>Optimized Diffie-Hellman performance</li>
+<li>Optimized EC signature generation performance</li>
+<li>OpenSSL Crypto Primitive Provider</li>
+<li>OpenSSL TLS API layer</li>
+<li>Reduced TLS session footprint</li>
+<li>X.509 Improvements</li>
+<li>PKCS#12 Key Parsing</li>
+<li>Improved certificate callback example</li>
+<li>Per digest control of HMAC algorithms</li>
+<li>Default high resolution timing</li>
+<li>Assert and Error Optimizations</li>
+</ul>
+<ol start="4" style="list-style-type: decimal">
+<li>BUG FIXES</li>
+</ol>
+<ul>
+<li>64 bit little endian platforms</li>
+<li>X.509 KeyUsage extension</li>
+<li>X.509 date validation fix</li>
+<li>Fixed handshake parse issue</li>
+<li>TLS server sending old self-signed certificate</li>
+<li>Fixed ECC variable encoding bugs</li>
+<li>DHE_PSK compatibility</li>
+<li>AES-GCM with AESNI</li>
+<li>Library configuration test</li>
+<li>Windows psGetFileBuf</li>
+</ul>
+<h1 id="fileapi-reorganization">1 FILE/API REORGANIZATION</h1>
+<h2 id="file-locations">File Locations</h2>
+<p>MatrixSSL 3.8.2 introduces directory changes to the distribution since 3.7.2</p>
+<p>TLS/DTLS example apps moved from ./apps to ./apps/ssl and ./apps/dtls. Test keys and certificates moved from ./sampleCerts to ./testkeys. XCode and Visual Studio projects moved to ./xcode and ./visualstudio.</p>
+<p>Several file changes and renames are present as well:</p>
+<p>TLS Decoding moved ./matrixssl/sslDecode.c from ./matrixssl/sslDecode.c, ./matrixssl/hsDecode.c and ./matrixssl/extDecode.c. Private key import/export from ./crypto/pubkey/pkcs.c. to ./crypto/keyformat/pkcs.c. Configuration consistency and sanity checks from ./matrixssl/matrixssllib.h to ./matrixssl/matrixsslCheck.h.</p>
+<h2 id="crypto-api">Crypto API</h2>
+<p>The API layers into the raw cryptographic operations have been significantly changed. The crypto API changes do not affect the main MatrixSSL API for creating TLS sessions, etc. However, developers who interface with crypto directly, or who want to write a custom hardware layer will be interested in the new layer.</p>
+<h3 id="api-model">API Model</h3>
+<p>The cryptography API for symmetric crypto, digests and HMAC follow the common model:</p>
+<dl>
+<dt><strong>Init API</strong></dt>
+<dd>Initializes the cipher and returns an error on failure (typically due to bad input parameters or insufficient memory).
+</dd>
+<dt><strong>Encrypt/Decrypt/Update API</strong></dt>
+<dd>Performs the operation and does not return an error code (previously some APIs would return the number of bytes decrypted).
+</dd>
+<dt><strong>Clear API</strong></dt>
+<dd>Zero and/or free any associated memory associated with the cipher.
+</dd>
+</dl>
+<h3 id="standard-types">Standard Types</h3>
+<p>Standard C99 types from <code>&lt;stdint.h&gt;</code> are used to specify integer parameters.</p>
+<dl>
+<dt><code>uint8_t</code></dt>
+<dd>The length of an IV, password or an AES-GCM tag
+</dd>
+<dt><code>uint16_t</code></dt>
+<dd>The length of an asymmetric key (RSA/DH/ECC), a HMAC key or Additional Authenticated Data (AAD) for an AEAD cipher such as AES-GCM.
+</dd>
+<dt><code>uint32_t</code></dt>
+<dd>The length of data to be processed by the cipher
+</dd>
+</dl>
+<p><code>uint64_t</code>: Internally used by crypto library to store large counter values and when optimizing for 64 bit platforms.</p>
+<h3 id="const-correctness">Const Correctness</h3>
+<p>Pointers to values that are not modified are marked <code>const</code>.</p>
+<h3 id="api-name-changes">API Name changes</h3>
+<p>API names have been standardized as follows:</p>
+<p>Initialization of low level AES block cipher from psAesInitKey to psAesInitBlockKey. AES CBC from psAesInit, psAesDecrypt and psAesEncrypt to psAesInitCBC, psAesDecryptCBC and psAesEncryptCBC. SHA2 HMAC from psHmacSha2 to psHmacSha256 and psHmacSha384. ECC signature creation from psEccSignHash to psEccDsaSign. ECC signature validation from psEcDsaValidateSignature to psEccDsaVerify.</p>
+<h3 id="standardized-context-names">Standardized Context Names</h3>
+<p>Cryptographic functions that used to accept generic “context” identifiers now require the specific key/algorithm structure, for example:</p>
+<p>HMAC family from psHmacContext_t to psHmacSha1_t, psHmacSha256_t, ... Digest family from psDigestContext_t to psSha1_t, psSha256_t, etc... Symmetric family from psCipherContext_t to psAesCbc_t, psAesGcm_t, psDes3Key_t RSA private key parse (pkcs1) from psPubKey_t to psRsaKey_t. ECC private key parse from psPubKey_t to psEccKey_t.</p>
+<h3 id="standardized-return-types">Standardized Return Types</h3>
+<p>In general, Init apis return a standard <code>PS_*</code> status code. A status code that is not <code>PS_SUCCESS</code> typically indicates invalid input parameters or a resource allocation failure. Update and Clear APIs no longer have a return. For example:</p>
+<p>HMAC Init from void to int32_t. HMAC Final from int32_t to void. Digest Init from void to int32_t. Digest Final from int32_t to void.</p>
+<h3 id="memory-model">Memory Model</h3>
+<p>In general, APIs now take an allocated cipher structure, and do not allocate the structure in the Init routine. In the past, the memory allocation model was inconsistent.</p>
+<p>For ECC and DH, there are now additional APIs that allow the key to be allocated and initialized, to complement the APIs which just initialize the keys.</p>
+<p>The Clear API must always be called when done with a context, as some algorithms internally allocate additional memory for operation.</p>
+<h1 id="security-improvements">2 SECURITY IMPROVEMENTS</h1>
+<h2 id="simplified-configuration">Simplified Configuration</h2>
+<p>The configuration of ciphers and cipher suites in <em>crypto/cryptoConfig.h</em> and <em>matrixssl/matrixsslConfig.h</em> has been simplified considerably. Existing and new users of MatrixSSL should take a look at these files to understand the various options and features supported.</p>
+<h2 id="deprecated-ciphers">Deprecated Ciphers</h2>
+<ul>
+<li>ARC4, SEED, IDEA, RC2, MD4 and MD2 are deprecated, and not enabled by default in <em>cryptoConfig.h</em></li>
+<li>MD5 and SHA1 are not recommended for use, but enabled by default because they are required for TLS protocols before version 1.2. Although they are enabled in <em>cryptoConfig.h,</em> their use within the TLS protocol is limited to where required, and they can be independently disabled from use as a certificate signature algorithm and an HMAC algorithm. The new crypto primitive <code>psMd5Sha1_t</code> is intended to replace standalone MD5 or SHA1 use outside of where required in TLS.</li>
+<li>3DES is not deprecated, but be aware of key strength limitations vs. AES-128 and AES-256.</li>
+</ul>
+<h2 id="deprecated-tls-features">Deprecated TLS Features</h2>
+<ul>
+<li>TLS cipher suites that rely on deprecated crypto algorithms have also been deprecated in matrixsslConfig.h</li>
+<li>TLS Compression support is now deprecated and the option removed from the configuration.</li>
+<li>False Start support is now deprecated and the option removed from the configuration.</li>
+</ul>
+<h2 id="key-strength">Key Strength</h2>
+<p>Key strength defines have not changed since previous releases, however it should be noted that the default minimum RSA/DH sizes of 1024 and ECC sizes of 192 do not meet a growing number of security standards and larger keys should be beginning to be deployed.</p>
+<h2 id="ephemeral-cipher-suites-enabled-by-default">Ephemeral Cipher Suites Enabled by Default</h2>
+<p>ECDHE and DHE cipher suites are now enabled by default. Be aware that for embedded platforms, this may require significant additional CPU load.</p>
+<h2 id="ecc-curve-list">ECC Curve List</h2>
+<p>The supported ECC Curve list is now always given in bit-strength order. This ensures that when negotiating EC Parameters, the strongest available will be used.</p>
+<h2 id="reordered-cipher-suite-preferences">Reordered cipher suite preferences</h2>
+<p>Clients send a priority list order of cipher suites during TLS negotiations, and servers use a priority list of ciphers to pick a common cipher for the connection.</p>
+<p>MatrixSSL orders this list using the following rules, resulting in some change to the cipher suite preference order in <em>cipherSuite.c</em>. In order to make as secure a connection as possible, the parameters of Authentication, Data Integrity and Data Security were taken in that order to generate a new cipher preference list. In places where these parameters are of equivalent strength, the faster algorithm is preferred (although the “faster” algorithm often depends on the platform). <em>Currently DHE is prioritized over ECDHE due only to performance. In future releases, ECDHE may be the preferred key exchange mode.</em></p>
+<p>The ordering of the ciphers is grouped and sub-grouped by the following:</p>
+<ol style="list-style-type: decimal">
+<li>Non-deprecated</li>
+<li>Ephemeral</li>
+<li>Authentication Method (PKI &gt; PSK &gt; anon)</li>
+<li>Hash Strength (SHA384 &gt; SHA256 &gt; SHA &gt; MD5)</li>
+<li>Cipher Strength (AES256 &gt; AES128 &gt; 3DES &gt; ARC4 &gt; SEED &gt; IDEA &gt; NULL)</li>
+<li>PKI Key Exchange (DHE* &gt; ECDHE &gt; ECDH &gt; RSA &gt; PSK)</li>
+<li>Cipher Mode (GCM &gt; CBC)</li>
+<li>PKI Authentication Method (ECDSA &gt; RSA &gt; PSK)</li>
+</ol>
+<h2 id="memset_s">memset_s()</h2>
+<p>Use the <code>memset_s()</code> api to zero memory regardless of compiler optimization which might skip zeroing for memory that is not subsequently used. For platforms without a built in implementation, <code>memset_s()</code> is automatically built in <code>core/memset_s.c</code></p>
+<h2 id="handshake-state-machine-improvements">Handshake State Machine Improvements</h2>
+<h3 id="simplified-code-paths">Simplified code paths</h3>
+<p>The handshake decode state machine was split among additional files and functions. Switch statements replace other logic to more clearly show each case and its result. The state machine is still quite complex due to the large number of modes and states that are supported in MatrixSSL. Always consult support when making changes to the state machine.</p>
+<h3 id="multiple-state-tracking">Multiple state tracking</h3>
+<p>Connection state tracking has always been implemented as &quot;expected next state&quot;, with no security issues. However for a double check, MatrixSSL now implements independent tracking of the last state encoded and decoded, as well as the expected next state.</p>
+<h3 id="more-strict-extension-processing">More strict extension processing</h3>
+<p>The extension parsing is more strict in what can be accepted and when.</p>
+<h1 id="features-and-improvements-3">3 FEATURES AND IMPROVEMENTS</h1>
+<h2 id="dtls-protocol-included">DTLS Protocol Included</h2>
+<p>Beginning in the 3.8.2 version of MatrixSSL, the DTLS 1.0 and DTLS 1.2 protocols are included in MatrixSSL open source package.</p>
+<p>Enable <code>USE_DTLS</code> in <em>./matrixssl/matrixsslConfig.h</em> to include it in library. Additional documentation, app examples, and test code is included to aid in development.</p>
+<h2 id="optimized-diffie-hellman-performance">Optimized Diffie-Hellman performance</h2>
+<p>Use smaller generated key sizes for a given DH prime field size per <a href="http://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r4.pdf">NIST SP 800-57 Part 1</a>. This provides up to a 9x performance gain for DH operations, greatly increasing the speed of ephemeral ciphers using DH.</p>
+<h2 id="optimized-ec-signature-generation-performance">Optimized EC signature generation performance</h2>
+<p>Improved performance for finding valid ECC key pairs, especially on larger key sizes.</p>
+<h2 id="openssl-crypto-primitive-provider">OpenSSL Crypto Primitive Provider</h2>
+<p>Allows MatrixSSL to be linked against <em>OpenSSL</em> <code>libcrypto</code> as a crypto primitive provider. This allows platforms that use <em>OpenSSL</em> as their crypto API (such as <em>Cavium Octeon</em>) provide hardware acceleration to MatrixSSL applications.</p>
+<h2 id="openssl-tls-api-layer">OpenSSL TLS API layer</h2>
+<p>Users wishing to replace <em>OpenSSL</em> with MatrixSSL often desire a layer that will ease the integration. MatrixSSL 3.8.2 includes an <em>OpenSSL_API layer that was previously provided upon request. This layer is found in the </em>./matrixssl_ directory in the _opensslApi.c_and <em>opensslSocket.c</em> files. The <em>opensslApi.h</em> and <em>opensslSocket.h</em> headers define the interface.</p>
+<h2 id="reduced-tls-session-footprint">Reduced TLS session footprint</h2>
+<p>The size of each TLS session was reduced by 512 bytes for AES cipher suites, and additionally by ~100 bytes for all cipher suites.</p>
+<h2 id="x.509-improvements">X.509 Improvements</h2>
+<p>OID parsing has been improved and provides better feedback on error. SHA-512 signed certificates are now supported.</p>
+<h2 id="pkcs12-key-parsing">PKCS#12 Key Parsing</h2>
+<p>Support for longer passwords and additional private key bag.</p>
+<h2 id="improved-certificate-callback-example">Improved certificate callback example</h2>
+<p>The <em>./apps/ssl/client.c</em> application now has a more robust processing example to help integrators understand the relationship between the incoming <code>alert</code> value and the individual <code>authStatus</code> members of the server’s certificate chain.</p>
+<h2 id="per-digest-control-of-hmac-algorithms">Per digest control of HMAC algorithms</h2>
+<p>Each HMAC algorithm can now be specifically enabled/disabled with <code>USE_HMAC_(digest)</code> defines in <em>cryptoConfig.h</em></p>
+<h2 id="default-high-resolution-timing">Default high resolution timing</h2>
+<p>POSIX platforms will have high-resolution timers active by default</p>
+<h2 id="assert-and-error-optimizations">Assert and Error Optimizations</h2>
+<p><code>USE_CORE_ASSERT</code> and <code>USE_CORE_ERROR</code> can now be disabled in <em>coreConfig.h</em>. This can reduce code size by removing the static strings used in errors and asserts. Recommended for final deployment only.</p>
+<h1 id="bug-fixes-3">4 BUG FIXES</h1>
+<h2 id="bit-little-endian-platforms">64 bit little endian platforms</h2>
+<p>The <code>STORE32L</code> macro in <em>cryptolib.h</em> has been fixed for little endian 64 platforms. The <code>STORE32H</code> macro in <em>cryptolib.h</em> has been fixed for big endian 64 platforms not using assembly language optimizations. Platforms such as <em>MIPS64</em> are now automatically detected by the build system.</p>
+<h2 id="x.509-keyusage-extension">X.509 KeyUsage extension</h2>
+<p>Fixed the parse to allow for <code>BIT_STRING</code> lengths longer than should be expected.</p>
+<h2 id="x.509-date-validation-fix">X.509 date validation fix</h2>
+<p>A bug has been fixed in the <code>validateDateRange()</code> function in <em>x509.c</em>. In previous versions, the time format (<code>ASN_UTCTIME</code>, etc..) of the <code>notAfter</code> date was being set based on the <code>notBefore</code> field. This bug would have caused problems for certificates that used different time formats for the <code>notBefore</code> and <code>notAfter</code> fields.</p>
+<h2 id="fixed-handshake-parse-issue">Fixed handshake parse issue</h2>
+<p>A bug was found on the server side while parsing a specific case of handshake messages from a client. If the cipher suite used a key exchange mechanism of ECDHE or ECHE, and the handshake was using client authentication, and the client was sending the <code>CLIENT_KEY_EXCHANGE</code> message and <code>CERTIFICATE_VERIFY</code> message in a single record, the MatrixSSL server was unable to parse that flight and would close the connection. This is now fixed.</p>
+<h2 id="tls-server-sending-old-self-signed-certificate">TLS server sending old self-signed certificate</h2>
+<p>A bug has been fixed so that if a server sends a self-signed certificate that does not contain the <code>AuthorityKeyIdentifier</code> extension, the authentication logic will detect that and not report an error to the certificate callback. &gt; Servers shouldn’t send self-signed certificates in the <code>CERTIFICATE</code> message. Client must still always have the same self-signed cert loaded in order to authenticate.</p>
+<h2 id="fixed-ecc-variable-encoding-bugs">Fixed ECC variable encoding bugs</h2>
+<p>For Client Auth rehandshakes, the variable signature sizes of ECDSA resulted in an issue when clients were creating the encrypted <code>CERTIFICATE_VERIFY</code> message. <code>secp224r1</code> curves also had an additional bug that could cause an invalid signature in some cases due to the variable encoding rules.</p>
+<h2 id="dhe_psk-compatibility">DHE_PSK compatibility</h2>
+<p>Fixed issue with <code>DHE_PSK</code> ciphers when a <code>PSK_ID</code> was not used. Previously a handshake alert would occur.</p>
+<h2 id="aes-gcm-with-aesni">AES-GCM with AESNI</h2>
+<p>Fixed an issue causing an invalid encoding of large data buffers with aes-gcm on Intel platforms with AESNI.</p>
+<h2 id="library-configuration-test">Library configuration test</h2>
+<p>The mechanism to test that MatrixSSL applications have been compiled using the same configuration as the MatrixSSL static libraries has been fixed.</p>
+<h2 id="windows-psgetfilebuf">Windows psGetFileBuf</h2>
+<p>Parameters to <code>CreateFileA()</code> are now correct for opening existing files.</p>
+<h1 id="known-issues-1">5 KNOWN ISSUES</h1>
+<ul>
+<li><em>Microsoft Windows</em> targets do not support certificate date validation currently. Users requiring this feature can use Windows APIs to get and parse the current date, using the POSIX implementation as a reference.</li>
+<li><em>Arm</em> platforms linking with some versions of <em>OpenSSL</em> <code>libcrypto</code> library may have errors in AES-CBC cipher suites due to the library's inability to handle in-situ encryption within the same block.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,298 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		DD7AB3D41B97A0800047DE55 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD7AB3CF1B97A03B0047DE55 /* core.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = DD7EB84D1B8D2A83000F7458;
+			remoteInfo = core;
+		};
+		DD7AB3D61B97A0800047DE55 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD7AB3CB1B97A0360047DE55 /* crypto.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = DD11442E1B8D2D7D00721CD4;
+			remoteInfo = crypto;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		87CB70911C0CDC0000DDADA7 /* algo.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = algo.c; path = ../matrixssh/algo.c; sourceTree = "<group>"; };
+		87CB70921C0CDC0000DDADA7 /* algo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = algo.h; path = ../matrixssh/algo.h; sourceTree = "<group>"; };
+		87CB70931C0CDC0000DDADA7 /* file.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = file.c; path = ../matrixssh/file.c; sourceTree = "<group>"; };
+		87CB70941C0CDC0000DDADA7 /* file.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = file.h; path = ../matrixssh/file.h; sourceTree = "<group>"; };
+		87CB70951C0CDC0000DDADA7 /* Makefile */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.make; name = Makefile; path = ../matrixssh/Makefile; sourceTree = "<group>"; };
+		87CB70961C0CDC0000DDADA7 /* matrixsshApi.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = matrixsshApi.c; path = ../matrixssh/matrixsshApi.c; sourceTree = "<group>"; };
+		87CB70971C0CDC0000DDADA7 /* matrixsshApi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = matrixsshApi.h; path = ../matrixssh/matrixsshApi.h; sourceTree = "<group>"; };
+		87CB70981C0CDC0000DDADA7 /* matrixsshConfig.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = matrixsshConfig.h; path = ../matrixssh/matrixsshConfig.h; sourceTree = "<group>"; };
+		87CB70991C0CDC0000DDADA7 /* matrixsshlib.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = matrixsshlib.h; path = ../matrixssh/matrixsshlib.h; sourceTree = "<group>"; };
+		87CB709A1C0CDC0000DDADA7 /* posixSock.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = posixSock.c; path = ../matrixssh/posixSock.c; sourceTree = "<group>"; };
+		87CB709B1C0CDC0000DDADA7 /* posixSock.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = posixSock.h; path = ../matrixssh/posixSock.h; sourceTree = "<group>"; };
+		87CB709C1C0CDC0000DDADA7 /* scp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = scp.c; path = ../matrixssh/scp.c; sourceTree = "<group>"; };
+		87CB709D1C0CDC0000DDADA7 /* server.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = server.c; path = ../matrixssh/server.c; sourceTree = "<group>"; };
+		87CB709E1C0CDC0000DDADA7 /* sftp.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sftp.c; path = ../matrixssh/sftp.c; sourceTree = "<group>"; };
+		87CB709F1C0CDC0000DDADA7 /* sftp.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = sftp.h; path = ../matrixssh/sftp.h; sourceTree = "<group>"; };
+		87CB70A01C0CDC0000DDADA7 /* ssh.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ssh.h; path = ../matrixssh/ssh.h; sourceTree = "<group>"; };
+		87CB70A11C0CDC0000DDADA7 /* sshAuth.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sshAuth.c; path = ../matrixssh/sshAuth.c; sourceTree = "<group>"; };
+		87CB70A21C0CDC0000DDADA7 /* sshChanSession.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sshChanSession.c; path = ../matrixssh/sshChanSession.c; sourceTree = "<group>"; };
+		87CB70A31C0CDC0000DDADA7 /* sshDecode.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sshDecode.c; path = ../matrixssh/sshDecode.c; sourceTree = "<group>"; };
+		87CB70A41C0CDC0000DDADA7 /* sshEncode.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sshEncode.c; path = ../matrixssh/sshEncode.c; sourceTree = "<group>"; };
+		87CB70A51C0CDC0000DDADA7 /* sshKex.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = sshKex.c; path = ../matrixssh/sshKex.c; sourceTree = "<group>"; };
+		87CB70A61C0CDC1E00DDADA7 /* buffer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = buffer.c; path = ../matrixssh/utils/buffer.c; sourceTree = "<group>"; };
+		87CB70A71C0CDC1E00DDADA7 /* queue.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = queue.c; path = ../matrixssh/utils/queue.c; sourceTree = "<group>"; };
+		87CB70A81C0CDC1E00DDADA7 /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = utils.h; path = ../matrixssh/utils/utils.h; sourceTree = "<group>"; };
+		DD7AB3CB1B97A0360047DE55 /* crypto.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = crypto.xcodeproj; sourceTree = "<group>"; };
+		DD7AB3CF1B97A03B0047DE55 /* core.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = core.xcodeproj; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		DD7AB3111B979AF40047DE55 = {
+			isa = PBXGroup;
+			children = (
+				87CB70A61C0CDC1E00DDADA7 /* buffer.c */,
+				87CB70A71C0CDC1E00DDADA7 /* queue.c */,
+				87CB70A81C0CDC1E00DDADA7 /* utils.h */,
+				87CB70911C0CDC0000DDADA7 /* algo.c */,
+				87CB70921C0CDC0000DDADA7 /* algo.h */,
+				87CB70931C0CDC0000DDADA7 /* file.c */,
+				87CB70941C0CDC0000DDADA7 /* file.h */,
+				87CB70951C0CDC0000DDADA7 /* Makefile */,
+				87CB70961C0CDC0000DDADA7 /* matrixsshApi.c */,
+				87CB70971C0CDC0000DDADA7 /* matrixsshApi.h */,
+				87CB70981C0CDC0000DDADA7 /* matrixsshConfig.h */,
+				87CB70991C0CDC0000DDADA7 /* matrixsshlib.h */,
+				87CB709A1C0CDC0000DDADA7 /* posixSock.c */,
+				87CB709B1C0CDC0000DDADA7 /* posixSock.h */,
+				87CB709C1C0CDC0000DDADA7 /* scp.c */,
+				87CB709D1C0CDC0000DDADA7 /* server.c */,
+				87CB709E1C0CDC0000DDADA7 /* sftp.c */,
+				87CB709F1C0CDC0000DDADA7 /* sftp.h */,
+				87CB70A01C0CDC0000DDADA7 /* ssh.h */,
+				87CB70A11C0CDC0000DDADA7 /* sshAuth.c */,
+				87CB70A21C0CDC0000DDADA7 /* sshChanSession.c */,
+				87CB70A31C0CDC0000DDADA7 /* sshDecode.c */,
+				87CB70A41C0CDC0000DDADA7 /* sshEncode.c */,
+				87CB70A51C0CDC0000DDADA7 /* sshKex.c */,
+				DD7AB3CF1B97A03B0047DE55 /* core.xcodeproj */,
+				DD7AB3CB1B97A0360047DE55 /* crypto.xcodeproj */,
+			);
+			sourceTree = "<group>";
+		};
+		DD7AB3CC1B97A0360047DE55 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DD7AB3D01B97A03B0047DE55 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXLegacyTarget section */
+		DD7AB3161B979AF40047DE55 /* sshServer */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(ACTION)";
+			buildConfigurationList = DD7AB3191B979AF40047DE55 /* Build configuration list for PBXLegacyTarget "sshServer" */;
+			buildPhases = (
+			);
+			buildToolPath = /usr/bin/make;
+			buildWorkingDirectory = ../matrixssh;
+			dependencies = (
+				DD7AB3D51B97A0800047DE55 /* PBXTargetDependency */,
+				DD7AB3D71B97A0800047DE55 /* PBXTargetDependency */,
+			);
+			name = sshServer;
+			passBuildSettingsInEnvironment = 1;
+			productName = cmsTest;
+		};
+/* End PBXLegacyTarget section */
+
+/* Begin PBXProject section */
+		DD7AB3121B979AF40047DE55 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0710;
+				ORGANIZATIONNAME = "INSIDE Secure";
+				TargetAttributes = {
+					DD7AB3161B979AF40047DE55 = {
+						CreatedOnToolsVersion = 6.4;
+					};
+				};
+			};
+			buildConfigurationList = DD7AB3151B979AF40047DE55 /* Build configuration list for PBXProject "sshServer" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = DD7AB3111B979AF40047DE55;
+			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = DD7AB3D01B97A03B0047DE55 /* Products */;
+					ProjectRef = DD7AB3CF1B97A03B0047DE55 /* core.xcodeproj */;
+				},
+				{
+					ProductGroup = DD7AB3CC1B97A0360047DE55 /* Products */;
+					ProjectRef = DD7AB3CB1B97A0360047DE55 /* crypto.xcodeproj */;
+				},
+			);
+			projectRoot = "";
+			targets = (
+				DD7AB3161B979AF40047DE55 /* sshServer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXTargetDependency section */
+		DD7AB3D51B97A0800047DE55 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = core;
+			targetProxy = DD7AB3D41B97A0800047DE55 /* PBXContainerItemProxy */;
+		};
+		DD7AB3D71B97A0800047DE55 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = crypto;
+			targetProxy = DD7AB3D61B97A0800047DE55 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DD7AB3171B979AF40047DE55 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		DD7AB3181B979AF40047DE55 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		DD7AB31A1B979AF40047DE55 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEBUGGING_SYMBOLS = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		DD7AB31B1B979AF40047DE55 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DD7AB3151B979AF40047DE55 /* Build configuration list for PBXProject "sshServer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD7AB3171B979AF40047DE55 /* Debug */,
+				DD7AB3181B979AF40047DE55 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DD7AB3191B979AF40047DE55 /* Build configuration list for PBXLegacyTarget "sshServer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD7AB31A1B979AF40047DE55 /* Debug */,
+				DD7AB31B1B979AF40047DE55 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = DD7AB3121B979AF40047DE55 /* Project object */;
+}

@@ -1,0 +1,258 @@
+
+
+MATRIXSSL 3.9 CHANGELOG
+
+
+Changes between 3.9.3 and 3.9.5 [December 2017]
+
+This version fixes several vulnerabilities in the CMS and TLS libraries,
+contains a large amount of bug fixes and some new features for the TLS
+and X.509 libraries.
+
+-   SSL/TLS
+
+    -   Fixed several out-of-bounds heap reads reported by researchers
+        Simon Friedberger, Robert Merget and Juraj Somorovsky, working
+        at the Ruhr-University Bochum. It was possible to trigger the
+        out-of-bounds reads with maliciously crafted Certificate and
+        ServerHello handshake messages.
+
+    -   Fixed vulnerabilities reported by Richard Clarke (@rsclarke).
+        Truncated certificates could be created to cause out-of-bounds
+        reads of size 1 in getAsnOID and getSerialNum.
+
+    -   Fixed an issue where the server did not keep the raw DER of the
+        client cert during a rehandshake, even when the
+        keep_peer_cert_der session option was set.
+
+    -   Fixed an issue that caused empty SNI to be sent in the
+        ServerHello during renegotiation even when the last ClientHello
+        did not contain it.
+
+    -   Fixed issues with handling of RSA-SHA-1 server and
+        client certificates. One of the symptoms was a segfault that
+        occurred when trying to use a server certificate signed
+        with RSA-SHA-1.
+
+    -   Refactor supported_signature_algorithms checking and signature
+        algorithm selection for CertificateVerify and ServerKeyExchange
+        Including adding support for RSA-SHA-512 server certificates.
+
+    -   Added support for on-demand client certificate and client
+        private key loading (USE_EXT_CLIENT_CERT_KEY_LOADING). MatrixSSL
+        now provides an asynchronous mechanism that allows
+        client-programs to load or change the client certificate
+        on-demand, as a response to a CertificateRequest.
+
+    -   Added new option to matrixValidateCertsExt that can be used to
+        (re-)perform certificate date validation in that function. By
+        default, MatrixSSL checks the certificate date during parsing.
+        The new option is useful for e.g. long-living processes that may
+        outlast the certificate validity period.
+
+    -   Added support for SSLv2 Client Hello format used by some
+        TLS clients. Only Client Hello message is supported, SSLv2
+        connections are not supported as it would have
+        security implications. See RFC 5246: The Transport Layer
+        Security (TLS) Protocol Version 1.2 Appendix E.2 for details of
+        TLS backwards compatibility with SSLv2.
+
+    -   Enabled TLS FALSE START support by default. This allows better
+        interoperability with recent versions of Firefox browser and
+        some versions of Chrome. (Controlled
+        with USE_SERVER_SIDE_FALSE_START_SUPPORT.)
+
+    -   Fixed a compilation problem if USE_TLS_1_2 was not defined.
+
+    -   Fixed compilation issues when compiling without USE_SHA384.
+
+    -   Fixed compilation without USE_REHANDSHAKING.
+
+    -   Improved the example server and client applications.
+
+    -   Fixes to file paths client.c uses for RSA-3072 PEM files.
+
+-   Crypto library
+
+    -   Fixed an out-of-bounds read in psAesUnwrap.
+
+    -   Fixed byte order issue in psEccDsaSign.
+
+    -   Fixed double-free when s parameter handling fails in
+        MatrixCrypto's psEccDsaSign.
+
+-   CMS library
+
+    -   Fixed a critical bug in the Authenticated-Enveloped-data stream
+        parsing API (matrixCmsFinalParseAuthEnvData) that caused
+        verification of the CBC MAC to be skipped.
+-   X.509 library
+
+    -   The EC public key coordinates were encoded incorrectly into
+        certificates when the leading 8 bits of a coordinate were
+        all zero.
+
+    -   subjectKeyId got encoded always, even when no one actually
+        computed the value.
+
+    -   Encoding of extensions was omitted when there was an
+        issuerAltName but no subjectAltName given.
+
+    -   psWriteCertExt set the basicConstraints CA bit to TRUE even if
+        the value was actually CA_UNDEFINED.
+
+    -   psX509SetCAIssuedCertExtensions used the extensions struct
+        pointer from CSR when there were no extensions in the
+        CA's config. This lead to a double-free.
+
+    -   The psWriteCertReqMem_BinConfig function was leaking memory.
+
+    -   Added new initialization function for the extensions struct.
+
+    -   Fix for otherName OID encoding in subjectAltName.
+
+    -   Added possibility to give the otherName OID as a
+        dot-notation string.
+
+    -   Fixed otherName OIDs length restriction.
+
+    -   Added support for the PrintableString and IA5String ASN.1 types
+        in psX509SetDNAttribute.
+
+    -   Improved the order in which Relative Distinguished Names are
+        encoded into certificates and CSRs.
+
+    -   Support for setting and parsing certificate request with
+        challenge password (psX509SetChallengePassword(),
+        and psCertReqGetChallengePassword())
+
+-   Networking and the MatrixSSL Net convenience layer
+
+    -   Fixed multirecord handling in matrixsslNet.
+
+    -   Fixed mishandled PS_EAGAIN from MatrixSSL in matrixsslNet.c.
+
+    -   Added "peek" to psnet.
+
+    -   Added feature to matrixsslNet that allows writing during read
+        buffer contains some data.
+
+    -   Enlarged buffer used by matrixsslNet.c to avoid having the read
+        input in multiple blocks.
+
+    -   Fixes to MatrixSslNet to work when it receives multiple
+        application data records at once.
+
+
+Changes between 3.9.2 and 3.9.3 [June 2017]
+
+Fix serious buffer handling vulnerabilities along with other smaller bug
+fixes.
+
+-   Fixed buffer overflow vulnerability in parsePolicyMappings and
+    buffer underflow in parseGeneralNames. Vulnerabilities discovered by
+    Aleksandar Nikolic of Cisco Talos.
+
+-   psX509ParseCert modified not to call parse_single_cert when there
+    are only a few bytes remaining.
+
+-   Fix compilation when USE_PKCS8 is not defined.
+
+-   Added common makefiles directory for reusable makefile components.
+
+-   Added new result code PS_SELFTEST_FAILED for
+    detecting psCryptoOpen() failure due to self-test failure of
+    underlying cryptographic primitivers.
+
+-   Debugging build log output can be redirected to a file using
+    PSCORE_DEBUG_FILE/PSCORE_DEBUG_FILE_APPEND/FLPS_DEBUG_FILE/
+    FLPS_DEBUG_FILE_APPEND environment variables.
+
+-   New example configuration for use of libopenssl-compat. This
+    configuration enables TLS 1.0, which is common to use
+    with libopenssl-compat.
+
+-   Add client side option for rejecting version downgrade during
+    TLS handshake.
+
+-   ECDSA cipher suites were errorneously rejected by client using CAs
+    with only RSA certificates.
+
+-   Small improvements to psBuf and psDynBuf functions.
+
+-   CMS library improvements, support for multiple recipients with
+    authenticated encrypted data.
+
+-   CMS library improvements, support for zero or multiple signers for
+    signed data.
+
+-   Signed data can now contain X.509 CRLs.
+
+-   Fixed handling of OCSP responses using OCSP responderName.
+
+-   Fixed memory leak in freeing of OCSP requestor id.
+
+-   MatrixSSL client sometimes prevented ECDSA cipher suites from being
+    used due to flaw in key material compatibility test. The test has
+    been removed.
+
+
+Changes between 3.9.1 and 3.9.2
+
+3.9.2. only released as a part of SafeZone FIPS SW SDK.
+
+-   Added support for OCSP response with SHA-512 signature.
+
+-   psPkcs8ParsePrivBin() function now supports any SafeZone CL library
+    supported PKCS #8 key formats, in addition to PKCS #8 keys
+    ordinarily supported by MatrixSSL. (Only applicable to MatrixSSL
+    FIPS Edition.)
+
+-   Added matrixSslLoadKeys and matrixSslLoadKeysMem. This key loading
+    function can be used in situations where the type of private key
+    (RSA or EC) to load is unknown.
+
+-   Added support for loading CA bundles containing both supported and
+    unsupported certificates. Previously, the loading of a CA bundle
+    failed if any of the certificates could not be fully parsed by
+    MatrixSSL, due to e.g. disabled v1 certificate support. The new
+    feature can be enabled by defining ALLOW_CA_BUNDLE_PARTIAL_PARSE
+    in matrixsslConfig.h. Also the crypto-level psX509ParseCert and
+    psX509ParseCertFile functions support the same feature when passed
+    the CERT_ALLOW_BUNDLE_PARTIAL_PARSE flag.
+
+-   Added support for RSA-SHA224 and ECDSA-SHA224 signatures in CSR
+    generation, CSR parsing and certificate generation. Expanded X.509
+    Generation API test.
+
+
+Changes between 3.9.0 and 3.9.1
+
+-   Disabled support for SHA-1 signed certificates by default. SHA-1 can
+    no longer be considered secure for this purpose
+    (see https://shattered.it/static/shattered.pdf). We decided to
+    disable SHA-1 signed certificates by default to ensure that
+    MatrixSSL customers consider the security implications before
+    enabling them. Support for SHA-1 signed certificates can be restored
+    by defining ENABLE_SHA1_SIGNED_CERTS in cryptoConfig.h.
+
+-   Regenerated all test certificates. Many of the old ones had exceeded
+    their validity period. The new test certificates have some minor
+    changes, such as the addition of some missing basicConstraints and
+    authorityKeyIdentifier extensions. Note that the test certificates
+    should never be used in production, but only for initial testing
+    during development.
+
+-   Fixed bug that caused a segfault when
+    ALLOW_VERSION_1_ROOT_CERT_PARSE was enabled and the peer sent a
+    version 1 certificate. Correct behaviour is to just produce an
+    internal certificate validation failure in this case, as the above
+    define only allows parsing of locally stored trusted
+    root certificates. This bug is minor as
+    ALLOW_VERSION_1_ROOT_CERT_PARSE is disabled by default, and rarely
+    used by MatrixSSL customers.
+
+-   Introduced new function setSocketTlsCertAuthCb for setting
+    certificate authentication callback when using MatrixSSL via
+    psSocket_t interface. Previously constant function name
+    ssl_cert_auth was used for authentication callback.

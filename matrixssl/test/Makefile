@@ -7,7 +7,8 @@
 MATRIXSSL_ROOT:=../..
 TEST_SRC:=sslTest.c
 CERT_SRC:=certValidate.c
-SRC:=$(TEST_SRC) $(CERT_SRC)
+PROVIDER_SRC:=provider.c
+SRC:=$(TEST_SRC) $(CERT_SRC) $(PROVIDER_SRC)
 
 # Linked files
 STATIC:=../libssl_s.a $(MATRIXSSL_ROOT)/crypto/libcrypt_s.a $(MATRIXSSL_ROOT)/core/libcore_s.a
@@ -20,6 +21,7 @@ include $(MATRIXSSL_ROOT)/common.mk
 # Generated files
 CERT_EXE:=certValidate$(E)
 TEST_EXE:=sslTest$(E)
+PROVIDER_EXE:=provider$(E)
 
 ifeq '$(CL_NO_PKCS)' ''
 CFLAGS+=-DUSE_CL_PKCS -DUSE_CL_CERTLIB
@@ -47,13 +49,11 @@ $(OBJS): $(MATRIXSSL_ROOT)/common.mk Makefile $(wildcard *.h)
 $(TEST_EXE): $(TEST_SRC:.c=.o) $(STATIC)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-$(CERT_EXE):$(CERT_SRC:.c=.o) $(STATIC)
+$(CERT_EXE): $(CERT_SRC:.c=.o) $(STATIC)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(PROVIDER_EXE): $(PROVIDER_SRC:.c=.o) $(STATIC)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f $(TEST_EXE) $(CERT_EXE) $(OBJS) $(CLEAN_EXTRA_FILES) *.map
-
-# Allows to check configuration options.
-parse-config:
-	echo '#include "matrixsslConfig.h"' | $(CC) $(CFLAGS) -dM -E -x c -
-
+	rm -f $(TEST_EXE) $(CERT_EXE) $(PROVIDER_EXE) $(OBJS) $(CLEAN_EXTRA_FILES) *.map

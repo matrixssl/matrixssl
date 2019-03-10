@@ -1,304 +1,333 @@
 /**
- *	@file    yarrow.c
- *	@version $Format:%h%d$
+ *      @file    yarrow.c
+ *      @version $Format:%h%d$
  *
- *	Yarrow PRNG implementation.
+ *      Yarrow PRNG implementation.
  */
 /*
- *	Copyright (c) 2013-2016 INSIDE Secure Corporation
- *	Copyright (c) PeerSec Networks, 2002-2011
- *	All Rights Reserved
+ *      Copyright (c) 2013-2017 INSIDE Secure Corporation
+ *      Copyright (c) PeerSec Networks, 2002-2011
+ *      All Rights Reserved
  *
- *	The latest version of this code is available at http://www.matrixssl.org
+ *      The latest version of this code is available at http://www.matrixssl.org
  *
- *	This software is open source; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
+ *      This software is open source; you can redistribute it and/or modify
+ *      it under the terms of the GNU General Public License as published by
+ *      the Free Software Foundation; either version 2 of the License, or
+ *      (at your option) any later version.
  *
- *	This General Public License does NOT permit incorporating this software
- *	into proprietary programs.  If you are unable to comply with the GPL, a
- *	commercial license for this software may be purchased from INSIDE at
- *	http://www.insidesecure.com/
+ *      This General Public License does NOT permit incorporating this software
+ *      into proprietary programs.  If you are unable to comply with the GPL, a
+ *      commercial license for this software may be purchased from INSIDE at
+ *      http://www.insidesecure.com/
  *
- *	This program is distributed in WITHOUT ANY WARRANTY; without even the
- *	implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- *	See the GNU General Public License for more details.
+ *      This program is distributed in WITHOUT ANY WARRANTY; without even the
+ *      implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *      See the GNU General Public License for more details.
  *
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *	http://www.gnu.org/copyleft/gpl.html
+ *      You should have received a copy of the GNU General Public License
+ *      along with this program; if not, write to the Free Software
+ *      Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *      http://www.gnu.org/copyleft/gpl.html
  */
 /******************************************************************************/
 
-#include "../cryptoApi.h"
+#include "../cryptoImpl.h"
 
 #ifdef USE_YARROW
 
-#ifdef WIN32
-#pragma message("THIS CODE IS DEPRECATED. PLEASE CONNECT psGetEntropy() directly to a TRNG or PRNG.")
-#else
-#warning "THIS CODE IS DEPRECATED. PLEASE CONNECT psGetEntropy() directly to a TRNG or PRNG."
-#endif
+# ifdef WIN32
+#  pragma message("THIS CODE IS DEPRECATED. PLEASE CONNECT psGetEntropy() directly to a TRNG or PRNG.")
+# else
+#  warning "THIS CODE IS DEPRECATED. PLEASE CONNECT psGetEntropy() directly to a TRNG or PRNG."
+# endif
 
 /******************************************************************************/
 /*
-	A basic yarrow implementation hardcoded to AES and SHA.  Only one
-	pool is used.
+    A basic yarrow implementation hardcoded to AES and SHA.  Only one
+    pool is used.
 
-	The sequence of calls to start getting PRN is to call psYarrowStart,
-	psYarrowAddEntropy, psYarrowReseed, and finally psYarrowRead.  Throughout
-	the life of the application, psYarrowAddEntropy can be called when random
-	data is read from the platform.  The psYarrowReseed function must be
-	called to incorporate that entropy into the new key.
+    The sequence of calls to start getting PRN is to call psYarrowStart,
+    psYarrowAddEntropy, psYarrowReseed, and finally psYarrowRead.  Throughout
+    the life of the application, psYarrowAddEntropy can be called when random
+    data is read from the platform.  The psYarrowReseed function must be
+    called to incorporate that entropy into the new key.
 
-	Warning:  no mutex lock embedded in these calls
-*/
+    Warning:  no mutex lock embedded in these calls
+ */
 
 /**
-	Doesn't do much, but sets the blocklen to AES to make it necessary to call
-*/
+    Doesn't do much, but sets the blocklen to AES to make it necessary to call
+ */
 int32 psYarrowStart(psYarrow_t *ctx)
 {
-	if (ctx == NULL) {
-		return PS_ARG_FAIL;
-	}
-   /* zero the memory used */
-   memset(ctx->pool, 0, sizeof(ctx->pool));
-   ctx->blocklen = AESBLOCKSIZE;
+    if (ctx == NULL)
+    {
+        return PS_ARG_FAIL;
+    }
+    /* zero the memory used */
+    Memset(ctx->pool, 0, sizeof(ctx->pool));
+    ctx->blocklen = AESBLOCKSIZE;
 
-   return PS_SUCCESS;
+    return PS_SUCCESS;
 }
 
 /**
-  Add entropy to the PRNG state
-  @param in       The data to add
-  @param inlen    Length of the data to add
-  @param prng     PRNG state to update
-*/
+   Add entropy to the PRNG state
+   @param in       The data to add
+   @param inlen    Length of the data to add
+   @param prng     PRNG state to update
+ */
 int32 psYarrowAddEntropy(unsigned char *in, uint32 inlen, psYarrow_t *prng)
 {
-#ifdef USE_SHA256
-	psSha256_t md;
-#else
-	psSha1_t md;
-#endif
-	int32 err;
+# ifdef USE_SHA256
+    psSha256_t md;
+# else
+    psSha1_t md;
+# endif
+    int32 err;
 
-	if (in == NULL || prng == NULL) {
-		return PS_ARG_FAIL;
-	}
+    if (in == NULL || prng == NULL)
+    {
+        return PS_ARG_FAIL;
+    }
 
-#ifdef USE_SHA256
-	/* start the hash */
-	psSha256PreInit(&md);
-	psSha256Init(&md);
+# ifdef USE_SHA256
+    /* start the hash */
+    psSha256PreInit(&md);
+    psSha256Init(&md);
 
-	/* hash the current pool */
-	psSha256Update(&md, prng->pool, SHA256_HASH_SIZE);
+    /* hash the current pool */
+    psSha256Update(&md, prng->pool, SHA256_HASH_SIZE);
 
-	/* add the new entropy */
-	psSha256Update(&md, in, inlen);
+    /* add the new entropy */
+    psSha256Update(&md, in, inlen);
 
-	/* store result */
-	psSha256Final(&md, prng->pool);
-#else
-	/* start the hash */
-	psSha1PreInit(&md);
-	psSha1Init(&md);
+    /* store result */
+    psSha256Final(&md, prng->pool);
+# else
+    /* start the hash */
+    psSha1PreInit(&md);
+    psSha1Init(&md);
 
-	/* hash the current pool */
-	psSha1Update(&md, prng->pool, SHA1_HASH_SIZE);
+    /* hash the current pool */
+    psSha1Update(&md, prng->pool, SHA1_HASH_SIZE);
 
-	/* add the new entropy */
-	psSha1Update(&md, in, inlen);
+    /* add the new entropy */
+    psSha1Update(&md, in, inlen);
 
-	/* store result */
-	psSha1Final(&md, prng->pool);
-#endif
-	return PS_SUCCESS;
+    /* store result */
+    psSha1Final(&md, prng->pool);
+# endif
+    return PS_SUCCESS;
 }
 
 
 /**
-  Make the PRNG ready to read from and to reseed when desired
-  @param prng   The PRNG to seed
-*/
+   Make the PRNG ready to read from and to reseed when desired
+   @param prng   The PRNG to seed
+ */
 int32 psYarrowReseed(psYarrow_t *ctx)
 {
-	const unsigned char *IV;
-	int32				keylen, ctr_mode, x, err;
+    const unsigned char *IV;
+    int32 keylen, ctr_mode, x, err;
 
-	IV = ctx->pool;
-	keylen = AESBLOCKSIZE;   /* Can only use 16 bytes for the AES key */
-	ctr_mode = CTR_COUNTER_LITTLE_ENDIAN; /* little endian counter */
+    IV = ctx->pool;
+    keylen = AESBLOCKSIZE;                /* Can only use 16 bytes for the AES key */
+    ctr_mode = CTR_COUNTER_LITTLE_ENDIAN; /* little endian counter */
 
-	/* ctrlen == counter width */
-	ctx->ctrlen   = (ctr_mode & 255) ? (ctr_mode & 255) : AESBLOCKSIZE;
-	if (ctx->ctrlen > AESBLOCKSIZE) {
-		return PS_ARG_FAIL;
-	}
+    /* ctrlen == counter width */
+    ctx->ctrlen   = (ctr_mode & 255) ? (ctr_mode & 255) : AESBLOCKSIZE;
+    if (ctx->ctrlen > AESBLOCKSIZE)
+    {
+        return PS_ARG_FAIL;
+    }
 
-	if ((ctr_mode & 0x1000) == CTR_COUNTER_BIG_ENDIAN) {
-		ctx->ctrlen = AESBLOCKSIZE - ctx->ctrlen;
-	}
+    if ((ctr_mode & 0x1000) == CTR_COUNTER_BIG_ENDIAN)
+    {
+        ctx->ctrlen = AESBLOCKSIZE - ctx->ctrlen;
+    }
 
-	/* setup cipher */
-	if ((err = psAesInitBlockKey(&ctx->key, ctx->pool, keylen,
-								 PS_AES_ENCRYPT)) != PS_SUCCESS) {
-		return err;
-	}
+    /* setup cipher */
+    if ((err = psAesInitBlockKey(&ctx->key, ctx->pool, keylen,
+             PS_AES_ENCRYPT)) != PS_SUCCESS)
+    {
+        return err;
+    }
 
-	/* copy ctr */
-	ctx->padlen   = 0;
-	ctx->mode     = ctr_mode & 0x1000;
-	for (x = 0; x < ctx->blocklen; x++) {
-		ctx->ctr[x] = IV[x];
-	}
+    /* copy ctr */
+    ctx->padlen   = 0;
+    ctx->mode     = ctr_mode & 0x1000;
+    for (x = 0; x < ctx->blocklen; x++)
+    {
+        ctx->ctr[x] = IV[x];
+    }
 
-	/* increment the IV */
-	if (ctx->mode == CTR_COUNTER_LITTLE_ENDIAN) {
-		/* little-endian */
-		for (x = 0; x < ctx->ctrlen; x++) {
-			ctx->ctr[x] = (ctx->ctr[x] + (unsigned char)1) & (unsigned char)255;
-			if (ctx->ctr[x] != (unsigned char)0) {
-				break;
-			}
-		}
-	} else {
-		/* big-endian */
-		for (x = ctx->blocklen-1; x >= ctx->ctrlen; x--) {
-			ctx->ctr[x] = (ctx->ctr[x] + (unsigned char)1) & (unsigned char)255;
-			if (ctx->ctr[x] != (unsigned char)0) {
-				break;
-			}
-		}
-	}
+    /* increment the IV */
+    if (ctx->mode == CTR_COUNTER_LITTLE_ENDIAN)
+    {
+        /* little-endian */
+        for (x = 0; x < ctx->ctrlen; x++)
+        {
+            ctx->ctr[x] = (ctx->ctr[x] + (unsigned char) 1) & (unsigned char) 255;
+            if (ctx->ctr[x] != (unsigned char) 0)
+            {
+                break;
+            }
+        }
+    }
+    else
+    {
+        /* big-endian */
+        for (x = ctx->blocklen - 1; x >= ctx->ctrlen; x--)
+        {
+            ctx->ctr[x] = (ctx->ctr[x] + (unsigned char) 1) & (unsigned char) 255;
+            if (ctx->ctr[x] != (unsigned char) 0)
+            {
+                break;
+            }
+        }
+    }
 
-	psAesEncryptBlock(&ctx->key, ctx->ctr, ctx->pad);
-	return PS_SUCCESS;
+    psAesEncryptBlock(&ctx->key, ctx->ctr, ctx->pad);
+    return PS_SUCCESS;
 }
 
 
 /**
-  Read from the PRNG
-  @param out      Destination
-  @param outlen   Length of output
-  @param ctx     The active PRNG to read from
-  @return Number of octets read
-*/
+   Read from the PRNG
+   @param out      Destination
+   @param outlen   Length of output
+   @param ctx     The active PRNG to read from
+   @return Number of octets read
+ */
 uint32 psYarrowRead(unsigned char *out, uint32 outlen, psYarrow_t *ctx)
 {
-	unsigned char	*pt, *ct;
-	int32			x;
-	uint32			len;
+    unsigned char *pt, *ct;
+    int32 x;
+    uint32 len;
 
-	/* put out in predictable state first */
-	memset(out, 0x0, outlen);
+    /* put out in predictable state first */
+    Memset(out, 0x0, outlen);
 
-	len = outlen;
-	pt = ct = out;
+    len = outlen;
+    pt = ct = out;
 
-	/* is blocklen/padlen valid? */
-	if (ctx->blocklen < 1 || ctx->blocklen > (int32)sizeof(ctx->ctr) ||
-			ctx->padlen   < 0 || ctx->padlen   > (int32)sizeof(ctx->pad)) {
-		return 0;
-	}
+    /* is blocklen/padlen valid? */
+    if (ctx->blocklen < 1 || ctx->blocklen > (int32) sizeof(ctx->ctr) ||
+        ctx->padlen   < 0 || ctx->padlen   > (int32) sizeof(ctx->pad))
+    {
+        return 0;
+    }
 
-	while (outlen) {
-		/* is the pad empty? */
-		if (ctx->padlen == ctx->blocklen) {
-			/* increment counter */
-			if (ctx->mode == CTR_COUNTER_LITTLE_ENDIAN) {
-				/* little-endian */
-				for (x = 0; x < ctx->ctrlen; x++) {
-					ctx->ctr[x] =
-						(ctx->ctr[x] + (unsigned char)1) & (unsigned char)255;
-					if (ctx->ctr[x] != (unsigned char)0) {
-						break;
-					}
-				}
-			} else {
-				/* big-endian */
-				for (x = ctx->blocklen-1; x >= ctx->ctrlen; x--) {
-					ctx->ctr[x] =
-						(ctx->ctr[x] + (unsigned char)1) & (unsigned char)255;
-					if (ctx->ctr[x] != (unsigned char)0) {
-						break;
-					}
-				}
-			}
+    while (outlen)
+    {
+        /* is the pad empty? */
+        if (ctx->padlen == ctx->blocklen)
+        {
+            /* increment counter */
+            if (ctx->mode == CTR_COUNTER_LITTLE_ENDIAN)
+            {
+                /* little-endian */
+                for (x = 0; x < ctx->ctrlen; x++)
+                {
+                    ctx->ctr[x] =
+                        (ctx->ctr[x] + (unsigned char) 1) & (unsigned char) 255;
+                    if (ctx->ctr[x] != (unsigned char) 0)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                /* big-endian */
+                for (x = ctx->blocklen - 1; x >= ctx->ctrlen; x--)
+                {
+                    ctx->ctr[x] =
+                        (ctx->ctr[x] + (unsigned char) 1) & (unsigned char) 255;
+                    if (ctx->ctr[x] != (unsigned char) 0)
+                    {
+                        break;
+                    }
+                }
+            }
 
-			/* encrypt new pad and reset */
-			psAesEncryptBlock(&ctx->key, ctx->ctr, ctx->pad);
-			ctx->padlen = 0;
-		}
-		*ct++ = *pt++ ^ ctx->pad[ctx->padlen++];
-		--outlen;
-	}
-	return len;
+            /* encrypt new pad and reset */
+            psAesEncryptBlock(&ctx->key, ctx->ctr, ctx->pad);
+            ctx->padlen = 0;
+        }
+        *ct++ = *pt++ ^ ctx->pad[ctx->padlen++];
+        --outlen;
+    }
+    return len;
 }
 
 
 /**
-  Terminate the PRNG
-*/
+   Terminate the PRNG
+ */
 int32 psYarrowDone(psYarrow_t *ctx)
 {
-   return PS_SUCCESS;
+    return PS_SUCCESS;
 }
 
 
 /**
-  Export the PRNG state
-  @param out       [out] Destination
-  @param outlen    [in/out] Max size and resulting size of the state
-  @param prng      The PRNG to export
-  @return CRYPT_OK if successful
-*/
+   Export the PRNG state
+   @param out       [out] Destination
+   @param outlen    [in/out] Max size and resulting size of the state
+   @param prng      The PRNG to export
+   @return CRYPT_OK if successful
+ */
 int32 psYarrowExport(unsigned char *out, uint32 *outlen, psYarrow_t *ctx)
 {
-	/* we'll write 64 bytes for s&g's */
-	if (*outlen < 64) {
-		*outlen = 64;
-		return PS_LIMIT_FAIL;
-	}
+    /* we'll write 64 bytes for s&g's */
+    if (*outlen < 64)
+    {
+        *outlen = 64;
+        return PS_LIMIT_FAIL;
+    }
 
-	if (psYarrowRead(out, 64, ctx) != 64) {
-		*outlen = 0;
-		return PS_FAILURE;
-	}
-	*outlen = 64;
+    if (psYarrowRead(out, 64, ctx) != 64)
+    {
+        *outlen = 0;
+        return PS_FAILURE;
+    }
+    *outlen = 64;
 
-	return PS_SUCCESS;
+    return PS_SUCCESS;
 }
 
 /**
-  Import a PRNG state
-  @param in       The PRNG state
-  @param inlen    Size of the state
-  @param prng     The PRNG to import
-  @return CRYPT_OK if successful
-*/
+   Import a PRNG state
+   @param in       The PRNG state
+   @param inlen    Size of the state
+   @param prng     The PRNG to import
+   @return CRYPT_OK if successful
+ */
 int32 psYarrowImport(unsigned char *in, uint32 inlen, psYarrow_t *ctx)
 {
-	int32 err;
+    int32 err;
 
-	if (inlen != 64) {
-		return PS_ARG_FAIL;
-	}
+    if (inlen != 64)
+    {
+        return PS_ARG_FAIL;
+    }
 
-	if ((err = psYarrowStart(ctx)) != PS_SUCCESS) {
-		return err;
-	}
-	if ((err = psYarrowAddEntropy(in, 64, ctx)) != PS_SUCCESS) {
-		return err;
-	}
-	if ((err = psYarrowReseed(ctx)) != PS_SUCCESS) {
-		return err;
-	}
-	return err;
+    if ((err = psYarrowStart(ctx)) != PS_SUCCESS)
+    {
+        return err;
+    }
+    if ((err = psYarrowAddEntropy(in, 64, ctx)) != PS_SUCCESS)
+    {
+        return err;
+    }
+    if ((err = psYarrowReseed(ctx)) != PS_SUCCESS)
+    {
+        return err;
+    }
+    return err;
 }
 
 
