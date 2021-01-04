@@ -36,6 +36,9 @@
 #ifndef _h_MATRIXSSL_API_CIPHER
 # define _h_MATRIXSSL_API_CIPHER
 
+#if defined __APPLE__
+#include <Security/CipherSuite.h>
+#else
 /* Cipher suite specification IDs, in numerical order. */
 # define SSL_NULL_WITH_NULL_NULL                 0x0000
 # define SSL_RSA_WITH_NULL_MD5                   0x0001
@@ -67,6 +70,7 @@
 # define TLS_RSA_WITH_AES_128_GCM_SHA256         0x009C /* 156 */
 # define TLS_RSA_WITH_AES_256_GCM_SHA384         0x009D /* 157 */
 # define TLS_DHE_RSA_WITH_AES_256_GCM_SHA384     0x009F /* 159 */
+#endif // __APPLE__
 
 # define TLS_EMPTY_RENEGOTIATION_INFO_SCSV       0x00FF /**< @see RFC 5746 */
 # define TLS_FALLBACK_SCSV                       0x5600 /**< @see RFC 7507 */

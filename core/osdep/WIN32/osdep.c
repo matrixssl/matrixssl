@@ -33,7 +33,7 @@
 /******************************************************************************/
 
 #include "../coreApi.h"
-#include "../osdep.h"
+#include "../include/osdep.h"
 
 #ifdef WIN32
 # include "osdep_wincrypt.h"

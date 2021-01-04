@@ -60,6 +60,8 @@
 #   define HAVE_SYS_STAT_H 1
 #   define HAVE_SYS_MMAN_H 1
 #   define HAVE_DLFCN_H 1
+#  elif defined __APPLE__
+#   define HAVE_SYS_MMAN_H 1
 #  endif
 
 #  define HAVE_STDLIB_H 1
@@ -96,7 +98,9 @@
 #  define HAVE_WEAK_SYMBOLS 1
 #  define HAVE_ATOMIC_OPS 1
 #  define HAVE_MMAP 1
-#  define HAVE_MLOCK 1
+#  if !defined(WIN32)
+#    define HAVE_MLOCK 1
+#  endif
 #  define HAVE_MADVISE 1
 #  define HAVE_NANOSLEEP 1
 #  define HAVE_POSIX_MEMALIGN 1

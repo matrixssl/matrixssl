@@ -37,7 +37,9 @@
 #include "osdep_stdio.h"
 #include "osdep_unistd.h"
 #include "osdep_sys_types.h"
+#if defined(USE_PS_NETWORKING)
 #include "osdep_sys_socket.h"
+#endif
 #include "osdep_string.h"
 
 #define USE_MATRIX_NET_DEBUG

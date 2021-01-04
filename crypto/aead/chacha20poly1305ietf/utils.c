@@ -663,8 +663,6 @@ psSodium_free(void *ptr)
 }
 # endif /* HAVE_ALIGNED_MALLOC */
 
-#endif /* NO_SODIUM_MEMORY_MANAGEMENT */
-
 # ifndef HAVE_PAGE_PROTECTION
 static int
 psSodium_mprotect(void *ptr, int (*cb)(void *ptr, size_t size))
@@ -707,5 +705,7 @@ psSodium_mprotect_readwrite(void *ptr)
 {
     return psSodium_mprotect(ptr, psMprotect_readwrite);
 }
+
+#endif /* NO_SODIUM_MEMORY_MANAGEMENT */
 
 #endif /* USE_MATRIX_CHACHA20_POLY1305_IETF */

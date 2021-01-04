@@ -309,6 +309,9 @@ typedef struct
 #  endif
 # endif
 
+#if defined(WIN32)
+typedef LARGE_INTEGER psTime_t;
+#else
 /* Data type that allocated sufficient space for psTime_t regardless
    of implementation with internal implementation structure where requested. */
 typedef union {
@@ -317,6 +320,7 @@ typedef union {
        psTimeConcrete_t psTimeInternal;
 # endif
 } psTime_t;
+#endif
 
 # ifdef USE_HIGHRES_TIME
 extern int64_t psDiffUsecs(psTime_t then, psTime_t now);
