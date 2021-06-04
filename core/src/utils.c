@@ -665,8 +665,6 @@ SLSodium_free(void *ptr)
 }
 # endif /* HAVE_ALIGNED_MALLOC */
 
-#endif /* NO_SODIUM_MEMORY_MANAGEMENT */
-
 # ifndef HAVE_PAGE_PROTECTION
 static int
 SLSodium_mprotect(void *ptr, int (*cb)(void *ptr, size_t size))
@@ -709,5 +707,9 @@ SLSodium_mprotect_readwrite(void *ptr)
 {
     return SLSodium_mprotect(ptr, SLMprotect_readwrite);
 }
+
+#endif /* NO_SODIUM_MEMORY_MANAGEMENT */
+
+
 
 #endif /* USE_SL_CHACHA20_POLY1305_IETF || USE_SL_SODIUM */

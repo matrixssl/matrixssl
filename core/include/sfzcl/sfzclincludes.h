@@ -48,7 +48,6 @@
 /* Windows API */
 # ifndef SFZCLDIST_FREESTANDING
 #  include "osdep_windows.h"
-#  include "osdep_winbase.h"
 #  include "osdep_fcntl.h"
 # endif                         /* !SFZCLDIST_FREESTANDING */
 

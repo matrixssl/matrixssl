@@ -147,9 +147,15 @@ const char *psPrnfBase64(psPrnf_t *ctx, const unsigned char *octets, psSizeL_t l
                          int(*formatter)(const unsigned char *, size_t, const char *, char **));
 const char *psPrnfIpv4(psPrnf_t *ctx, uint32_t ipv4_addr);
 
-int psPrnf_(psPrnf_t *ctx, const char *fmt, ...) __attribute__((__format__(printf, 2, 3)));
-int psSnprnf_(char *str, psSizeL_t size, psPrnf_t *ctx, const char *fmt, ...) __attribute__((__format__(printf, 4, 5)));
-char *psAsprnf_(psPool_t *pool, psPrnf_t *ctx, const char *fmt, ...) __attribute__((__format__(printf, 3, 4)));
+#if defined(WIN32)
+int psPrnf_(psPrnf_t *ctx, const char *fmt, ...);
+int psSnprnf_(char *str, psSizeL_t size, psPrnf_t *ctx, const char *fmt, ...);
+char *psAsprnf_(psPool_t *pool, psPrnf_t *ctx, const char *fmt, ...);
+#else
+int psPrnf_(psPrnf_t* ctx, const char* fmt, ...) __attribute__((__format__(printf, 2, 3)));
+int psSnprnf_(char* str, psSizeL_t size, psPrnf_t* ctx, const char* fmt, ...) __attribute__((__format__(printf, 4, 5)));
+char* psAsprnf_(psPool_t* pool, psPrnf_t* ctx, const char* fmt, ...) __attribute__((__format__(printf, 3, 4)));
+#endif
 
 /** Extended formatted printing.
 

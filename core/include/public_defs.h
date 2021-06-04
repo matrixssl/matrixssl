@@ -49,6 +49,10 @@
 
 #if defined(WIN32)
 
+#if defined(_MSC_VER) && _MSC_VER >= 1900
+#include <stdint.h>
+#include <stdbool.h>
+#else
 typedef signed char int8_t;
 typedef signed short int16_t;
 typedef signed int int32_t;
@@ -87,6 +91,7 @@ typedef uint8_t bool;
 # define UINT32_MAX (4294967295)
 
 # define restrict
+#endif
 
 #elif (defined(__KERNEL__))
 
